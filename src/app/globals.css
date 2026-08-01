@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+/* .dark 클래스 기반 다크모드 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ===== Signo Design Tokens v0.2 ===== */
+@theme {
+  /* brand */
+  --color-brand: #3844be;
+  --color-indigo-900: #1b2064;
+  --color-indigo-700: #232a7a;
+  --color-indigo-300: #9aa0e4;
+  --color-indigo-100: #ecedf9;
+  /* neutral */
+  --color-ink: #15162a;
+  --color-slate: #5a5e73;
+  --color-mist: #e4e5ef;
+  --color-paper: #f5f6fa;
+  /* data / semantic (상승=빨강, 하락=파랑) — 라이트/다크 전환 */
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-signal: var(--signal);
+  --color-confirm: var(--confirm);
+
+  /* surfaces (라이트/다크 전환) */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+
+  /* radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* fonts (layout.tsx의 next/font 변수 사용) */
+  --font-sans: var(--font-pretendard), "Malgun Gothic", system-ui, sans-serif;
+  --font-display: var(--font-grotesk), var(--font-pretendard), sans-serif;
+  --font-mono: var(--font-space-mono), "Consolas", monospace;
+
+  /* motion */
+  --ease-signo: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* 표면 색: 라이트 기본 */
+:root {
+  --canvas: #ffffff;
+  --surface: #f5f6fa;
+  --fg: #15162a;
+  --muted: #5a5e73;
+  --line: #e4e5ef;
+  --up: #e23d3d;
+  --down: #2e77c9;
+  --signal: #f2a93b;
+  --confirm: #1f9d6b;
+}
+.dark {
+  --canvas: #0b0c15;
+  --surface: #171a2b;
+  --fg: #edeef7;
+  --muted: #a2a7c4;
+  --line: #303556;
+  /* 다크에서는 채도·명도를 올려 가독성 확보 */
+  --up: #ff6b6b;
+  --down: #63a8f5;
+  --signal: #f7bd52;
+  --confirm: #3fcf95;
+}
+
+@layer base {
+  html {
+    background: var(--canvas);
+    color: var(--fg);
+  }
+  body {
+    font-family: var(--font-sans);
+    background: var(--canvas);
+    color: var(--fg);
+  }
+  /* 숫자는 모노 + tabular */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-brand) 22%, transparent);
+}
