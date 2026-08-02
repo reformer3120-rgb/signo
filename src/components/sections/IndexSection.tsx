@@ -101,12 +101,16 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
       )}
 
       {flow?.breadth && (
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md bg-canvas/50 py-1.5 text-xs">
-          <span className="text-up tnum">↑ {num(flow.breadth.up)}</span>
-          {flow.breadth.upper > 0 && <span className="text-up/70 tnum">상한 {flow.breadth.upper}</span>}
-          <span className="text-muted tnum">보합 {num(flow.breadth.flat)}</span>
-          <span className="text-down tnum">↓ {num(flow.breadth.down)}</span>
-          {flow.breadth.lower > 0 && <span className="text-down/70 tnum">하한 {flow.breadth.lower}</span>}
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md bg-canvas/50 py-1.5 text-xs font-medium">
+          <span className="text-up">↑ <span className="tnum">{num(flow.breadth.up)}</span></span>
+          {flow.breadth.upper > 0 && (
+            <span className="text-up/70">상한 <span className="tnum">{flow.breadth.upper}</span></span>
+          )}
+          <span className="text-muted">보합 <span className="tnum">{num(flow.breadth.flat)}</span></span>
+          <span className="text-down">↓ <span className="tnum">{num(flow.breadth.down)}</span></span>
+          {flow.breadth.lower > 0 && (
+            <span className="text-down/70">하한 <span className="tnum">{flow.breadth.lower}</span></span>
+          )}
         </div>
       )}
 

@@ -23,6 +23,13 @@ const CRYPTO: [string, string][] = [
   ["이더리움", "ETH-USD"],
   ["리플", "XRP-USD"],
 ];
+// 글로벌 지수선물 (야후)
+const FUT_GLOBAL: [string, string][] = [
+  ["나스닥 선물", "NQ=F"],
+  ["다우 선물", "YM=F"],
+  ["S&P500 선물", "ES=F"],
+  ["니케이 선물", "NKD=F"],
+];
 
 async function build() {
   const fxBase = await Promise.all(FX.map(async ([label, sym, m]) => ({ label, ...(await spark(sym, m)) })));
@@ -47,23 +54,33 @@ async function build() {
     Promise.all(COMM.map(async ([label, sym]) => ({ label, ...(await spark(sym)) }))),
     Promise.all(CRYPTO.map(async ([label, sym]) => ({ label, ...(await spark(sym, usdkrw)) }))),
   ]);
-  // 코스피200 선물 (네이버 FUT). 코스닥 선물은 무료 심볼 미확보.
+  // 선물: 코스피200(네이버 FUT) + 글로벌 지수선물(야후)
   let futures: { label: string; price: number; changePct: number; spark: number[] }[] = [];
   try {
     const d = await daily("FUT", 35);
     const c = d.map((x) => x.close);
     const price = c[c.length - 1] ?? 0;
     const prev = c[c.length - 2] ?? price;
-    futures = [{ label: "코스피200 선물", price, changePct: prev ? (price / prev - 1) * 100 : 0, spark: c.slice(-30) }];
+    if (price) futures.push({ label: "코스피200 선물", price, changePct: prev ? (price / prev - 1) * 100 : 0, spark: c.slice(-30) });
   } catch {
-    futures = [];
+    /* 코스피200 선물 실패 시 생략 */
   }
+  const globalFut = await Promise.all(
+    FUT_GLOBAL.map(async ([label, sym]) => {
+      try {
+        return { label, ...(await spark(sym)) };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  futures = [...futures, ...globalFut.filter((x): x is NonNullable<typeof x> => !!x && x.price > 0)];
   return { fx, commodities, crypto, futures };
 }
 
 export async function GET() {
   try {
-    const data = await cached("market:spark", 60, build);
+    const data = await cached("market:spark2", 60, build);
     return NextResponse.json(data);
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
