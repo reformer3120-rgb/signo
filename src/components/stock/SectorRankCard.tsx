@@ -113,13 +113,13 @@ export function SectorRankCard({
                     ["주가흐름", r.target.parts.모멘텀],
                     ["밸류", r.target.parts.밸류],
                     ["성장", r.target.parts.성장],
-                    ["애널", r.target.parts.애널],
-                    ["외국인", r.target.parts.외국인],
+                    ["애널리스트", r.target.parts.애널],
+                    ["외국인 비중", r.target.parts.외국인],
                     ["배당", r.target.parts.배당],
                   ] as [string, number][]
                 ).map(([k, v]) => (
-                  <div key={k} className="rounded-lg bg-canvas/60 px-2 py-1.5 text-center">
-                    <div className="text-[10px] text-muted">{k}</div>
+                  <div key={k} className="rounded-lg bg-canvas/60 px-1.5 py-1.5 text-center">
+                    <div className="text-[10px] text-muted truncate">{k}</div>
                     <div className="tnum text-sm font-bold">{v}</div>
                   </div>
                 ))}
@@ -181,6 +181,8 @@ export function SectorRankCard({
           <ol className="flex flex-col gap-1">
             {r.ranked.map((s, i) => {
               const me = s.code === code;
+              // 상위 10위 밖인데 목록 끝에 덧붙여진 검색 종목
+              const outOfTop = me && i >= 10;
               return (
                 <li
                   key={s.code}
@@ -194,9 +196,9 @@ export function SectorRankCard({
                     me
                       ? "bg-brand/10 border border-brand/30"
                       : "border border-line/50 cursor-pointer hover:border-brand/40 hover:bg-brand/5"
-                  }`}
+                  } ${outOfTop ? "mt-1.5 border-dashed" : ""}`}
                 >
-                  <span className="tnum text-xs text-muted w-5">{i + 1}</span>
+                  <span className="tnum text-xs text-muted w-6 shrink-0">{s.rank}</span>
                   <span className="font-medium flex-1 truncate min-w-0">{s.name}</span>
                   {s.maSignal === "골든크로스" && (
                     <span

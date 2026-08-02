@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -7,7 +7,8 @@ import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { InvestorPanel } from "@/components/InvestorPanel";
-import type { Candle, Interval } from "@/lib/types";
+import { num, pct, signColor, won } from "@/lib/format";
+import type { Candle, Interval, Quote } from "@/lib/types";
 
 const TABS: { key: string; label: string }[] = [
   { key: "min", label: "분봉" },
@@ -23,7 +24,6 @@ export function StockSection({
   name: nameProp,
   tab: tabProp,
   minUnit: minUnitProp,
-  onCode,
   onTab,
   onMinUnit,
 }: {
@@ -31,13 +31,11 @@ export function StockSection({
   name?: string;
   tab?: string;
   minUnit?: Interval;
-  onCode?: (code: string, name: string) => void;
   onTab?: (tab: string) => void;
   onMinUnit?: (u: Interval) => void;
 }) {
-  const [codeState, setCodeState] = useState("005930");
-  const [nameState] = useState("삼성전자");
-  const code = codeProp ?? codeState;
+  const code = codeProp ?? "005930";
+  const name = nameProp ?? "삼성전자";
   const [tabState, setTabState] = useState("1D");
   const [minUnitState, setMinUnitState] = useState<Interval>("5");
   const tab = tabProp ?? tabState;
@@ -53,7 +51,20 @@ export function StockSection({
     { refreshInterval: tab === "min" ? 60_000 : 0 },
   );
 
+  const { data: quote } = useSWR<{ data: Quote }>(`/api/quote?code=${code}`, fetcher, {
+    refreshInterval: 30_000,
+  });
+
   const candles = ohlcv?.data ?? [];
+  const stat = useMemo(() => {
+    if (!candles.length) return null;
+    return {
+      hi: Math.max(...candles.map((c) => c.high)),
+      lo: Math.min(...candles.map((c) => c.low)),
+      volume: candles[candles.length - 1].volume,
+    };
+  }, [candles]);
+  const q = quote?.data;
 
   return (
     <Card
@@ -89,10 +100,35 @@ export function StockSection({
         </div>
       }
     >
-      {/* 종목명·가격·고저·거래량은 상단 고정바(StockStickyBar)에 표시 */}
-      {tab === "min" && (
-        <div className="mb-2 text-xs text-signal">· 네이버 {minUnit}분봉</div>
-      )}
+      {/* 종목명·현재가는 스크롤해도 보이도록 카드 안에서 고정 */}
+      <div className="sticky top-[5.9rem] z-10 -mx-4 mb-2 border-b border-line/60 bg-surface/95 px-4 py-2 backdrop-blur">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-sm font-semibold">{name}</span>
+          {q && (
+            <>
+              <span className="tnum text-2xl font-bold">{won(q.price)}</span>
+              <span className="text-xs text-muted">원</span>
+              <span className={`tnum text-sm font-semibold ${signColor(q.changePct)}`}>
+                {pct(q.changePct)}
+              </span>
+            </>
+          )}
+          {stat && (
+            <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
+              <span>
+                고 <b className="tnum text-up">{num(stat.hi)}</b>
+              </span>
+              <span>
+                저 <b className="tnum text-down">{num(stat.lo)}</b>
+              </span>
+              <span className="hidden sm:inline">
+                거래량 <b className="tnum text-fg">{num(stat.volume)}</b>
+              </span>
+              {tab === "min" && <span className="text-signal">· {minUnit}분봉</span>}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
         <IndicatorBar value={ind} onChange={setInd} />

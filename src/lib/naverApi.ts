@@ -481,6 +481,7 @@ export interface ScoredStock {
   y1: number;
   maSignal: MaSignal; // 골든크로스 / 정배열 / 역배열 / 데드크로스
   crossDays: number; // 최근 교차 이후 경과 거래일 (없으면 -1)
+  rank: number; // 비교군 내 순위
   trendScore: number; // 최근 주가흐름 성적 (0~100)
   trendGrade: string; // A+ ~ D
   score: number;
@@ -688,9 +689,16 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     }));
   members.sort((a, b) => b.cap - a.cap);
   const top = members.slice(0, 15);
+  // 검색한 종목은 시총 상위 밖이거나 해당 테마 소속이 아니어도 반드시 평가에 포함
   if (code && !top.find((m) => m.code === code)) {
-    const me = members.find((m) => m.code === code);
-    if (me) top.push(me);
+    top.push(
+      members.find((m) => m.code === code) ?? {
+        code,
+        name: detail.name,
+        cap: detail.marketCap * 1e8,
+        threeMo: 0,
+      },
+    );
   }
   // 종목별 상세 + 연간재무 + 일봉(장기 수익률) 병렬 수집
   const enriched = await Promise.all(
@@ -795,6 +803,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       y1: e.y1,
       maSignal: e.cross.signal,
       crossDays: e.cross.days,
+      rank: 0, // 정렬 후 채움
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
       score,
@@ -810,15 +819,19 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     };
   });
   scored.sort((a, b) => b.score - a.score);
-  const rank = scored.findIndex((s) => s.code === code) + 1;
+  scored.forEach((s, i) => (s.rank = i + 1));
+  const target = scored.find((s) => s.code === code);
+  const top10 = scored.slice(0, 10);
+  // 검색한 종목이 상위 10위 밖이어도 목록 끝에 붙여 항상 보이게
+  const ranked = target && !top10.some((s) => s.code === code) ? [...top10, target] : top10;
   return {
     industryName: groupName,
     groupKey,
     groups,
     total: scored.length,
-    rank,
-    ranked: scored.slice(0, 10),
-    target: scored.find((s) => s.code === code),
+    rank: target?.rank ?? 0,
+    ranked,
+    target,
   };
 }
 
