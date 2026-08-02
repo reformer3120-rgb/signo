@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -7,7 +7,8 @@ import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { InvestorPanel } from "@/components/InvestorPanel";
-import type { Candle, Interval } from "@/lib/types";
+import { num, pct, signColor, won } from "@/lib/format";
+import type { Candle, Interval, Quote } from "@/lib/types";
 
 const TABS: { key: string; label: string }[] = [
   { key: "min", label: "분봉" },
@@ -50,11 +51,51 @@ export function StockSection({
     { refreshInterval: tab === "min" ? 60_000 : 0 },
   );
 
+  const { data: quote } = useSWR<{ data: Quote }>(`/api/quote?code=${code}`, fetcher, {
+    refreshInterval: 30_000,
+  });
+
   const candles = ohlcv?.data ?? [];
+  const stat = useMemo(() => {
+    if (!candles.length) return null;
+    return {
+      hi: Math.max(...candles.map((c) => c.high)),
+      lo: Math.min(...candles.map((c) => c.low)),
+      volume: candles[candles.length - 1].volume,
+    };
+  }, [candles]);
+  const q = quote?.data;
 
   return (
     <Card>
-      {/* 종목명·현재가·고저·거래량은 상단 고정바(StockStickyBar)에 표시 */}
+      {/* 종목명·현재가 — 박스가 화면에 있는 동안 스크롤해도 보이도록 고정 */}
+      <div className="sticky top-[5.9rem] z-10 -mx-4 mb-2 border-b border-line/60 bg-surface/95 px-4 py-2 backdrop-blur">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-xl font-semibold">{name}</span>
+          {q && (
+            <>
+              <span className="tnum text-xl font-bold">{won(q.price)}</span>
+              <span className={`tnum text-sm font-semibold ${signColor(q.changePct)}`}>
+                {pct(q.changePct)}
+              </span>
+            </>
+          )}
+          {stat && (
+            <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
+              <span>
+                고 <b className="tnum text-up">{num(stat.hi)}</b>
+              </span>
+              <span>
+                저 <b className="tnum text-down">{num(stat.lo)}</b>
+              </span>
+              <span className="hidden sm:inline">
+                거래량 <b className="tnum text-fg">{num(stat.volume)}</b>
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* 지표와 봉주기를 같은 선상에 배치 */}
       <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
