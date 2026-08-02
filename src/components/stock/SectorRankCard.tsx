@@ -12,6 +12,13 @@ function scoreColor(s: number) {
   return "text-muted";
 }
 
+function maColor(s: string) {
+  if (s === "골든크로스") return "bg-up/20 text-up border-up/40";
+  if (s === "정배열") return "bg-up/10 text-up border-up/25";
+  if (s === "데드크로스") return "bg-down/20 text-down border-down/40";
+  return "bg-down/10 text-down border-down/25";
+}
+
 function gradeColor(g: string) {
   if (g.startsWith("A")) return "bg-up/15 text-up border-up/30";
   if (g === "B") return "bg-signal/15 text-signal border-signal/30";
@@ -90,7 +97,8 @@ export function SectorRankCard({
                     {r.industryName} 내 <b className="text-fg">{r.rank}위</b> / {r.total}종목
                   </div>
                   <div className="text-[11px] text-muted mt-1 tnum">
-                    ROE {r.target.roe || "-"}% · 부채 {r.target.debt || "-"}% · 목표가상승
+                    ROE {r.target.roe || "-"}% · 부채 {r.target.debt || "-"}% · 외국인{" "}
+                    {r.target.foreignRate || "-"}% · 목표가상승
                     {r.target.upside > 0 ? "+" : ""}
                     {r.target.upside}%
                   </div>
@@ -98,14 +106,15 @@ export function SectorRankCard({
               </div>
 
               {/* 세부 점수 */}
-              <div className="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+              <div className="mt-3 grid grid-cols-4 sm:grid-cols-7 gap-1.5">
                 {(
                   [
                     ["재무", r.target.parts.재무],
-                    ["성장", r.target.parts.성장],
+                    ["주가흐름", r.target.parts.모멘텀],
                     ["밸류", r.target.parts.밸류],
+                    ["성장", r.target.parts.성장],
                     ["애널", r.target.parts.애널],
-                    ["모멘텀", r.target.parts.모멘텀],
+                    ["외국인", r.target.parts.외국인],
                     ["배당", r.target.parts.배당],
                   ] as [string, number][]
                 ).map(([k, v]) => (
@@ -128,6 +137,19 @@ export function SectorRankCard({
                     {r.target.trendGrade}
                   </span>
                   <span className="tnum text-[11px] text-muted">{r.target.trendScore}점</span>
+                  {r.target.maSignal !== "-" && (
+                    <span
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
+                        r.target.maSignal,
+                      )}`}
+                      title="20일선 vs 60일선"
+                    >
+                      {r.target.maSignal}
+                      {(r.target.maSignal === "골든크로스" || r.target.maSignal === "데드크로스") &&
+                        r.target.crossDays >= 0 &&
+                        ` ${r.target.crossDays}일`}
+                    </span>
+                  )}
                   <span className="text-[10px] text-muted ml-auto hidden sm:inline">섹터 내 상대성적</span>
                 </div>
                 <div className="grid grid-cols-5 gap-1 text-center">
@@ -176,6 +198,14 @@ export function SectorRankCard({
                 >
                   <span className="tnum text-xs text-muted w-5">{i + 1}</span>
                   <span className="font-medium flex-1 truncate min-w-0">{s.name}</span>
+                  {s.maSignal === "골든크로스" && (
+                    <span
+                      className="rounded border border-up/40 bg-up/20 px-1 text-[10px] font-bold text-up shrink-0"
+                      title={`20일선이 60일선 상향돌파 (${s.crossDays}일 전)`}
+                    >
+                      골든
+                    </span>
+                  )}
                   <span
                     className={`rounded border px-1 text-[10px] font-bold shrink-0 ${gradeColor(s.trendGrade)}`}
                     title="최근 주가흐름 성적"
@@ -198,8 +228,9 @@ export function SectorRankCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
-            점수 = 재무건전성(ROE·부채·이익률) 27 + 주가흐름 18 + 밸류(PER·PBR·EPS) 18 + 성장성 15 +
-            애널리스트(목표가) 10 + 배당 7 + 시총 5 (비교군 내 상대평가, 100점)
+            점수 = 재무건전성(ROE·부채·이익률) 27 + 주가흐름(기간수익률·골든크로스) 18 +
+            밸류(PER·PBR·EPS) 18 + 성장성 15 + 애널리스트(목표가) 10 + 외국인보유비중 6 + 배당 4 + 시총 2
+            (비교군 내 상대평가, 100점)
           </div>
         </>
       )}

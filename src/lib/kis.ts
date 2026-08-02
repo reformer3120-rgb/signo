@@ -150,10 +150,14 @@ export interface FiRow {
   foreign: number;
   inst: number;
   net: number;
+  krxVol: number; // KRX 거래량
+  unVol: number; // 통합(KRX+NXT) 거래량 — 미조회 시 0
+  nxtShare: number; // NXT 거래 비중 % — 미조회 시 -1
 }
 
 export async function foreignInstitution(
   market: "ALL" | "KOSPI" | "KOSDAQ" = "ALL",
+  enrich = 15,
 ): Promise<FiRow[]> {
   const iscd = market === "KOSPI" ? "0001" : market === "KOSDAQ" ? "1001" : "0000";
   const j = await kisGet(
@@ -169,7 +173,7 @@ export async function foreignInstitution(
     },
   );
   const out = (j.output as Record<string, string>[]) ?? [];
-  return out.map((r) => ({
+  const rows: FiRow[] = out.map((r) => ({
     code: r.mksc_shrn_iscd,
     name: r.hts_kor_isnm,
     price: n(r.stck_prpr),
@@ -177,7 +181,32 @@ export async function foreignInstitution(
     foreign: n(r.frgn_ntby_qty),
     inst: n(r.orgn_ntby_qty),
     net: n(r.ntby_qty),
+    krxVol: n(r.acml_vol),
+    unVol: 0,
+    nxtShare: -1,
   }));
+
+  // 상위 표시분만 통합(KRX+NXT) 거래량 조회 → NXT 비중 산출.
+  // 이 TR 자체는 KRX 기준이라 순매수 수량은 KRX 값임.
+  const target = rows.slice(0, enrich);
+  for (let i = 0; i < target.length; i += 4) {
+    await Promise.all(
+      target.slice(i, i + 4).map(async (r) => {
+        try {
+          const u = await stockPrice(r.code, "UN");
+          if (u.volume > 0) {
+            r.unVol = u.volume;
+            const nxt = Math.max(0, u.volume - r.krxVol);
+            r.nxtShare = +((nxt / u.volume) * 100).toFixed(1);
+          }
+        } catch {
+          /* 통합 시세 실패 시 KRX 값만 유지 */
+        }
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return rows;
 }
 
 // ---- 프로그램매매 (시간대별 차익/비차익/전체 순매수, 단위: 백만원) ----
@@ -217,12 +246,15 @@ export async function programTrade(market: "KOSPI" | "KOSDAQ" = "KOSPI"): Promis
     }));
 }
 
-// ---- 주식 현재가 (검증/기본) ----
-export async function stockPrice(code: string) {
+// ---- 주식 현재가 ----
+// 거래소 구분: J=KRX, NX=넥스트레이드(NXT), UN=통합(KRX+NXT)
+export type Exchange = "J" | "NX" | "UN";
+
+export async function stockPrice(code: string, exchange: Exchange = "J") {
   const j = await kisGet(
     "/uapi/domestic-stock/v1/quotations/inquire-price",
     "FHKST01010100",
-    { FID_COND_MRKT_DIV_CODE: "J", FID_INPUT_ISCD: code },
+    { FID_COND_MRKT_DIV_CODE: exchange, FID_INPUT_ISCD: code },
   );
   const o = (j.output as Record<string, string>) ?? {};
   return {
@@ -230,4 +262,49 @@ export async function stockPrice(code: string) {
     changePct: Number(o.prdy_ctrt) || 0,
     volume: n(o.acml_vol),
   };
+}
+
+// ---- 등락률 순위 (거래소별) ----
+// 통합(UN)은 이 TR에서 미지원 → KRX(J) 또는 NXT(NX)만 가능
+export interface RankRow {
+  code: string;
+  name: string;
+  price: number;
+  changePct: number;
+  volume: number;
+}
+
+export async function fluctuationRank(
+  exchange: "J" | "NX",
+  market: "ALL" | "KOSPI" | "KOSDAQ",
+  dir: "up" | "down",
+): Promise<RankRow[]> {
+  const iscd = market === "KOSPI" ? "0001" : market === "KOSDAQ" ? "1001" : "0000";
+  const j = await kisGet("/uapi/domestic-stock/v1/ranking/fluctuation", "FHPST01700000", {
+    fid_cond_mrkt_div_code: exchange,
+    fid_cond_scr_div_code: "20170",
+    fid_input_iscd: iscd,
+    fid_rank_sort_cls_code: dir === "up" ? "0" : "1",
+    fid_input_cnt_1: "0",
+    fid_prc_cls_code: "0",
+    fid_input_price_1: "",
+    fid_input_price_2: "",
+    fid_vol_cnt: "",
+    fid_trgt_cls_code: "0",
+    fid_trgt_exls_cls_code: "0",
+    fid_div_cls_code: "0",
+    fid_rsfl_rate1: "",
+    fid_rsfl_rate2: "",
+  });
+  const out = (j.output as Record<string, string>[]) ?? [];
+  const rows = out.map((r) => ({
+    code: r.stck_shrn_iscd ?? r.mksc_shrn_iscd,
+    name: r.hts_kor_isnm,
+    price: n(r.stck_prpr),
+    changePct: Number(r.prdy_ctrt) || 0,
+    volume: n(r.acml_vol),
+  }));
+  // KIS가 반환하는 순위는 기간등락률(prd_rsfl_rate) 기준이라 당일 등락률과 어긋남 → 직접 정렬
+  rows.sort((a, b) => (dir === "up" ? b.changePct - a.changePct : a.changePct - b.changePct));
+  return rows;
 }

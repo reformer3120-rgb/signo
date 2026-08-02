@@ -471,6 +471,7 @@ export interface ScoredStock {
   debt: number; // 부채비율
   growth: number; // 매출·영익 성장 평균 %
   upside: number; // 애널리스트 목표주가 상승여력 %
+  foreignRate: number; // 외국인 보유비중 %
   threeMo: number;
   d1: number;
   w1: number;
@@ -478,10 +479,20 @@ export interface ScoredStock {
   m3: number;
   m6: number;
   y1: number;
+  maSignal: MaSignal; // 골든크로스 / 정배열 / 역배열 / 데드크로스
+  crossDays: number; // 최근 교차 이후 경과 거래일 (없으면 -1)
   trendScore: number; // 최근 주가흐름 성적 (0~100)
   trendGrade: string; // A+ ~ D
   score: number;
-  parts: { 재무: number; 성장: number; 밸류: number; 애널: number; 모멘텀: number; 배당: number };
+  parts: {
+    재무: number;
+    성장: number;
+    밸류: number;
+    애널: number;
+    모멘텀: number;
+    배당: number;
+    외국인: number;
+  };
 }
 export interface SectorGroupOption {
   key: string; // "industry" | "theme:614"
@@ -549,6 +560,57 @@ function finMetrics(fin: Financials) {
 function isPreferredDuplicate(name: string, commonNames: Set<string>): boolean {
   const m = name.match(/^(.+?)\d*우[A-Z]?$/);
   return !!m && commonNames.has(m[1]);
+}
+
+// ---- 이동평균 교차 (골든크로스/데드크로스) ----
+export type MaSignal = "골든크로스" | "정배열" | "역배열" | "데드크로스" | "-";
+
+function movingAvg(closes: number[], p: number): (number | null)[] {
+  const out: (number | null)[] = [];
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= p) sum -= closes[i - p];
+    out.push(i >= p - 1 ? sum / p : null);
+  }
+  return out;
+}
+
+/**
+ * 20일선과 60일선의 교차 상태.
+ * 골든크로스 = 최근 20거래일 내 20일선이 60일선을 상향 돌파(가장 강한 신호)
+ * 정배열 = 20일선이 60일선 위 / 역배열 = 아래 / 데드크로스 = 최근 하향 돌파
+ */
+function maCross(closes: number[]): { signal: MaSignal; days: number; score: number } {
+  if (closes.length < 61) return { signal: "-", days: -1, score: 0.5 };
+  const s = movingAvg(closes, 20);
+  const l = movingAvg(closes, 60);
+  const above = (i: number) => s[i] !== null && l[i] !== null && (s[i] as number) > (l[i] as number);
+  const last = closes.length - 1;
+  // 가장 최근 교차 시점 찾기
+  let cross = -1;
+  for (let i = last; i > 0; i--) {
+    if (s[i] === null || l[i] === null || s[i - 1] === null || l[i - 1] === null) break;
+    if (above(i) !== above(i - 1)) {
+      cross = last - i;
+      break;
+    }
+  }
+  const up = above(last);
+  const fresh = cross >= 0 && cross <= 20;
+  if (up) {
+    // 갓 만들어진 골든크로스일수록 가점 ↑
+    return {
+      signal: fresh ? "골든크로스" : "정배열",
+      days: cross,
+      score: fresh ? 1 - (cross / 20) * 0.2 : 0.7,
+    };
+  }
+  return {
+    signal: fresh ? "데드크로스" : "역배열",
+    days: cross,
+    score: fresh ? 0.05 : 0.25,
+  };
 }
 
 // 주가흐름 성적 등급 (0~100 → A+ ~ D)
@@ -651,6 +713,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       // 테마 그룹은 시총/3개월수익률이 비어 있으므로 상세·일봉에서 보완
       const cap = m.cap || (dd?.marketCap ?? 0) * 1e8;
       const threeMo = m.threeMo || sr.m3;
+      const cross = maCross(closes);
       return {
         ...m,
         cap,
@@ -660,6 +723,8 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         eps: dd?.eps ?? 0,
         div: dd?.dividendYield ?? 0,
         upside: dd?.upside ?? 0,
+        foreignRate: numSuffix(dd?.foreignRate),
+        cross,
         ...fm,
         ...sr,
       };
@@ -677,14 +742,17 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const upsideN = scoreDim(enriched.map((e) => e.upside), "hi");
   const divN = scoreDim(enriched.map((e) => e.div), "hi");
   const capN = scoreDim(enriched.map((e) => Math.log10(Math.max(e.cap, 1))), "hi");
-  // 최근 주가흐름 성적표: 1주·1달·3달·6달·1년 상대성적을 가중 합산 (최근일수록 가중↑)
+  const frgnN = scoreDim(enriched.map((e) => (e.foreignRate > 0 ? e.foreignRate : NaN)), "hi");
+  // 최근 주가흐름 성적표: 기간수익률(75%) + 이동평균 교차 신호(25%)
   const w1N = scoreDim(enriched.map((e) => e.w1), "hi");
   const m1N = scoreDim(enriched.map((e) => e.m1), "hi");
   const m3N = scoreDim(enriched.map((e) => e.m3 || e.threeMo), "hi");
   const m6N = scoreDim(enriched.map((e) => e.m6), "hi");
   const y1N = scoreDim(enriched.map((e) => e.y1), "hi");
   const trend = enriched.map(
-    (_, i) => w1N[i] * 0.15 + m1N[i] * 0.3 + m3N[i] * 0.25 + m6N[i] * 0.2 + y1N[i] * 0.1,
+    (e, i) =>
+      (w1N[i] * 0.15 + m1N[i] * 0.3 + m3N[i] * 0.25 + m6N[i] * 0.2 + y1N[i] * 0.1) * 0.75 +
+      e.cross.score * 0.25,
   );
 
   const scored: ScoredStock[] = enriched.map((e, i) => {
@@ -692,10 +760,18 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     const 성장 = growthN[i];
     const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
     const 애널 = upsideN[i];
-    const 모멘텀 = trend[i]; // 주가흐름 성적표를 모멘텀 점수로 사용
+    const 모멘텀 = trend[i]; // 주가흐름 성적표(수익률+골든크로스)를 모멘텀 점수로 사용
     const 배당 = divN[i];
+    const 외국인 = frgnN[i];
     const score = Math.round(
-      (재무 * 0.27 + 성장 * 0.15 + 밸류 * 0.18 + 애널 * 0.1 + 모멘텀 * 0.18 + 배당 * 0.07 + capN[i] * 0.05) *
+      (재무 * 0.27 +
+        모멘텀 * 0.18 +
+        밸류 * 0.18 +
+        성장 * 0.15 +
+        애널 * 0.1 +
+        외국인 * 0.06 +
+        배당 * 0.04 +
+        capN[i] * 0.02) *
         100,
     );
     return {
@@ -709,6 +785,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       debt: Number.isFinite(e.debt) ? +e.debt.toFixed(0) : 0,
       growth: Number.isFinite(e.growth) ? +e.growth.toFixed(1) : 0,
       upside: e.upside,
+      foreignRate: e.foreignRate,
       threeMo: e.threeMo,
       d1: e.d1,
       w1: e.w1,
@@ -716,6 +793,8 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       m3: e.m3,
       m6: e.m6,
       y1: e.y1,
+      maSignal: e.cross.signal,
+      crossDays: e.cross.days,
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
       score,
@@ -726,6 +805,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         애널: Math.round(애널 * 100),
         모멘텀: Math.round(모멘텀 * 100),
         배당: Math.round(배당 * 100),
+        외국인: Math.round(외국인 * 100),
       },
     };
   });

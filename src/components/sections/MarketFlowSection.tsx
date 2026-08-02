@@ -65,6 +65,8 @@ export function MarketFlowSection() {
                 <th className="text-right font-medium px-2">등락률</th>
                 <th className="text-right font-medium px-2">외국인</th>
                 <th className="text-right font-medium px-2">기관</th>
+                <th className="text-right font-medium px-2 whitespace-nowrap">거래량(통합)</th>
+                <th className="text-right font-medium px-2 whitespace-nowrap">NXT비중</th>
               </tr>
             </thead>
             <tbody>
@@ -75,11 +77,25 @@ export function MarketFlowSection() {
                   <td className={`text-right tnum px-2 ${signColor(r.changePct)}`}>{pct(r.changePct)}</td>
                   <Flow v={r.foreign} />
                   <Flow v={r.inst} />
+                  <td className="text-right tnum px-2 text-muted">
+                    {r.unVol > 0 ? num(r.unVol) : num(r.krxVol)}
+                  </td>
+                  <td className="text-right tnum px-2">
+                    {r.nxtShare >= 0 ? (
+                      <span className={r.nxtShare >= 40 ? "text-signal font-semibold" : "text-muted"}>
+                        {r.nxtShare}%
+                      </span>
+                    ) : (
+                      <span className="text-muted">-</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="mt-2 text-xs text-muted">순매수 수량(주) · KIS</div>
+          <div className="mt-2 text-xs text-muted">
+            순매수 수량(주)은 KRX 기준 · 거래량은 KRX+NXT 통합, NXT비중은 넥스트레이드 체결 비중 · KIS
+          </div>
         </div>
       )}
     </Card>
