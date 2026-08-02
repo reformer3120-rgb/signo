@@ -503,6 +503,7 @@ export async function sectorRank(code: string): Promise<SectorRank> {
         ...m,
         per: dd?.per ?? 0,
         pbr: dd?.pbr ?? 0,
+        eps: dd?.eps ?? 0,
         div: dd?.dividendYield ?? 0,
         upside: dd?.upside ?? 0,
         ...fm,
@@ -518,6 +519,7 @@ export async function sectorRank(code: string): Promise<SectorRank> {
   const growthN = scoreDim(enriched.map((e) => e.growth), "hi");
   const perN = scoreDim(enriched.map((e) => (e.per > 0 ? e.per : NaN)), "lo");
   const pbrN = scoreDim(enriched.map((e) => (e.pbr > 0 ? e.pbr : NaN)), "lo");
+  const epsN = scoreDim(enriched.map((e) => (e.eps > 0 ? e.eps : NaN)), "hi");
   const upsideN = scoreDim(enriched.map((e) => e.upside), "hi");
   const m1N = scoreDim(enriched.map((e) => e.m1), "hi");
   const threeMoN = scoreDim(enriched.map((e) => e.threeMo), "hi");
@@ -527,12 +529,12 @@ export async function sectorRank(code: string): Promise<SectorRank> {
   const scored: ScoredStock[] = enriched.map((e, i) => {
     const 재무 = roeN[i] * 0.5 + debtN[i] * 0.3 + opN[i] * 0.2;
     const 성장 = growthN[i];
-    const 밸류 = perN[i] * 0.5 + pbrN[i] * 0.5;
+    const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
     const 애널 = upsideN[i];
     const 모멘텀 = m1N[i] * 0.5 + threeMoN[i] * 0.5;
     const 배당 = divN[i];
     const score = Math.round(
-      (재무 * 0.28 + 성장 * 0.18 + 밸류 * 0.15 + 애널 * 0.15 + 모멘텀 * 0.12 + 배당 * 0.07 + capN[i] * 0.05) *
+      (재무 * 0.28 + 성장 * 0.12 + 밸류 * 0.25 + 애널 * 0.15 + 모멘텀 * 0.08 + 배당 * 0.07 + capN[i] * 0.05) *
         100,
     );
     return {
