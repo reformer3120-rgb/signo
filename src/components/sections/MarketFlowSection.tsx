@@ -3,7 +3,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
-import { num, pct, signColor } from "@/lib/format";
+import { compactWon, num, pct, signColor } from "@/lib/format";
 import type { FiRow } from "@/lib/kis";
 
 const MARKETS = [
@@ -12,11 +12,12 @@ const MARKETS = [
   { key: "KOSDAQ", label: "코스닥" },
 ] as const;
 
+/** 순매수 대금 (KIS는 백만원 단위) */
 function Flow({ v }: { v: number }) {
   return (
-    <td className={`text-right tnum px-2 ${signColor(v)}`}>
+    <td className={`text-right tnum px-2 whitespace-nowrap ${signColor(v)}`}>
       {v > 0 ? "+" : ""}
-      {num(v)}
+      {compactWon(v * 1e6)}
     </td>
   );
 }
@@ -63,9 +64,9 @@ export function MarketFlowSection() {
                 <th className="text-left font-medium py-2 pl-1">종목</th>
                 <th className="text-right font-medium px-2">현재가</th>
                 <th className="text-right font-medium px-2">등락률</th>
-                <th className="text-right font-medium px-2">외국인</th>
-                <th className="text-right font-medium px-2">기관</th>
-                <th className="text-right font-medium px-2 whitespace-nowrap">거래량(통합)</th>
+                <th className="text-right font-medium px-2 whitespace-nowrap">외국인 순매수</th>
+                <th className="text-right font-medium px-2 whitespace-nowrap">기관 순매수</th>
+                <th className="text-right font-medium px-2 whitespace-nowrap">거래량</th>
                 <th className="text-right font-medium px-2 whitespace-nowrap">NXT비중</th>
               </tr>
             </thead>
@@ -75,10 +76,10 @@ export function MarketFlowSection() {
                   <td className="font-medium py-1.5 pl-1">{r.name}</td>
                   <td className="text-right tnum px-2">{num(r.price)}</td>
                   <td className={`text-right tnum px-2 ${signColor(r.changePct)}`}>{pct(r.changePct)}</td>
-                  <Flow v={r.foreign} />
-                  <Flow v={r.inst} />
+                  <Flow v={r.foreignValue} />
+                  <Flow v={r.instValue} />
                   <td className="text-right tnum px-2 text-muted">
-                    {r.unVol > 0 ? num(r.unVol) : num(r.krxVol)}
+                    {num(r.unVol > 0 ? r.unVol : r.krxVol)}
                   </td>
                   <td className="text-right tnum px-2">
                     {r.nxtShare >= 0 ? (
@@ -94,7 +95,7 @@ export function MarketFlowSection() {
             </tbody>
           </table>
           <div className="mt-2 text-xs text-muted">
-            외국인+기관 순매수 <b>대금</b> 큰 순 · 순매수는 수량(주), KRX 기준 · 거래량은 KRX+NXT 통합 · KIS
+            순매수 <b>대금</b> 기준 · KRX+NXT 합산 · KIS
           </div>
         </div>
       )}

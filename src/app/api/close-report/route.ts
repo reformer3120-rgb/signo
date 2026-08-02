@@ -140,10 +140,11 @@ async function build() {
 
   if (fi.length) {
     L.push("[ 시장 수급 · 외국인·기관 순매수 상위 ]");
-    L.push("  (순매수 대금 기준, 백만원 · KRX)");
+    L.push("  (순매수 대금 기준, 억원 · KRX+NXT 합산)");
+    const eokFromMillion = (v: number) => `${v > 0 ? "+" : ""}${f(Math.round(v / 100))}`;
     fi.slice(0, 10).forEach((r, i) =>
       L.push(
-        `    ${String(i + 1).padStart(2)}. ${r.name.padEnd(12)} ${f(r.price).padStart(9)} ${sign(r.changePct).padStart(7)}%  외인 ${f(r.foreignValue).padStart(8)}  기관 ${f(r.instValue).padStart(8)}`,
+        `    ${String(i + 1).padStart(2)}. ${r.name.padEnd(12)} ${f(r.price).padStart(9)} ${sign(r.changePct).padStart(7)}%  외인 ${eokFromMillion(r.foreignValue).padStart(9)}  기관 ${eokFromMillion(r.instValue).padStart(9)}`,
       ),
     );
     L.push("");
