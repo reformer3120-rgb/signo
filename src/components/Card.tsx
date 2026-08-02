@@ -17,7 +17,11 @@ export function Card({
     >
       {(title || right) && (
         <header className="flex items-center justify-between gap-2 flex-wrap px-4 pt-3.5 pb-2">
-          <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+          {title ? (
+            <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+          ) : (
+            <span />
+          )}
           {right && <div className="min-w-0 max-w-full overflow-x-auto">{right}</div>}
         </header>
       )}

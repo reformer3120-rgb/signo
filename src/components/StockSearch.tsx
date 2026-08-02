@@ -6,10 +6,8 @@ import { fetcher } from "@/lib/swr";
 import type { SearchItem } from "@/lib/naverApi";
 
 export function StockSearch({
-  current,
   onSelect,
 }: {
-  current: string;
   onSelect: (code: string, name: string) => void;
 }) {
   const [q, setQ] = useState("");
@@ -33,8 +31,8 @@ export function StockSearch({
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder={current}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-fg placeholder:font-medium"
+          placeholder="종목 검색"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted placeholder:font-normal"
         />
       </div>
       {open && q.trim() && items.length > 0 && (

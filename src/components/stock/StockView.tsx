@@ -13,6 +13,7 @@ export function StockView() {
   const [name, setName] = useState("삼성전자");
   const [tab, setTab] = useState("1D");
   const [minUnit, setMinUnit] = useState<Interval>("5");
+  const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
   const select = (c: string, n: string) => {
     setCode(c);
@@ -25,7 +26,7 @@ export function StockView() {
 
   return (
     <>
-      <StockStickyBar code={code} name={name} onSelect={select} />
+      <StockStickyBar code={code} name={name} interval={interval} onSelect={select} />
       <StockSection
         code={code}
         name={name}

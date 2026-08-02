@@ -510,18 +510,23 @@ export interface SectorRank {
   target?: ScoredStock;
 }
 
-// 방향(hi=클수록 좋음, lo=작을수록 좋음) 정규화. 결측(NaN)은 최저(0).
-function scoreDim(vals: number[], dir: "hi" | "lo"): number[] {
-  const valid = vals.filter((v) => Number.isFinite(v));
-  if (!valid.length) return vals.map(() => 0.5);
+/**
+ * 방향(hi=클수록 좋음, lo=작을수록 좋음) 정규화 스케일러.
+ * 기준(min/max)은 '비교군 고정 멤버'로만 만든다 — 검색한 종목이 무엇이냐에 따라
+ * 기준이 흔들려 같은 업종인데 순위가 매번 달라지는 것을 막기 위함.
+ * 기준 밖의 값(검색 종목이 최댓값을 넘는 등)은 0~1로 클램프.
+ */
+function dimScaler(baseVals: number[], dir: "hi" | "lo"): (v: number) => number {
+  const valid = baseVals.filter((v) => Number.isFinite(v));
+  if (!valid.length) return () => 0.5;
   const min = Math.min(...valid);
   const max = Math.max(...valid);
   const range = max - min || 1;
-  return vals.map((v) => {
+  return (v: number) => {
     if (!Number.isFinite(v)) return 0;
-    const t = (v - min) / range;
+    const t = Math.min(1, Math.max(0, (v - min) / range));
     return dir === "hi" ? t : 1 - t;
-  });
+  };
 }
 
 const avgFinite = (xs: number[]) => {
@@ -688,9 +693,12 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       threeMo: Number(s.threeMonthEarningRate) || 0,
     }));
   members.sort((a, b) => b.cap - a.cap);
-  const top = members.slice(0, 15);
+  // 비교군 고정 멤버 = 시총 상위 15 (검색 종목과 무관하게 항상 동일)
+  const base = members.slice(0, 15);
+  const top = [...base];
   // 검색한 종목은 시총 상위 밖이거나 해당 테마 소속이 아니어도 반드시 평가에 포함
-  if (code && !top.find((m) => m.code === code)) {
+  const isExtra = !!code && !base.some((m) => m.code === code);
+  if (isExtra) {
     top.push(
       members.find((m) => m.code === code) ?? {
         code,
@@ -739,24 +747,30 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     }),
   );
 
-  // 정규화 차원들
-  const roeN = scoreDim(enriched.map((e) => e.roe), "hi");
-  const debtN = scoreDim(enriched.map((e) => e.debt), "lo");
-  const opN = scoreDim(enriched.map((e) => e.opMargin), "hi");
-  const growthN = scoreDim(enriched.map((e) => e.growth), "hi");
-  const perN = scoreDim(enriched.map((e) => (e.per > 0 ? e.per : NaN)), "lo");
-  const pbrN = scoreDim(enriched.map((e) => (e.pbr > 0 ? e.pbr : NaN)), "lo");
-  const epsN = scoreDim(enriched.map((e) => (e.eps > 0 ? e.eps : NaN)), "hi");
-  const upsideN = scoreDim(enriched.map((e) => e.upside), "hi");
-  const divN = scoreDim(enriched.map((e) => e.div), "hi");
-  const capN = scoreDim(enriched.map((e) => Math.log10(Math.max(e.cap, 1))), "hi");
-  const frgnN = scoreDim(enriched.map((e) => (e.foreignRate > 0 ? e.foreignRate : NaN)), "hi");
+  // 정규화 기준은 고정 멤버(base)로만 산출 → 어떤 종목을 검색해도 그룹 순위가 동일
+  type E = (typeof enriched)[number];
+  const baseRows = enriched.filter((e) => base.some((m) => m.code === e.code));
+  const mk = (pick: (e: E) => number, dir: "hi" | "lo") => {
+    const s = dimScaler(baseRows.map(pick), dir);
+    return enriched.map((e) => s(pick(e)));
+  };
+  const roeN = mk((e) => e.roe, "hi");
+  const debtN = mk((e) => e.debt, "lo");
+  const opN = mk((e) => e.opMargin, "hi");
+  const growthN = mk((e) => e.growth, "hi");
+  const perN = mk((e) => (e.per > 0 ? e.per : NaN), "lo");
+  const pbrN = mk((e) => (e.pbr > 0 ? e.pbr : NaN), "lo");
+  const epsN = mk((e) => (e.eps > 0 ? e.eps : NaN), "hi");
+  const upsideN = mk((e) => e.upside, "hi");
+  const divN = mk((e) => e.div, "hi");
+  const capN = mk((e) => Math.log10(Math.max(e.cap, 1)), "hi");
+  const frgnN = mk((e) => (e.foreignRate > 0 ? e.foreignRate : NaN), "hi");
   // 최근 주가흐름 성적표: 기간수익률(75%) + 이동평균 교차 신호(25%)
-  const w1N = scoreDim(enriched.map((e) => e.w1), "hi");
-  const m1N = scoreDim(enriched.map((e) => e.m1), "hi");
-  const m3N = scoreDim(enriched.map((e) => e.m3 || e.threeMo), "hi");
-  const m6N = scoreDim(enriched.map((e) => e.m6), "hi");
-  const y1N = scoreDim(enriched.map((e) => e.y1), "hi");
+  const w1N = mk((e) => e.w1, "hi");
+  const m1N = mk((e) => e.m1, "hi");
+  const m3N = mk((e) => e.m3 || e.threeMo, "hi");
+  const m6N = mk((e) => e.m6, "hi");
+  const y1N = mk((e) => e.y1, "hi");
   const trend = enriched.map(
     (e, i) =>
       (w1N[i] * 0.15 + m1N[i] * 0.3 + m3N[i] * 0.25 + m6N[i] * 0.2 + y1N[i] * 0.1) * 0.75 +
