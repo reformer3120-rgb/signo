@@ -156,6 +156,7 @@ export interface FiRow {
   krxVol: number; // KRX 거래량
   unVol: number; // 통합(KRX+NXT) 거래량 — 미조회 시 0
   nxtShare: number; // NXT 거래 비중 % — 미조회 시 -1
+  nxtValue?: number; // NXT 거래대금(원) — NXT 전용 모드에서만
 }
 
 export async function foreignInstitution(
@@ -270,6 +271,258 @@ export async function stockPrice(code: string, exchange: Exchange = "J") {
  */
 export const unifiedQuote = (code: string) =>
   cached(`un:${code}`, 45, () => stockPrice(code, "UN"));
+
+// ---- 거래 세션 판별 (KST) ----
+// NXT는 08:00~20:00, KRX 정규장은 09:00~15:30.
+export type Session = "PRE" | "REGULAR" | "AFTER" | "CLOSED";
+
+export function currentSession(): Session {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    weekday: "short",
+  }).formatToParts(new Date());
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  const wd = g("weekday");
+  if (wd === "Sat" || wd === "Sun") return "CLOSED";
+  const m = Number(g("hour")) * 60 + Number(g("minute"));
+  if (m >= 8 * 60 && m < 9 * 60) return "PRE"; // NXT 프리마켓
+  if (m >= 9 * 60 && m <= 15 * 60 + 30) return "REGULAR";
+  if (m > 15 * 60 + 30 && m <= 20 * 60) return "AFTER"; // NXT 애프터마켓
+  return "CLOSED";
+}
+
+// ---- NXT 등락 종목수 (NXT에서 실제 체결된 종목만) ----
+export interface NxtBreadth {
+  up: number;
+  flat: number;
+  down: number;
+  traded: number; // NXT 체결이 있는 종목 수
+  scanned: number;
+  value: number; // NXT 거래대금 합계(원)
+}
+
+export async function nxtBreadth(codes: string[]): Promise<NxtBreadth> {
+  const out: NxtBreadth = { up: 0, flat: 0, down: 0, traded: 0, scanned: codes.length, value: 0 };
+  for (let i = 0; i < codes.length; i += 30) {
+    const batch = codes.slice(i, i + 30);
+    const params: KisParams = {};
+    batch.forEach((c, k) => {
+      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "NX";
+      params[`FID_INPUT_ISCD_${k + 1}`] = c;
+    });
+    try {
+      const j = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/intstock-multprice",
+        "FHKST11300006",
+        params,
+      );
+      for (const r of ((j.output as Record<string, string>[]) ?? [])) {
+        const vol = n(r.acml_vol);
+        if (vol <= 0) continue; // NXT 미체결 종목 제외
+        out.traded++;
+        out.value += n(r.acml_tr_pbmn);
+        const price = n(r.inter2_prpr);
+        const prev = n(r.inter2_prdy_clpr);
+        if (prev <= 0 || price <= 0) continue;
+        if (price > prev) out.up++;
+        else if (price < prev) out.down++;
+        else out.flat++;
+      }
+    } catch {
+      /* 배치 실패 시 건너뜀 */
+    }
+    if (i + 30 < codes.length) await new Promise((r) => setTimeout(r, 120));
+  }
+  return out;
+}
+
+/**
+ * NXT 거래 상위 종목 (거래대금 순).
+ * KRX 투자자별 순매수 데이터가 없는 시간대(프리마켓 등)에 시장수급 대체용.
+ */
+export async function nxtActive(
+  codes: string[],
+  names: Map<string, string>,
+  top = 15,
+): Promise<FiRow[]> {
+  const rows: FiRow[] = [];
+  for (let i = 0; i < codes.length; i += 30) {
+    const batch = codes.slice(i, i + 30);
+    const params: KisParams = {};
+    batch.forEach((c, k) => {
+      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "NX";
+      params[`FID_INPUT_ISCD_${k + 1}`] = c;
+    });
+    try {
+      const j = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/intstock-multprice",
+        "FHKST11300006",
+        params,
+      );
+      for (const r of ((j.output as Record<string, string>[]) ?? [])) {
+        const vol = n(r.acml_vol);
+        if (vol <= 0) continue;
+        const code = r.inter_shrn_iscd;
+        const price = n(r.inter2_prpr);
+        const prev = n(r.inter2_prdy_clpr);
+        rows.push({
+          code,
+          name: names.get(code) ?? r.inter_kor_isnm ?? code,
+          price,
+          changePct: prev > 0 && price > 0 ? +(((price - prev) / prev) * 100).toFixed(2) : 0,
+          foreign: 0,
+          inst: 0,
+          net: 0,
+          foreignValue: 0,
+          instValue: 0,
+          netValue: 0,
+          krxVol: 0,
+          unVol: vol,
+          nxtShare: 100,
+          nxtValue: n(r.acml_tr_pbmn),
+        });
+      }
+    } catch {
+      /* 배치 실패 시 건너뜀 */
+    }
+    if (i + 30 < codes.length) await new Promise((r) => setTimeout(r, 120));
+  }
+  rows.sort((a, b) => (b.nxtValue ?? 0) - (a.nxtValue ?? 0));
+  return rows.slice(0, top);
+}
+
+// ---- 거래소별 차트 (KRX / NXT / 통합) ----
+export interface KisCandle {
+  time: number; // KST 벽시계를 그대로 표시 (기존 네이버 차트와 동일 규칙)
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+const kstUnix = (y: number, mo: number, d: number, h = 0, mi = 0) =>
+  Math.floor(Date.UTC(y, mo - 1, d, h, mi) / 1000);
+
+const ymd = (s: string) => [+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8)] as const;
+
+/** 일/주/월/년봉 — FID_PERIOD_DIV_CODE: D W M Y */
+export async function exchangeBars(
+  code: string,
+  exchange: Exchange,
+  period: "D" | "W" | "M" | "Y",
+  from: string,
+  to: string,
+): Promise<KisCandle[]> {
+  const j = await kisGet(
+    "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+    "FHKST03010100",
+    {
+      FID_COND_MRKT_DIV_CODE: exchange,
+      FID_INPUT_ISCD: code,
+      FID_INPUT_DATE_1: from,
+      FID_INPUT_DATE_2: to,
+      FID_PERIOD_DIV_CODE: period,
+      FID_ORG_ADJ_PRC: "0",
+    },
+  );
+  const rows = (j.output2 as Record<string, string>[]) ?? [];
+  return rows
+    .filter((r) => r.stck_bsop_date && n(r.stck_clpr) > 0)
+    .map((r) => {
+      const [y, mo, d] = ymd(r.stck_bsop_date);
+      const close = n(r.stck_clpr);
+      return {
+        time: kstUnix(y, mo, d),
+        open: n(r.stck_oprc) || close,
+        high: n(r.stck_hgpr) || close,
+        low: n(r.stck_lwpr) || close,
+        close,
+        volume: n(r.acml_vol),
+      };
+    })
+    .sort((a, b) => a.time - b.time);
+}
+
+/**
+ * 분봉 — KIS는 요청 시각 기준 직전 30건(1분봉)만 주므로 시각을 거슬러 올라가며 수집 후 리샘플.
+ * NXT는 08:00~20:00까지 거래되므로 그 범위를 커버한다.
+ */
+export async function exchangeMinutes(
+  code: string,
+  exchange: Exchange,
+  unit: number,
+): Promise<KisCandle[]> {
+  // 한 번에 30분치를 주므로 08:30~20:00을 30분 간격 창으로 나눠 병렬 조회
+  const windows: string[] = [];
+  for (let m = 8 * 60 + 30; m <= 20 * 60; m += 30) {
+    windows.push(
+      `${String(Math.floor(m / 60)).padStart(2, "0")}${String(m % 60).padStart(2, "0")}00`,
+    );
+  }
+  const raw = new Map<number, KisCandle>();
+  const fetchWindow = async (hour: string) => {
+    try {
+      const j = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice",
+        "FHKST03010200",
+        {
+          FID_COND_MRKT_DIV_CODE: exchange,
+          FID_INPUT_ISCD: code,
+          FID_INPUT_HOUR_1: hour,
+          FID_PW_DATA_INCU_YN: "Y",
+          FID_ETC_CLS_CODE: "",
+        },
+      );
+      for (const r of ((j.output2 as Record<string, string>[]) ?? [])) {
+        const date = r.stck_bsop_date;
+        const t = r.stck_cntg_hour;
+        if (!date || !t) continue;
+        const close = n(r.stck_prpr);
+        if (close <= 0) continue;
+        const [y, mo, d] = ymd(date);
+        const time = kstUnix(y, mo, d, +t.slice(0, 2), +t.slice(2, 4));
+        if (raw.has(time)) continue;
+        raw.set(time, {
+          time,
+          open: n(r.stck_oprc) || close,
+          high: n(r.stck_hgpr) || close,
+          low: n(r.stck_lwpr) || close,
+          close,
+          volume: n(r.cntg_vol),
+        });
+      }
+    } catch {
+      /* 해당 구간 실패 시 건너뜀 */
+    }
+  };
+  // KIS 초당 호출제한에 맞춰 10건씩 병렬
+  for (let i = 0; i < windows.length; i += 10) {
+    await Promise.all(windows.slice(i, i + 10).map(fetchWindow));
+    if (i + 10 < windows.length) await new Promise((r) => setTimeout(r, 500));
+  }
+  const list = [...raw.values()].sort((a, b) => a.time - b.time);
+  if (unit <= 1) return list;
+  // unit분으로 리샘플
+  const out: KisCandle[] = [];
+  const bucket = unit * 60;
+  for (const c of list) {
+    const t = Math.floor(c.time / bucket) * bucket;
+    const last = out[out.length - 1];
+    if (last && last.time === t) {
+      last.high = Math.max(last.high, c.high);
+      last.low = Math.min(last.low, c.low);
+      last.close = c.close;
+      last.volume += c.volume;
+    } else {
+      out.push({ ...c, time: t });
+    }
+  }
+  return out;
+}
 
 // ---- 멀티종목 통합 시세 (한 번에 30종목) ----
 export interface UnQuote {

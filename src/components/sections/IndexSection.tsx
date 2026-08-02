@@ -12,6 +12,7 @@ import type { Candle, Quote } from "@/lib/types";
 interface Flow {
   date: string;
   breadth: { upper: number; up: number; flat: number; down: number; lower: number };
+  nxt: { up: number; flat: number; down: number; traded: number; value: number } | null;
   spot: { personal: number; foreign: number; institutional: number; program: number };
   futures: { personal: number; foreign: number; institutional: number } | null;
 }
@@ -114,6 +115,20 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
           {flow.breadth.lower > 0 && (
             <span className="text-down/70">하한 <span className="tnum">{flow.breadth.lower}</span></span>
           )}
+        </div>
+      )}
+
+      {/* NXT(넥스트레이드) 등락 — NXT에서 실제 체결된 종목만 집계 */}
+      {flow?.nxt && flow.nxt.traded > 0 && (
+        <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md border border-signal/25 bg-signal/5 py-1.5 text-xs font-medium">
+          <span className="text-signal">NXT</span>
+          <span className="text-up">↑ <span className="tnum">{num(flow.nxt.up)}</span></span>
+          <span className="text-muted">보합 <span className="tnum">{num(flow.nxt.flat)}</span></span>
+          <span className="text-down">↓ <span className="tnum">{num(flow.nxt.down)}</span></span>
+          <span className="text-muted">
+            거래 <span className="tnum">{num(flow.nxt.traded)}</span>종목 ·{" "}
+            <span className="tnum">{compactWon(flow.nxt.value)}</span>
+          </span>
         </div>
       )}
 

@@ -7,6 +7,7 @@ import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { InvestorPanel } from "@/components/InvestorPanel";
+import { ExchangeSelect, type Exch } from "@/components/ExchangeSelect";
 import { num, pct, signColor, won } from "@/lib/format";
 import type { Candle, Interval, Quote } from "@/lib/types";
 
@@ -43,12 +44,13 @@ export function StockSection({
   const setTab = (t: string) => (onTab ? onTab(t) : setTabState(t));
   const setMinUnit = (u: Interval) => (onMinUnit ? onMinUnit(u) : setMinUnitState(u));
   const [ind, setInd] = useState<Indicators>({});
+  const [exch, setExch] = useState<Exch>("KRX");
   const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
   const { data: ohlcv, isLoading } = useSWR<{ data: Candle[] }>(
-    `/api/ohlcv?code=${code}&interval=${interval}`,
+    `/api/ohlcv?code=${code}&interval=${interval}&exchange=${exch}`,
     fetcher,
-    { refreshInterval: tab === "min" ? 60_000 : 0 },
+    { refreshInterval: tab === "min" ? 60_000 : 0, keepPreviousData: true },
   );
 
   const { data: quote } = useSWR<{ data: Quote }>(`/api/quote?code=${code}`, fetcher, {
@@ -103,6 +105,7 @@ export function StockSection({
           {ind.ma && <MaLegend />}
         </div>
         <div className="flex items-center gap-2">
+          <ExchangeSelect value={exch} onChange={setExch} />
           {tab === "min" && (
             <select
               value={minUnit}
