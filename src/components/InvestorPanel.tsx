@@ -90,8 +90,11 @@ export function InvestorPanel({ code }: { code: string }) {
           </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             {(["외국인", "기관", "개인"] as const).map((k) => (
-              <div key={k} className="flex items-center justify-between">
-                <span className="text-xs text-muted">{k}</span>
+              <div
+                key={k}
+                className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5"
+              >
+                <span className="text-[11px] text-muted">{k}</span>
                 <Num v={rows[0][k]} />
               </div>
             ))}

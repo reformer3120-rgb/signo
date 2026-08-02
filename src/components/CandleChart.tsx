@@ -77,8 +77,7 @@ export function CandleChart({
         attributionLogo: false,
       },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-      leftPriceScale: { visible: true, borderColor: "transparent" },
-      rightPriceScale: { visible: false },
+      rightPriceScale: { borderColor: "transparent" },
       timeScale: { borderColor: "transparent", timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
@@ -86,7 +85,6 @@ export function CandleChart({
     chartRef.current = chart;
 
     const candle = chart.addSeries(CandlestickSeries, {
-      priceScaleId: "left",
       upColor: UP,
       downColor: DOWN,
       borderUpColor: UP,
@@ -123,7 +121,7 @@ export function CandleChart({
       if (today.length) {
         const hi = Math.max(...today.map((c) => c.high));
         const lo = Math.min(...today.map((c) => c.low));
-        // 좌측 축에 가격 라벨 + 짧은 태그(H 고점 / L 저점 / C 현재가)
+        // 우측 축 가격 라벨 + 짧은 태그(H 고점 / L 저점 / C 현재가)
         candle.createPriceLine({ price: hi, color: UP, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "H" });
         candle.createPriceLine({ price: lo, color: DOWN, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "L" });
         candle.createPriceLine({ price: last.close, color: "#F2A93B", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "C" });
@@ -135,7 +133,7 @@ export function CandleChart({
       for (const p of MA_PERIODS) {
         const s = chart.addSeries(
           LineSeries,
-          { color: MA_COLORS[p], lineWidth: 1, priceScaleId: "left", priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
+          { color: MA_COLORS[p], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
           0,
         );
         s.setData(sma(data, p).map((x) => ({ time: t(x.time), value: x.value })));
