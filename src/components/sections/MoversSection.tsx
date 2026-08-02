@@ -18,11 +18,8 @@ const DIRS: { key: Dir; label: string; on: string }[] = [
 export function MoversSection() {
   const [market, setMarket] = useState<Mkt>("KOSPI");
   const [dir, setDir] = useState<Dir>("up");
-  const [exchange, setExchange] = useState<"KRX" | "NXT">("KRX");
-  // 신고가/신저가는 52주 기준(KRX)만 제공
-  const nxtOn = exchange === "NXT" && (dir === "up" || dir === "down");
   const { data, isLoading } = useSWR<{ data: NStock[]; needKey?: boolean }>(
-    `/api/movers?market=${market}&dir=${dir}${nxtOn ? "&exchange=NXT" : ""}`,
+    `/api/movers?market=${market}&dir=${dir}`,
     fetcher,
     { refreshInterval: 60_000 },
   );
@@ -43,20 +40,6 @@ export function MoversSection() {
                 }`}
               >
                 {d.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
-            {(["KRX", "NXT"] as const).map((x) => (
-              <button
-                key={x}
-                onClick={() => setExchange(x)}
-                disabled={x === "NXT" && (dir === "high" || dir === "low")}
-                className={`px-2 py-1 rounded-md text-xs font-medium disabled:opacity-30 ${
-                  exchange === x ? "bg-brand text-white" : "text-muted hover:text-fg"
-                }`}
-              >
-                {x}
               </button>
             ))}
           </div>
@@ -89,16 +72,11 @@ export function MoversSection() {
           ))}
         </ol>
       )}
-      {(dir === "high" || dir === "low") && (
-        <div className="mt-2 text-[11px] text-muted">
-          시총 상위 400종목 중 당일 {dir === "high" ? "고가가 52주 최고" : "저가가 52주 최저"}를 갱신한 종목 (ETF·ETN 제외) · KRX 기준
-        </div>
-      )}
-      {nxtOn && (
-        <div className="mt-2 text-[11px] text-muted">
-          넥스트레이드(NXT) 체결 기준 등락률 · KIS
-        </div>
-      )}
+      <div className="mt-2 text-[11px] text-muted">
+        {dir === "high" || dir === "low"
+          ? `시총 상위 400종목 중 당일 ${dir === "high" ? "고가가 52주 최고" : "저가가 52주 최저"}를 갱신한 종목 (ETF·ETN 제외) · KRX 기준`
+          : "KRX + NXT(넥스트레이드) 통합 기준 · ETF·ETN 제외"}
+      </div>
     </Card>
   );
 }

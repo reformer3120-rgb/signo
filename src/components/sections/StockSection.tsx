@@ -1,15 +1,13 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
-import { StockSearch } from "@/components/StockSearch";
 import { InvestorPanel } from "@/components/InvestorPanel";
-import { num, pct, signColor, won } from "@/lib/format";
-import type { Candle, Interval, Quote } from "@/lib/types";
+import type { Candle, Interval } from "@/lib/types";
 
 const TABS: { key: string; label: string }[] = [
   { key: "min", label: "분봉" },
@@ -23,18 +21,29 @@ const MIN_UNITS: Interval[] = ["1", "5", "15", "30", "60", "240"];
 export function StockSection({
   code: codeProp,
   name: nameProp,
+  tab: tabProp,
+  minUnit: minUnitProp,
   onCode,
+  onTab,
+  onMinUnit,
 }: {
   code?: string;
   name?: string;
+  tab?: string;
+  minUnit?: Interval;
   onCode?: (code: string, name: string) => void;
+  onTab?: (tab: string) => void;
+  onMinUnit?: (u: Interval) => void;
 }) {
   const [codeState, setCodeState] = useState("005930");
-  const [nameState, setNameState] = useState("삼성전자");
+  const [nameState] = useState("삼성전자");
   const code = codeProp ?? codeState;
-  const name = nameProp ?? nameState;
-  const [tab, setTab] = useState("1D");
-  const [minUnit, setMinUnit] = useState<Interval>("5");
+  const [tabState, setTabState] = useState("1D");
+  const [minUnitState, setMinUnitState] = useState<Interval>("5");
+  const tab = tabProp ?? tabState;
+  const minUnit = minUnitProp ?? minUnitState;
+  const setTab = (t: string) => (onTab ? onTab(t) : setTabState(t));
+  const setMinUnit = (u: Interval) => (onMinUnit ? onMinUnit(u) : setMinUnitState(u));
   const [ind, setInd] = useState<Indicators>({});
   const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
@@ -43,18 +52,8 @@ export function StockSection({
     fetcher,
     { refreshInterval: tab === "min" ? 60_000 : 0 },
   );
-  const { data: quote } = useSWR<{ data: Quote }>(`/api/quote?code=${code}`, fetcher);
 
   const candles = ohlcv?.data ?? [];
-  const stat = useMemo(() => {
-    if (!candles.length) return null;
-    const last = candles[candles.length - 1];
-    const hi = Math.max(...candles.map((c) => c.high));
-    const lo = Math.min(...candles.map((c) => c.low));
-    return { last, hi, lo };
-  }, [candles]);
-
-  const q = quote?.data;
 
   return (
     <Card
@@ -90,39 +89,9 @@ export function StockSection({
         </div>
       }
     >
-      <div className="flex flex-wrap items-center gap-3 mb-3">
-        <StockSearch
-          current={`${name} · ${code}`}
-          onSelect={(c, n) => {
-            setCodeState(c);
-            setNameState(n);
-            onCode?.(c, n);
-          }}
-        />
-        {q && (
-          <div className="flex items-baseline gap-2">
-            <span className="tnum text-2xl font-bold">{won(q.price)}</span>
-            <span className="text-sm text-muted">원</span>
-            <span className={`tnum text-sm font-semibold ${signColor(q.changePct)}`}>
-              {pct(q.changePct)}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {stat && (
-        <div className="flex flex-wrap gap-4 mb-3 text-xs text-muted">
-          <span>
-            고 <b className="tnum text-fg">{num(stat.hi)}</b>
-          </span>
-          <span>
-            저 <b className="tnum text-fg">{num(stat.lo)}</b>
-          </span>
-          <span>
-            거래량 <b className="tnum text-fg">{num(stat.last.volume)}</b>
-          </span>
-          {tab === "min" && <span className="text-signal">· 네이버 {minUnit}분봉</span>}
-        </div>
+      {/* 종목명·가격·고저·거래량은 상단 고정바(StockStickyBar)에 표시 */}
+      {tab === "min" && (
+        <div className="mb-2 text-xs text-signal">· 네이버 {minUnit}분봉</div>
       )}
 
       <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">

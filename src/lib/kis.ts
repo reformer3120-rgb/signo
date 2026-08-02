@@ -147,9 +147,12 @@ export interface FiRow {
   name: string;
   price: number;
   changePct: number;
-  foreign: number;
-  inst: number;
+  foreign: number; // 외국인 순매수 수량(주)
+  inst: number; // 기관 순매수 수량(주)
   net: number;
+  foreignValue: number; // 외국인 순매수 대금(백만원)
+  instValue: number; // 기관 순매수 대금(백만원)
+  netValue: number; // 외국인+기관 순매수 대금(백만원)
   krxVol: number; // KRX 거래량
   unVol: number; // 통합(KRX+NXT) 거래량 — 미조회 시 0
   nxtShare: number; // NXT 거래 비중 % — 미조회 시 -1
@@ -181,10 +184,15 @@ export async function foreignInstitution(
     foreign: n(r.frgn_ntby_qty),
     inst: n(r.orgn_ntby_qty),
     net: n(r.ntby_qty),
+    foreignValue: n(r.frgn_ntby_tr_pbmn),
+    instValue: n(r.orgn_ntby_tr_pbmn),
+    netValue: n(r.frgn_ntby_tr_pbmn) + n(r.orgn_ntby_tr_pbmn),
     krxVol: n(r.acml_vol),
     unVol: 0,
     nxtShare: -1,
   }));
+  // 순매수 대금(외국인+기관) 큰 순
+  rows.sort((a, b) => b.netValue - a.netValue);
 
   // 상위 표시분만 통합(KRX+NXT) 거래량 조회 → NXT 비중 산출.
   // 이 TR 자체는 KRX 기준이라 순매수 수량은 KRX 값임.

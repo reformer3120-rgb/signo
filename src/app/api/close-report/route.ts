@@ -10,6 +10,8 @@ import {
   type Market,
 } from "@/lib/naverApi";
 import { breadth } from "@/lib/naver";
+import { marketIndicators } from "@/lib/marketIndex";
+import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -50,10 +52,15 @@ function seoulParts() {
 
 async function build() {
   const t = seoulParts();
-  const [idx, sec, bond, ...rest] = await Promise.all([
+  const kis = hasKIS();
+  const [idx, sec, bond, mi, fi, prgKospi, prgKosdaq, ...rest] = await Promise.all([
     indices().catch(() => []),
     sectors().catch(() => []),
     bonds().catch(() => []),
+    marketIndicators().catch(() => null),
+    kis ? foreignInstitution("ALL", 0).catch(() => []) : Promise.resolve([]),
+    kis ? programTrade("KOSPI").catch(() => []) : Promise.resolve([]),
+    kis ? programTrade("KOSDAQ").catch(() => []) : Promise.resolve([]),
     ...(["KOSPI", "KOSDAQ"] as Market[]).flatMap((m) => [
       indexTrend(m).catch(() => null),
       breadth(m).catch(() => null),
@@ -83,6 +90,16 @@ async function build() {
 
   L.push("[ 지수 ]");
   for (const q of idx) L.push(`  ${q.name.padEnd(4)} ${f(q.price, 2)}  ${sign(q.changePct)}%`);
+  // 프로그램매매 (KIS, 백만원 → 억원)
+  const prg = (rows: Awaited<ReturnType<typeof programTrade>>) => {
+    const last = rows[rows.length - 1];
+    return last ? `${eok(Math.round((last.whole * 1e6) / 1e8))}` : null;
+  };
+  const pk = prg(prgKospi);
+  const pq = prg(prgKosdaq);
+  if (pk || pq) {
+    L.push(`  프로그램 순매수: 코스피 ${pk ?? "-"} / 코스닥 ${pq ?? "-"}`);
+  }
   L.push("");
 
   for (const b of byMarket) {
@@ -121,11 +138,37 @@ async function build() {
     L.push("");
   }
 
+  if (fi.length) {
+    L.push("[ 시장 수급 · 외국인·기관 순매수 상위 ]");
+    L.push("  (순매수 대금 기준, 백만원 · KRX)");
+    fi.slice(0, 10).forEach((r, i) =>
+      L.push(
+        `    ${String(i + 1).padStart(2)}. ${r.name.padEnd(12)} ${f(r.price).padStart(9)} ${sign(r.changePct).padStart(7)}%  외인 ${f(r.foreignValue).padStart(8)}  기관 ${f(r.instValue).padStart(8)}`,
+      ),
+    );
+    L.push("");
+  }
+
   if (sec.length) {
     const sorted = [...sec].sort((a, b) => b.changeRate - a.changeRate);
     L.push("[ 섹터 강약 ]");
     L.push(`  강세: ${sorted.slice(0, 5).map((s) => `${s.name} ${sign(s.changeRate)}%`).join(", ")}`);
     L.push(`  약세: ${sorted.slice(-5).reverse().map((s) => `${s.name} ${sign(s.changeRate)}%`).join(", ")}`);
+    L.push("");
+  }
+
+  if (mi) {
+    const grp = (title: string, items: typeof mi.fx, digits = 2) => {
+      if (!items.length) return;
+      L.push(`  ${title}`);
+      for (const it of items)
+        L.push(`    ${it.label.padEnd(18)} ${f(it.price, digits).padStart(14)}  ${sign(it.changePct)}%`);
+    };
+    L.push("[ 시장지표 ]");
+    grp("환율", mi.fx);
+    grp("원자재", mi.commodities);
+    grp("가상자산 (원화)", mi.crypto, 0);
+    grp("선물", mi.futures);
     L.push("");
   }
 

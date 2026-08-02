@@ -94,7 +94,7 @@ export function MarketFlowSection() {
             </tbody>
           </table>
           <div className="mt-2 text-xs text-muted">
-            순매수 수량(주)은 KRX 기준 · 거래량은 KRX+NXT 통합, NXT비중은 넥스트레이드 체결 비중 · KIS
+            외국인+기관 순매수 <b>대금</b> 큰 순 · 순매수는 수량(주), KRX 기준 · 거래량은 KRX+NXT 통합 · KIS
           </div>
         </div>
       )}
