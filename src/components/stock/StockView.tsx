@@ -12,8 +12,8 @@ export function StockView() {
     <>
       <StockSection onCode={(c) => setCode(c)} />
       <StockDetailCard code={code} />
-      <SectorRankCard code={code} />
       <FinancialsCard code={code} />
+      <SectorRankCard code={code} />
       <NewsCard code={code} />
     </>
   );

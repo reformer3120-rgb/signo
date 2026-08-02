@@ -1,5 +1,6 @@
 // 네이버 모바일 stock JSON API (로그인 불필요). 서버 전용.
 // 시총상위 · 상승/하락률 상위(특징주) · 국내 지수 시세.
+import { daily } from "./naver";
 
 const H = {
   "User-Agent":
@@ -226,6 +227,7 @@ export interface StockDetail {
   code: string;
   name: string;
   industryCode: string;
+  price: number; // 현재가(전일종가)
   per: number;
   pbr: number;
   eps: number;
@@ -237,6 +239,9 @@ export interface StockDetail {
   high52: number;
   low52: number;
   dividendYield: number;
+  priceTarget: number; // 애널리스트 목표주가 평균
+  upside: number; // 목표주가 상승여력 %
+  recommMean: number; // 투자의견 평균(1매도~5매수)
 }
 
 // 접미사(배/원/%/조억) 제거 파서
@@ -257,10 +262,14 @@ export async function stockDetail(code: string): Promise<StockDetail> {
   const d = await getJson(`https://m.stock.naver.com/api/stock/${code}/integration`);
   const ti: Record<string, string> = {};
   for (const x of (d.totalInfos ?? []) as { code: string; value: string }[]) ti[x.code] = x.value;
+  const price = numSuffix(ti.lastClosePrice);
+  const priceTarget = n(d.consensusInfo?.priceTargetMean);
+  const recommMean = Number(d.consensusInfo?.recommMean) || 0;
   return {
     code,
     name: d.stockName ?? code,
     industryCode: String(d.industryCode ?? ""),
+    price,
     per: numSuffix(ti.per),
     pbr: numSuffix(ti.pbr),
     eps: numSuffix(ti.eps),
@@ -272,6 +281,9 @@ export async function stockDetail(code: string): Promise<StockDetail> {
     high52: numSuffix(ti.highPriceOf52Weeks),
     low52: numSuffix(ti.lowPriceOf52Weeks),
     dividendYield: numSuffix(ti.dividendYieldRatio),
+    priceTarget,
+    upside: price > 0 && priceTarget > 0 ? +(((priceTarget - price) / price) * 100).toFixed(1) : 0,
+    recommMean,
   };
 }
 
@@ -281,8 +293,11 @@ export interface Financials {
   rows: { title: string; values: (string | null)[] }[];
 }
 
-export async function financials(code: string): Promise<Financials> {
-  const d = await getJson(`https://m.stock.naver.com/api/stock/${code}/finance/annual`);
+export async function financials(
+  code: string,
+  period: "annual" | "quarter" = "annual",
+): Promise<Financials> {
+  const d = await getJson(`https://m.stock.naver.com/api/stock/${code}/finance/${period}`);
   const fi = d.financeInfo ?? {};
   const tr = (fi.trTitleList ?? []) as { title: string; key: string; isConsensus: string }[];
   const periods = tr.map((t) => ({ title: t.title, cns: t.isConsensus === "Y" }));
@@ -316,6 +331,70 @@ export async function stockNews(code: string, size = 12): Promise<NewsItem[]> {
   return out.slice(0, size);
 }
 
+// ---- 기간별 수익률 (일봉 종가로 계산) ----
+export interface Returns {
+  d1: number;
+  w1: number;
+  m1: number;
+  m6: number;
+  y1: number;
+}
+
+// 종가 배열(오름차순)에서 n거래일 전 대비 수익률
+function pctBack(closes: number[], back: number): number {
+  const last = closes[closes.length - 1];
+  const idx = closes.length - 1 - back;
+  const base = idx >= 0 ? closes[idx] : closes[0];
+  return base > 0 ? +(((last - base) / base) * 100).toFixed(2) : 0;
+}
+
+export async function stockReturns(code: string): Promise<Returns> {
+  const bars = await daily(code, 270);
+  const closes = bars.map((b) => b.close).filter((c) => c > 0);
+  if (closes.length < 2) return { d1: 0, w1: 0, m1: 0, m6: 0, y1: 0 };
+  return {
+    d1: pctBack(closes, 1),
+    w1: pctBack(closes, 5),
+    m1: pctBack(closes, 20),
+    m6: pctBack(closes, 120),
+    y1: pctBack(closes, 245),
+  };
+}
+
+// 종가 배열에서 1일/1주/1달만 (섹터 멤버용, 짧은 일봉)
+function shortReturns(closes: number[]): { d1: number; w1: number; m1: number } {
+  if (closes.length < 2) return { d1: 0, w1: 0, m1: 0 };
+  return { d1: pctBack(closes, 1), w1: pctBack(closes, 5), m1: pctBack(closes, 20) };
+}
+
+// ---- 최근 수급: 어느 주체가 매수 우위인가 ----
+export interface InvestorBias {
+  days: number;
+  개인: number; // 순매수 합(주)
+  외국인: number;
+  기관: number;
+  leader: "개인" | "외국인" | "기관" | "-"; // 최근 매수 우위 주체
+  today?: TrendRow; // 당일 실시간
+}
+
+export async function investorBias(code: string, days = 5): Promise<InvestorBias> {
+  const rows = await stockTrendLong(code, days);
+  const sum = { 개인: 0, 외국인: 0, 기관: 0 };
+  for (const r of rows) {
+    sum.개인 += r.개인;
+    sum.외국인 += r.외국인;
+    sum.기관 += r.기관;
+  }
+  const entries: [InvestorBias["leader"], number][] = [
+    ["개인", sum.개인],
+    ["외국인", sum.외국인],
+    ["기관", sum.기관],
+  ];
+  entries.sort((a, b) => b[1] - a[1]);
+  const leader = entries[0][1] > 0 ? entries[0][0] : "-";
+  return { days: rows.length, ...sum, leader, today: rows[0] };
+}
+
 // ---- 섹터 종합평가 (같은 업종 상위종목 점수화) ----
 export interface ScoredStock {
   code: string;
@@ -324,8 +403,16 @@ export interface ScoredStock {
   per: number;
   pbr: number;
   div: number;
+  roe: number;
+  debt: number; // 부채비율
+  growth: number; // 매출·영익 성장 평균 %
+  upside: number; // 애널리스트 목표주가 상승여력 %
   threeMo: number;
+  d1: number;
+  w1: number;
+  m1: number;
   score: number;
+  parts: { 재무: number; 성장: number; 밸류: number; 애널: number; 모멘텀: number; 배당: number };
 }
 export interface SectorRank {
   industryName: string;
@@ -335,12 +422,51 @@ export interface SectorRank {
   target?: ScoredStock;
 }
 
-function normalize(vals: number[]): number[] {
+// 방향(hi=클수록 좋음, lo=작을수록 좋음) 정규화. 결측(NaN)은 최저(0).
+function scoreDim(vals: number[], dir: "hi" | "lo"): number[] {
   const valid = vals.filter((v) => Number.isFinite(v));
+  if (!valid.length) return vals.map(() => 0.5);
   const min = Math.min(...valid);
   const max = Math.max(...valid);
   const range = max - min || 1;
-  return vals.map((v) => (Number.isFinite(v) ? (v - min) / range : 0));
+  return vals.map((v) => {
+    if (!Number.isFinite(v)) return 0;
+    const t = (v - min) / range;
+    return dir === "hi" ? t : 1 - t;
+  });
+}
+
+const avgFinite = (xs: number[]) => {
+  const v = xs.filter(Number.isFinite);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN;
+};
+
+// 재무제표(연간)에서 최근 실적 지표 추출
+function finMetrics(fin: Financials) {
+  const series = (title: string): number[] => {
+    const r = fin.rows.find((x) => x.title === title);
+    if (!r) return [];
+    const out: number[] = [];
+    fin.periods.forEach((p, i) => {
+      if (p.cns) return; // 추정치 제외
+      const v = r.values[i];
+      if (v == null) return;
+      const num = Number(String(v).replace(/,/g, ""));
+      if (Number.isFinite(num)) out.push(num);
+    });
+    return out; // 과거→최근 순
+  };
+  const last = (a: number[]) => (a.length ? a[a.length - 1] : NaN);
+  const yoy = (a: number[]) =>
+    a.length >= 2 && a[a.length - 2] > 0
+      ? ((a[a.length - 1] - a[a.length - 2]) / Math.abs(a[a.length - 2])) * 100
+      : NaN;
+  return {
+    roe: last(series("ROE")),
+    debt: last(series("부채비율")),
+    opMargin: last(series("영업이익률")),
+    growth: avgFinite([yoy(series("매출액")), yoy(series("영업이익"))]),
+  };
 }
 
 export async function sectorRank(code: string): Promise<SectorRank> {
@@ -356,40 +482,85 @@ export async function sectorRank(code: string): Promise<SectorRank> {
     threeMo: Number(s.threeMonthEarningRate) || 0,
   }));
   members.sort((a, b) => b.cap - a.cap);
-  const top = members.slice(0, 20);
+  const top = members.slice(0, 15);
   if (code && !top.find((m) => m.code === code)) {
     const me = members.find((m) => m.code === code);
     if (me) top.push(me);
   }
-  // 상세(PER/PBR/배당) 병렬 수집
+  // 종목별 상세 + 연간재무 + 최근 일봉(수익률) 병렬 수집
   const enriched = await Promise.all(
     top.map(async (m) => {
-      try {
-        const dd = await stockDetail(m.code);
-        return { ...m, per: dd.per, pbr: dd.pbr, div: dd.dividendYield };
-      } catch {
-        return { ...m, per: 0, pbr: 0, div: 0 };
-      }
+      const [dd, finA, bars] = await Promise.all([
+        stockDetail(m.code).catch(() => null),
+        financials(m.code, "annual").catch(() => null),
+        daily(m.code, 30).catch(() => []),
+      ]);
+      const fm = finA
+        ? finMetrics(finA)
+        : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
+      const sr = shortReturns(bars.map((b) => b.close).filter((c) => c > 0));
+      return {
+        ...m,
+        per: dd?.per ?? 0,
+        pbr: dd?.pbr ?? 0,
+        div: dd?.dividendYield ?? 0,
+        upside: dd?.upside ?? 0,
+        ...fm,
+        ...sr,
+      };
     }),
   );
-  // 점수: 시총(규모)↑ PER↓ PBR↓ 배당↑ 3개월↑
-  const capN = normalize(enriched.map((e) => Math.log10(Math.max(e.cap, 1))));
-  const perN = normalize(enriched.map((e) => (e.per > 0 ? -e.per : -9999))); // 낮을수록↑, 적자는 최저
-  const pbrN = normalize(enriched.map((e) => (e.pbr > 0 ? -e.pbr : -9999)));
-  const divN = normalize(enriched.map((e) => e.div));
-  const moN = normalize(enriched.map((e) => e.threeMo));
-  const scored: ScoredStock[] = enriched.map((e, i) => ({
-    code: e.code,
-    name: e.name,
-    marketCap: e.cap,
-    per: e.per,
-    pbr: e.pbr,
-    div: e.div,
-    threeMo: e.threeMo,
-    score: Math.round(
-      (capN[i] * 0.25 + perN[i] * 0.25 + pbrN[i] * 0.2 + divN[i] * 0.15 + moN[i] * 0.15) * 100,
-    ),
-  }));
+
+  // 정규화 차원들
+  const roeN = scoreDim(enriched.map((e) => e.roe), "hi");
+  const debtN = scoreDim(enriched.map((e) => e.debt), "lo");
+  const opN = scoreDim(enriched.map((e) => e.opMargin), "hi");
+  const growthN = scoreDim(enriched.map((e) => e.growth), "hi");
+  const perN = scoreDim(enriched.map((e) => (e.per > 0 ? e.per : NaN)), "lo");
+  const pbrN = scoreDim(enriched.map((e) => (e.pbr > 0 ? e.pbr : NaN)), "lo");
+  const upsideN = scoreDim(enriched.map((e) => e.upside), "hi");
+  const m1N = scoreDim(enriched.map((e) => e.m1), "hi");
+  const threeMoN = scoreDim(enriched.map((e) => e.threeMo), "hi");
+  const divN = scoreDim(enriched.map((e) => e.div), "hi");
+  const capN = scoreDim(enriched.map((e) => Math.log10(Math.max(e.cap, 1))), "hi");
+
+  const scored: ScoredStock[] = enriched.map((e, i) => {
+    const 재무 = roeN[i] * 0.5 + debtN[i] * 0.3 + opN[i] * 0.2;
+    const 성장 = growthN[i];
+    const 밸류 = perN[i] * 0.5 + pbrN[i] * 0.5;
+    const 애널 = upsideN[i];
+    const 모멘텀 = m1N[i] * 0.5 + threeMoN[i] * 0.5;
+    const 배당 = divN[i];
+    const score = Math.round(
+      (재무 * 0.28 + 성장 * 0.18 + 밸류 * 0.15 + 애널 * 0.15 + 모멘텀 * 0.12 + 배당 * 0.07 + capN[i] * 0.05) *
+        100,
+    );
+    return {
+      code: e.code,
+      name: e.name,
+      marketCap: e.cap,
+      per: e.per,
+      pbr: e.pbr,
+      div: e.div,
+      roe: Number.isFinite(e.roe) ? +e.roe.toFixed(1) : 0,
+      debt: Number.isFinite(e.debt) ? +e.debt.toFixed(0) : 0,
+      growth: Number.isFinite(e.growth) ? +e.growth.toFixed(1) : 0,
+      upside: e.upside,
+      threeMo: e.threeMo,
+      d1: e.d1,
+      w1: e.w1,
+      m1: e.m1,
+      score,
+      parts: {
+        재무: Math.round(재무 * 100),
+        성장: Math.round(성장 * 100),
+        밸류: Math.round(밸류 * 100),
+        애널: Math.round(애널 * 100),
+        모멘텀: Math.round(모멘텀 * 100),
+        배당: Math.round(배당 * 100),
+      },
+    };
+  });
   scored.sort((a, b) => b.score - a.score);
   const rank = scored.findIndex((s) => s.code === code) + 1;
   return {
