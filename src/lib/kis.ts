@@ -194,25 +194,17 @@ export async function foreignInstitution(
   // 순매수 대금(외국인+기관) 큰 순
   rows.sort((a, b) => b.netValue - a.netValue);
 
-  // 상위 표시분만 통합(KRX+NXT) 거래량 조회 → NXT 비중 산출.
-  // 이 TR 자체는 KRX 기준이라 순매수 수량은 KRX 값임.
+  // 상위 표시분만 통합(KRX+NXT) 거래량 조회 → NXT 비중 산출 (멀티종목 1회 호출)
   const target = rows.slice(0, enrich);
-  for (let i = 0; i < target.length; i += 4) {
-    await Promise.all(
-      target.slice(i, i + 4).map(async (r) => {
-        try {
-          const u = await unifiedQuote(r.code);
-          if (u.volume > 0) {
-            r.unVol = u.volume;
-            const nxt = Math.max(0, u.volume - r.krxVol);
-            r.nxtShare = +((nxt / u.volume) * 100).toFixed(1);
-          }
-        } catch {
-          /* 통합 시세 실패 시 KRX 값만 유지 */
-        }
-      }),
-    );
-    await new Promise((r) => setTimeout(r, 250));
+  if (target.length) {
+    const quotes = await unifiedQuotes(target.map((r) => r.code));
+    for (const r of target) {
+      const u = quotes.get(r.code);
+      if (!u || u.volume <= 0) continue;
+      r.unVol = u.volume;
+      const nxt = Math.max(0, u.volume - r.krxVol);
+      r.nxtShare = +((nxt / u.volume) * 100).toFixed(1);
+    }
   }
   return rows;
 }
@@ -278,6 +270,59 @@ export async function stockPrice(code: string, exchange: Exchange = "J") {
  */
 export const unifiedQuote = (code: string) =>
   cached(`un:${code}`, 45, () => stockPrice(code, "UN"));
+
+// ---- 멀티종목 통합 시세 (한 번에 30종목) ----
+export interface UnQuote {
+  code: string;
+  price: number;
+  changePct: number;
+  volume: number;
+  prevClose: number;
+}
+
+/**
+ * 여러 종목의 통합(KRX+NXT) 시세를 한 번에 조회.
+ * 종목당 개별 호출 대비 호출 수가 1/30로 줄어 로딩이 크게 빨라진다.
+ */
+export async function unifiedQuotes(codes: string[]): Promise<Map<string, UnQuote>> {
+  const map = new Map<string, UnQuote>();
+  for (let i = 0; i < codes.length; i += 30) {
+    const batch = codes.slice(i, i + 30);
+    const params: KisParams = {};
+    batch.forEach((c, k) => {
+      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "UN";
+      params[`FID_INPUT_ISCD_${k + 1}`] = c;
+    });
+    try {
+      const j = await kisGet(
+        "/uapi/domestic-stock/v1/quotations/intstock-multprice",
+        "FHKST11300006",
+        params,
+      );
+      for (const r of ((j.output as Record<string, string>[]) ?? [])) {
+        const code = r.inter_shrn_iscd;
+        if (!code) continue;
+        const price = n(r.inter2_prpr);
+        const prevClose = n(r.inter2_prdy_clpr);
+        map.set(code, {
+          code,
+          price,
+          // 전일 종가를 알면 그것으로 계산 (시간외 세션에서도 '전일 대비'로 일관)
+          changePct:
+            prevClose > 0 && price > 0
+              ? +(((price - prevClose) / prevClose) * 100).toFixed(2)
+              : Number(r.prdy_ctrt) || 0,
+          volume: n(r.acml_vol),
+          prevClose,
+        });
+      }
+    } catch {
+      /* 배치 실패 시 해당 구간은 원본 값 유지 */
+    }
+    if (i + 30 < codes.length) await new Promise((r) => setTimeout(r, 120));
+  }
+  return map;
+}
 
 // ---- 등락률 순위 (거래소별) ----
 // 통합(UN)은 이 TR에서 미지원 → KRX(J) 또는 NXT(NX)만 가능

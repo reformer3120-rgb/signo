@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -56,18 +57,20 @@ export function MoversSection() {
       ) : (
         <ol className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {rows.map((s, i) => (
-            <li
-              key={s.code}
-              className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2"
-            >
-              <span className="tnum text-xs text-muted w-4 shrink-0">{i + 1}</span>
-              <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
-              <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
-              <span
-                className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
+            <li key={s.code}>
+              <Link
+                href={`/stock?code=${s.code}&name=${encodeURIComponent(s.name)}`}
+                className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 transition-colors hover:border-brand/40 hover:bg-brand/5"
               >
-                {pct(s.changePct)}
-              </span>
+                <span className="tnum text-xs text-muted w-4 shrink-0">{i + 1}</span>
+                <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
+                <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
+                <span
+                  className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
+                >
+                  {pct(s.changePct)}
+                </span>
+              </Link>
             </li>
           ))}
         </ol>

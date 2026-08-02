@@ -8,9 +8,15 @@ import { SectorRankCard } from "@/components/stock/SectorRankCard";
 import { NewsCard } from "@/components/stock/NewsCard";
 import type { Interval } from "@/lib/types";
 
-export function StockView() {
-  const [code, setCode] = useState("005930");
-  const [name, setName] = useState("삼성전자");
+export function StockView({
+  initialCode,
+  initialName,
+}: {
+  initialCode?: string;
+  initialName?: string;
+} = {}) {
+  const [code, setCode] = useState(initialCode ?? "005930");
+  const [name, setName] = useState(initialName ?? (initialCode ? initialCode : "삼성전자"));
   const [tab, setTab] = useState("1D");
   const [minUnit, setMinUnit] = useState<Interval>("5");
 

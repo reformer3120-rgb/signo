@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const m = searchParams.get("market");
   const market = m === "KOSPI" || m === "KOSDAQ" ? m : "ALL";
   try {
-    const data = await cached(`market-flow2:${market}`, 120, () => foreignInstitution(market));
+    const data = await cached(`market-flow3:${market}`, 120, () => foreignInstitution(market));
     return NextResponse.json({ market, data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

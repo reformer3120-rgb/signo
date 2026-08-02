@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
 import { stockList, highLow, type Market, type NStock } from "@/lib/naverApi";
-import { hasKIS, fluctuationRank, unifiedQuote } from "@/lib/kis";
+import { hasKIS, fluctuationRank, unifiedQuotes } from "@/lib/kis";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -48,30 +48,16 @@ async function mergedMovers(market: Market, dir: "up" | "down"): Promise<NStock[
   );
 
   // 상위 후보만 통합(KRX+NXT) 시세로 보정 — NXT 정규장 이후 가격까지 반영
-  const top = list.slice(0, 24);
+  const top = list.slice(0, 30);
   if (hasKIS()) {
-    for (let i = 0; i < top.length; i += 4) {
-      await Promise.all(
-        top.slice(i, i + 4).map(async (s) => {
-          const prevClose = s.change ? s.price - s.change : 0; // 네이버 KRX 기준 전일종가
-          try {
-            const u = await unifiedQuote(s.code);
-            if (u.price > 0) {
-              s.price = u.price;
-              // KIS 통합 등락률은 시간외에 '정규장 종가 대비'로 나오므로 전일 종가 기준으로 재계산
-              s.changePct =
-                prevClose > 0
-                  ? +(((u.price - prevClose) / prevClose) * 100).toFixed(2)
-                  : u.changePct;
-              if (prevClose > 0) s.change = u.price - prevClose;
-              if (u.volume > 0) s.volume = u.volume;
-            }
-          } catch {
-            /* 통합 시세 실패 시 원래 값 유지 */
-          }
-        }),
-      );
-      await new Promise((r) => setTimeout(r, 250));
+    const quotes = await unifiedQuotes(top.map((s) => s.code));
+    for (const s of top) {
+      const u = quotes.get(s.code);
+      if (!u || u.price <= 0) continue;
+      s.price = u.price;
+      s.changePct = u.changePct;
+      if (u.prevClose > 0) s.change = u.price - u.prevClose;
+      if (u.volume > 0) s.volume = u.volume;
     }
     top.sort((a, b) => (dir === "up" ? b.changePct - a.changePct : a.changePct - b.changePct));
   }
@@ -90,7 +76,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ market, dir: dirRaw, data: onlyStocks(raw).slice(0, 20) });
     }
     const dir: "up" | "down" = dirRaw === "down" ? "down" : "up";
-    const data = await cached(`movers-un2:${market}:${dir}`, 120, () => mergedMovers(market, dir));
+    const data = await cached(`movers-un3:${market}:${dir}`, 120, () => mergedMovers(market, dir));
     return NextResponse.json({ market, dir, data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

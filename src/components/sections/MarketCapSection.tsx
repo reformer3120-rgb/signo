@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -38,7 +39,14 @@ function CapTable({ market, label, limit }: { market: string; label: string; lim
               {rows.map((s, i) => (
                 <tr key={s.code} className="border-b border-line/40 hover:bg-surface/70 transition-colors">
                   <td className="py-2 pl-1 tnum text-muted">{i + 1}</td>
-                  <td className="font-medium truncate max-w-[9rem]">{s.name}</td>
+                  <td className="font-medium max-w-[9rem] truncate">
+                    <Link
+                      href={`/stock?code=${s.code}&name=${encodeURIComponent(s.name)}`}
+                      className="block truncate hover:text-brand hover:underline"
+                    >
+                      {s.name}
+                    </Link>
+                  </td>
                   <td className="text-right tnum">{num(s.price)}</td>
                   <td className={`text-right tnum font-medium ${signColor(s.changePct)}`}>
                     {pct(s.changePct)}
@@ -66,14 +74,24 @@ export function MarketCapSection() {
         <CapTable market="KOSPI" label="코스피" limit={limit} />
         <CapTable market="KOSDAQ" label="코스닥" limit={limit} />
       </div>
-      {limit < MAX && (
-        <button
-          onClick={() => setLimit((v) => Math.min(MAX, v + STEP))}
-          className="mt-3 w-full rounded-lg border border-line py-2 text-xs font-medium text-muted transition-colors hover:border-brand/40 hover:text-fg"
-        >
-          더보기 (+{Math.min(STEP, MAX - limit)}종목)
-        </button>
-      )}
+      <div className="mt-3 flex gap-2">
+        {limit < MAX && (
+          <button
+            onClick={() => setLimit((v) => Math.min(MAX, v + STEP))}
+            className="flex-1 rounded-lg border border-line py-2 text-xs font-medium text-muted transition-colors hover:border-brand/40 hover:text-fg"
+          >
+            더보기 (+{Math.min(STEP, MAX - limit)}종목)
+          </button>
+        )}
+        {limit > STEP && (
+          <button
+            onClick={() => setLimit(STEP)}
+            className="flex-1 rounded-lg border border-line py-2 text-xs font-medium text-muted transition-colors hover:border-brand/40 hover:text-fg"
+          >
+            접기 (상위 {STEP}종목)
+          </button>
+        )}
+      </div>
     </Card>
   );
 }
