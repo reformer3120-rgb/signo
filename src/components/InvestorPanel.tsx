@@ -100,8 +100,8 @@ export function InvestorPanel({ code }: { code: string }) {
       )}
 
       {tab === "daily" ? (
-        <div>
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[320px]">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
                 <th className="text-left font-medium py-1.5">날짜</th>

@@ -78,6 +78,8 @@
     font-family: var(--font-sans);
     background: var(--canvas);
     color: var(--fg);
+    /* 모바일 가로 오버플로 방지 안전장치 (넓은 표는 각자 overflow-x-auto로 스크롤) */
+    overflow-x: hidden;
   }
   /* 숫자는 모노 + tabular */
   .tnum {
