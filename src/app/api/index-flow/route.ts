@@ -5,6 +5,7 @@ import { breadth } from "@/lib/naver";
 import { hasKIS, programTrade } from "@/lib/kis";
 
 export const revalidate = 0;
+export const maxDuration = 60;
 
 async function flow(market: Market) {
   const [spot, br] = await Promise.all([indexTrend(market), breadth(market)]);

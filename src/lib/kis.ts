@@ -2,6 +2,8 @@
 // 키가 없으면 hasKIS()=false → 라우트가 폴백/안내로 처리.
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { redis } from "./cache";
 
 export function hasKIS(): boolean {
   return !!(process.env.KIS_APP_KEY?.trim() && process.env.KIS_APP_SECRET?.trim());
@@ -15,13 +17,15 @@ const DOMAIN = IS_PROD
 const APPKEY = () => process.env.KIS_APP_KEY!.trim();
 const APPSECRET = () => process.env.KIS_APP_SECRET!.trim();
 
-// ---- 토큰 (24h 유효) : 메모리 + 파일 캐시로 재발급 최소화 ----
+// ---- 토큰 (24h 유효) : 메모리 → Redis(있으면) → /tmp 파일 순으로 재발급 최소화 ----
+// 로컬은 파일, Vercel 서버리스는 Redis(권장) 또는 /tmp(콜드스타트마다 재발급).
 interface Token {
   token: string;
   exp: number; // ms epoch
 }
 let memToken: Token | null = null;
-const TOKEN_FILE = path.join(process.cwd(), ".kis-token.json");
+const TOKEN_FILE = path.join(os.tmpdir(), "signo-kis-token.json");
+const REDIS_KEY = "kis:token";
 
 function readFileToken(): Token | null {
   try {
@@ -35,17 +39,27 @@ function writeFileToken(t: Token) {
   try {
     fs.writeFileSync(TOKEN_FILE, JSON.stringify(t));
   } catch {
-    /* Vercel 등 읽기전용 FS 무시 */
+    /* 읽기전용 FS 무시 */
   }
 }
 
 async function getToken(): Promise<string> {
   if (memToken && memToken.exp > Date.now() + 60_000) return memToken.token;
-  const f = readFileToken();
-  if (f) {
-    memToken = f;
-    return f.token;
+
+  if (redis) {
+    const t = await redis.get<Token>(REDIS_KEY);
+    if (t && t.exp > Date.now() + 60_000) {
+      memToken = t;
+      return t.token;
+    }
+  } else {
+    const f = readFileToken();
+    if (f) {
+      memToken = f;
+      return f.token;
+    }
   }
+
   const res = await fetch(`${DOMAIN}/oauth2/tokenP`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -58,7 +72,8 @@ async function getToken(): Promise<string> {
   const j = await res.json();
   if (!j.access_token) throw new Error(`KIS 토큰 실패: ${JSON.stringify(j).slice(0, 200)}`);
   memToken = { token: j.access_token, exp: Date.now() + (j.expires_in ?? 86400) * 1000 };
-  writeFileToken(memToken);
+  if (redis) await redis.set(REDIS_KEY, memToken, { ex: j.expires_in ?? 86400 });
+  else writeFileToken(memToken);
   return memToken.token;
 }
 

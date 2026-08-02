@@ -1,7 +1,7 @@
 // 캐시: Upstash Redis(설정 시) 또는 인메모리 폴백.
 import { Redis } from "@upstash/redis";
 
-const redis =
+export const redis =
   process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
     ? Redis.fromEnv()
     : null;

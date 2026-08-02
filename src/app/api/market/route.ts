@@ -4,6 +4,7 @@ import { spark } from "@/lib/yahoo";
 import { daily } from "@/lib/naver";
 
 export const revalidate = 0;
+export const maxDuration = 60;
 
 const FX: [string, string, number][] = [
   ["달러 USD/KRW", "KRW=X", 1],
