@@ -1,7 +1,6 @@
 import { IndexSection } from "@/components/sections/IndexSection";
-import { MarketSection } from "@/components/sections/MarketSection";
-import { RatesSection } from "@/components/sections/RatesSection";
 import { MarketFlowSection } from "@/components/sections/MarketFlowSection";
+import { CloseReportButton } from "@/components/CloseReportButton";
 import { SectorSection } from "@/components/sections/SectorSection";
 import { MarketCapSection } from "@/components/sections/MarketCapSection";
 import { MoversSection } from "@/components/sections/MoversSection";
@@ -18,9 +17,8 @@ const PENDING = [
 export default function Home() {
   return (
     <>
+      <CloseReportButton />
       <IndexSection />
-      <MarketSection />
-      <RatesSection />
       <MarketFlowSection />
       <SectorSection />
       <MoversSection />

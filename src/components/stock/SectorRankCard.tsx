@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -9,6 +10,13 @@ function scoreColor(s: number) {
   if (s >= 70) return "text-confirm";
   if (s >= 45) return "text-signal";
   return "text-muted";
+}
+
+function gradeColor(g: string) {
+  if (g.startsWith("A")) return "bg-up/15 text-up border-up/30";
+  if (g === "B") return "bg-signal/15 text-signal border-signal/30";
+  if (g === "C") return "bg-muted/10 text-muted border-line";
+  return "bg-down/15 text-down border-down/30";
 }
 
 const ret = (v: number) => (
@@ -25,9 +33,15 @@ export function SectorRankCard({
   code: string;
   onSelect?: (code: string, name: string) => void;
 }) {
-  const { data } = useSWR<{ data: SectorRank }>(`/api/sector-rank?code=${code}`, fetcher, {
-    refreshInterval: 900_000,
-  });
+  const [group, setGroup] = useState("industry");
+  // 종목이 바뀌면 테마 선택은 초기화 (이전 종목의 테마일 수 있으므로)
+  useEffect(() => setGroup("industry"), [code]);
+
+  const { data, isLoading } = useSWR<{ data: SectorRank }>(
+    `/api/sector-rank?code=${code}&group=${group}`,
+    fetcher,
+    { refreshInterval: 900_000, keepPreviousData: true },
+  );
   const r = data?.data;
 
   return (
@@ -39,6 +53,28 @@ export function SectorRankCard({
         <div className="h-56 animate-pulse rounded-lg bg-line/30" />
       ) : (
         <>
+          {/* 세부 섹터(테마) 선택 */}
+          {r.groups.length > 1 && (
+            <div className="mb-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted mr-0.5">비교군</span>
+              {r.groups.map((g) => (
+                <button
+                  key={g.key}
+                  onClick={() => setGroup(g.key)}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                    group === g.key
+                      ? "border-brand bg-brand text-white"
+                      : "border-line text-muted hover:text-fg hover:border-brand/40"
+                  }`}
+                >
+                  {g.name}
+                  {g.count > 0 && <span className="opacity-60"> {g.count}</span>}
+                </button>
+              ))}
+              {isLoading && <span className="text-[11px] text-muted">불러오는 중…</span>}
+            </div>
+          )}
+
           {r.target && (
             <div className="mb-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3">
               <div className="flex items-center gap-4">
@@ -51,7 +87,7 @@ export function SectorRankCard({
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate">{r.target.name}</div>
                   <div className="text-xs text-muted mt-0.5">
-                    {r.industryName} 내 <b className="text-fg">{r.rank}위</b> / 시총상위 {r.total}종목
+                    {r.industryName} 내 <b className="text-fg">{r.rank}위</b> / {r.total}종목
                   </div>
                   <div className="text-[11px] text-muted mt-1 tnum">
                     ROE {r.target.roe || "-"}% · 부채 {r.target.debt || "-"}% · 목표가상승
@@ -60,6 +96,7 @@ export function SectorRankCard({
                   </div>
                 </div>
               </div>
+
               {/* 세부 점수 */}
               <div className="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-1.5">
                 {(
@@ -78,16 +115,47 @@ export function SectorRankCard({
                   </div>
                 ))}
               </div>
-              {/* 당일/1주/1달 수익률 */}
-              <div className="mt-2 flex gap-3 text-[11px] text-muted tnum">
-                <span>당일 {ret(r.target.d1)}</span>
-                <span>1주 {ret(r.target.w1)}</span>
-                <span>1달 {ret(r.target.m1)}</span>
+
+              {/* 최근 주가흐름 성적표 */}
+              <div className="mt-3 rounded-lg bg-canvas/60 px-3 py-2">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[11px] font-semibold">최근 주가흐름 성적표</span>
+                  <span
+                    className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${gradeColor(
+                      r.target.trendGrade,
+                    )}`}
+                  >
+                    {r.target.trendGrade}
+                  </span>
+                  <span className="tnum text-[11px] text-muted">{r.target.trendScore}점</span>
+                  <span className="text-[10px] text-muted ml-auto hidden sm:inline">섹터 내 상대성적</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1 text-center">
+                  {(
+                    [
+                      ["1주", r.target.w1],
+                      ["1달", r.target.m1],
+                      ["3달", r.target.m3],
+                      ["6달", r.target.m6],
+                      ["1년", r.target.y1],
+                    ] as [string, number][]
+                  ).map(([k, v]) => (
+                    <div key={k}>
+                      <div className="text-[10px] text-muted">{k}</div>
+                      <div className={`tnum text-xs font-bold ${signColor(v)}`}>
+                        {v > 0 ? "+" : ""}
+                        {v.toFixed(1)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
-          <div className="text-xs text-muted mb-1.5">섹터 상위 종목 (재무·성장·밸류 종합점수순)</div>
+          <div className="text-xs text-muted mb-1.5">
+            {r.industryName} 상위 종목 (종합점수순) · 클릭하면 해당 종목으로 이동
+          </div>
           <ol className="flex flex-col gap-1">
             {r.ranked.map((s, i) => {
               const me = s.code === code;
@@ -108,6 +176,12 @@ export function SectorRankCard({
                 >
                   <span className="tnum text-xs text-muted w-5">{i + 1}</span>
                   <span className="font-medium flex-1 truncate min-w-0">{s.name}</span>
+                  <span
+                    className={`rounded border px-1 text-[10px] font-bold shrink-0 ${gradeColor(s.trendGrade)}`}
+                    title="최근 주가흐름 성적"
+                  >
+                    {s.trendGrade}
+                  </span>
                   <span className="tnum text-[11px] hidden sm:flex gap-2 text-muted">
                     <span>일 {ret(s.d1)}</span>
                     <span>주 {ret(s.w1)}</span>
@@ -124,8 +198,8 @@ export function SectorRankCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
-            점수 = 재무건전성(ROE·부채·이익률) 27 + 모멘텀 18 + 밸류(PER·PBR·EPS) 18 + 성장성 15 +
-            애널리스트(목표가) 10 + 배당 7 + 시총 5 (섹터 내 상대평가, 100점)
+            점수 = 재무건전성(ROE·부채·이익률) 27 + 주가흐름 18 + 밸류(PER·PBR·EPS) 18 + 성장성 15 +
+            애널리스트(목표가) 10 + 배당 7 + 시총 5 (비교군 내 상대평가, 100점)
           </div>
         </>
       )}

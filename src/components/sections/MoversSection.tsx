@@ -7,9 +7,17 @@ import { MarketToggle, type Mkt } from "@/components/MarketToggle";
 import { num, pct, signColor } from "@/lib/format";
 import type { NStock } from "@/lib/naverApi";
 
+type Dir = "up" | "down" | "high" | "low";
+const DIRS: { key: Dir; label: string; on: string }[] = [
+  { key: "up", label: "상승", on: "bg-up text-white" },
+  { key: "down", label: "하락", on: "bg-down text-white" },
+  { key: "high", label: "신고가", on: "bg-up text-white" },
+  { key: "low", label: "신저가", on: "bg-down text-white" },
+];
+
 export function MoversSection() {
   const [market, setMarket] = useState<Mkt>("KOSPI");
-  const [dir, setDir] = useState<"up" | "down">("up");
+  const [dir, setDir] = useState<Dir>("up");
   const { data, isLoading } = useSWR<{ data: NStock[] }>(
     `/api/movers?market=${market}&dir=${dir}`,
     fetcher,
@@ -23,18 +31,17 @@ export function MoversSection() {
       right={
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
-            <button
-              onClick={() => setDir("up")}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium ${dir === "up" ? "bg-up text-white" : "text-muted"}`}
-            >
-              상승
-            </button>
-            <button
-              onClick={() => setDir("down")}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium ${dir === "down" ? "bg-down text-white" : "text-muted"}`}
-            >
-              하락
-            </button>
+            {DIRS.map((d) => (
+              <button
+                key={d.key}
+                onClick={() => setDir(d.key)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium ${
+                  dir === d.key ? d.on : "text-muted hover:text-fg"
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
           </div>
           <MarketToggle value={market} onChange={setMarket} />
         </div>
@@ -42,6 +49,10 @@ export function MoversSection() {
     >
       {isLoading && !rows.length ? (
         <div className="h-64 animate-pulse rounded-lg bg-line/30" />
+      ) : !rows.length ? (
+        <div className="grid h-24 place-items-center text-sm text-muted">
+          {dir === "high" ? "오늘 52주 신고가 종목 없음" : dir === "low" ? "오늘 52주 신저가 종목 없음" : "데이터 없음"}
+        </div>
       ) : (
         <ol className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {rows.map((s, i) => (
@@ -60,6 +71,11 @@ export function MoversSection() {
             </li>
           ))}
         </ol>
+      )}
+      {(dir === "high" || dir === "low") && (
+        <div className="mt-2 text-[11px] text-muted">
+          시총 상위 400종목 중 당일 {dir === "high" ? "고가가 52주 최고" : "저가가 52주 최저"}를 갱신한 종목 (ETF·ETN 제외)
+        </div>
       )}
     </Card>
   );
