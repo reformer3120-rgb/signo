@@ -534,7 +534,7 @@ export async function sectorRank(code: string): Promise<SectorRank> {
     const 모멘텀 = m1N[i] * 0.5 + threeMoN[i] * 0.5;
     const 배당 = divN[i];
     const score = Math.round(
-      (재무 * 0.28 + 성장 * 0.12 + 밸류 * 0.25 + 애널 * 0.15 + 모멘텀 * 0.08 + 배당 * 0.07 + capN[i] * 0.05) *
+      (재무 * 0.27 + 성장 * 0.15 + 밸류 * 0.18 + 애널 * 0.1 + 모멘텀 * 0.18 + 배당 * 0.07 + capN[i] * 0.05) *
         100,
     );
     return {

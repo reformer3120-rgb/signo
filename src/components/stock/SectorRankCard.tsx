@@ -110,8 +110,8 @@ export function SectorRankCard({ code }: { code: string }) {
             })}
           </ol>
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
-            점수 = 재무건전성(ROE·부채·이익률) 28 + 밸류(PER·PBR·EPS) 25 + 애널리스트(목표가) 15 + 성장성
-            12 + 모멘텀 8 + 배당 7 + 시총 5 (섹터 내 상대평가, 100점)
+            점수 = 재무건전성(ROE·부채·이익률) 27 + 모멘텀 18 + 밸류(PER·PBR·EPS) 18 + 성장성 15 +
+            애널리스트(목표가) 10 + 배당 7 + 시총 5 (섹터 내 상대평가, 100점)
           </div>
         </>
       )}
