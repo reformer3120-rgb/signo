@@ -39,10 +39,10 @@ export default function RootLayout({
       className={`${pretendard.variable} ${grotesk.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <head>
-        {/* 초기 다크모드 플리커 방지 */}
+        {/* 초기 다크모드 + PC/모바일 뷰포트 플리커 방지 */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('signo-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}`,
+            __html: `try{var t=localStorage.getItem('signo-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark');var v=localStorage.getItem('signo-view');var m=document.querySelector('meta[name=viewport]');if(m)m.setAttribute('content',v==='pc'?'width=1280':'width=device-width, initial-scale=1');}catch(e){}`,
           }}
         />
       </head>

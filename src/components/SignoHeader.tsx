@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { ThemeToggle } from "./ThemeToggle";
+import { ViewportToggle } from "./ViewportToggle";
 
 const EN_TO_KR: Record<string, string> = {
   Sun: "일", Mon: "월", Tue: "화", Wed: "수", Thu: "목", Fri: "금", Sat: "토",
@@ -55,7 +56,10 @@ export function SignoHeader() {
               {status}
             </span>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <ViewportToggle />
+            <ThemeToggle />
+          </div>
         </div>
       </div>
     </header>
