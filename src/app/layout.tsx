@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
@@ -29,6 +29,12 @@ export const metadata: Metadata = {
   description: "KRX 마켓 대시보드 — 수급·지수·프로그램매매·선물옵션·환율·국채금리",
 };
 
+// 폰에서도 웹과 동일한 전체 레이아웃을 한 화면에 맞춰 표시 (컨테이너 폭 고정).
+// head에 <meta>를 직접 쓰면 Next 기본 viewport 태그가 뒤에 붙어 무시되므로 이 방식이어야 함.
+export const viewport: Viewport = {
+  width: 1152,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -41,8 +47,6 @@ export default function RootLayout({
       className={`${pretendard.variable} ${grotesk.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <head>
-        {/* 폰에서도 웹과 동일한 전체 레이아웃을 한 화면에 맞춰 표시 (컨테이너 폭 고정) */}
-        <meta name="viewport" content="width=1152" />
         {/* 초기 다크모드 플리커 방지 */}
         <script
           dangerouslySetInnerHTML={{

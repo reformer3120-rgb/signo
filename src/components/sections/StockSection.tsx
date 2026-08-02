@@ -53,8 +53,14 @@ export function StockSection({
   const candles = ohlcv?.data ?? [];
 
   return (
-    <Card
-      right={
+    <Card>
+      {/* 종목명·현재가·고저·거래량은 상단 고정바(StockStickyBar)에 표시 */}
+      {/* 지표와 봉주기를 같은 선상에 배치 */}
+      <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <IndicatorBar value={ind} onChange={setInd} />
+          {ind.ma && <MaLegend />}
+        </div>
         <div className="flex items-center gap-2">
           {tab === "min" && (
             <select
@@ -83,12 +89,6 @@ export function StockSection({
             ))}
           </div>
         </div>
-      }
-    >
-      {/* 종목명·현재가·고저·거래량은 상단 고정바(StockStickyBar)에 표시 */}
-      <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
-        <IndicatorBar value={ind} onChange={setInd} />
-        {ind.ma && <MaLegend />}
       </div>
 
       {isLoading ? (

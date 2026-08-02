@@ -63,6 +63,13 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
             </>
           )}
         </div>
+      </div>
+      {/* 지표와 봉주기를 같은 선상에 배치 */}
+      <div className="mb-1.5 flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <IndicatorBar value={ind} onChange={setInd} />
+          {ind.ma && <MaLegend />}
+        </div>
         <div className="flex items-center gap-1">
           {ctab === "min" && (
             <select
@@ -89,10 +96,6 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
             ))}
           </div>
         </div>
-      </div>
-      <div className="mb-1.5 flex items-center justify-between gap-2 flex-wrap">
-        <IndicatorBar value={ind} onChange={setInd} />
-        {ind.ma && <MaLegend />}
       </div>
       {candles.length ? (
         <CandleChart data={candles} height={230} indicators={ind} session={ctab === "min" || ctab === "1D"} />
