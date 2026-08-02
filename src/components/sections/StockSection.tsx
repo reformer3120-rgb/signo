@@ -20,7 +20,7 @@ const TABS: { key: string; label: string }[] = [
 ];
 const MIN_UNITS: Interval[] = ["1", "5", "15", "30", "60", "240"];
 
-export function StockSection() {
+export function StockSection({ onCode }: { onCode?: (code: string, name: string) => void }) {
   const [code, setCode] = useState("005930");
   const [name, setName] = useState("삼성전자");
   const [tab, setTab] = useState("1D");
@@ -86,6 +86,7 @@ export function StockSection() {
           onSelect={(c, n) => {
             setCode(c);
             setName(n);
+            onCode?.(c, n);
           }}
         />
         {q && (

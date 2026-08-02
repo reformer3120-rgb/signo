@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
+import { SignoHeader } from "@/components/SignoHeader";
+import { Nav } from "@/components/Nav";
 
 const grotesk = Space_Grotesk({
   variable: "--font-grotesk",
@@ -46,7 +48,16 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col bg-canvas text-fg">{children}</body>
+      <body className="min-h-full flex flex-col bg-canvas text-fg">
+        <div className="mx-auto w-full max-w-6xl px-4 py-5 flex flex-col gap-4">
+          <SignoHeader />
+          <Nav />
+          {children}
+          <footer className="py-4 text-center text-xs text-muted">
+            SIGNO · KRX 마켓 대시보드 · 데이터: Yahoo · 네이버 · KIS
+          </footer>
+        </div>
+      </body>
     </html>
   );
 }

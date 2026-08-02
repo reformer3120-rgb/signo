@@ -221,6 +221,186 @@ export async function futures(): Promise<Futures> {
   };
 }
 
+// ---- 종목 상세 (integration) ----
+export interface StockDetail {
+  code: string;
+  name: string;
+  industryCode: string;
+  per: number;
+  pbr: number;
+  eps: number;
+  bps: number;
+  cnsPer: number;
+  marketCap: number; // 억원
+  marketCapText: string; // "1,254조 9,859억"
+  foreignRate: string;
+  high52: number;
+  low52: number;
+  dividendYield: number;
+}
+
+// 접미사(배/원/%/조억) 제거 파서
+const numSuffix = (s?: string) =>
+  s ? parseFloat(String(s).replace(/,/g, "").replace(/[^\d.]/g, "")) || 0 : 0;
+// 조/억 → 억 단위
+const eok = (s?: string): number => {
+  if (!s) return 0;
+  let t = 0;
+  const jo = s.match(/([\d,]+)\s*조/);
+  const e = s.match(/([\d,]+)\s*억/);
+  if (jo) t += Number(jo[1].replace(/,/g, "")) * 10000;
+  if (e) t += Number(e[1].replace(/,/g, ""));
+  return jo || e ? t : numSuffix(s);
+};
+
+export async function stockDetail(code: string): Promise<StockDetail> {
+  const d = await getJson(`https://m.stock.naver.com/api/stock/${code}/integration`);
+  const ti: Record<string, string> = {};
+  for (const x of (d.totalInfos ?? []) as { code: string; value: string }[]) ti[x.code] = x.value;
+  return {
+    code,
+    name: d.stockName ?? code,
+    industryCode: String(d.industryCode ?? ""),
+    per: numSuffix(ti.per),
+    pbr: numSuffix(ti.pbr),
+    eps: numSuffix(ti.eps),
+    bps: numSuffix(ti.bps),
+    cnsPer: numSuffix(ti.cnsPer),
+    marketCap: eok(ti.marketValue),
+    marketCapText: ti.marketValue ?? "",
+    foreignRate: ti.foreignRate ?? "",
+    high52: numSuffix(ti.highPriceOf52Weeks),
+    low52: numSuffix(ti.lowPriceOf52Weeks),
+    dividendYield: numSuffix(ti.dividendYieldRatio),
+  };
+}
+
+// ---- 재무제표 (finance/annual) ----
+export interface Financials {
+  periods: { title: string; cns: boolean }[];
+  rows: { title: string; values: (string | null)[] }[];
+}
+
+export async function financials(code: string): Promise<Financials> {
+  const d = await getJson(`https://m.stock.naver.com/api/stock/${code}/finance/annual`);
+  const fi = d.financeInfo ?? {};
+  const tr = (fi.trTitleList ?? []) as { title: string; key: string; isConsensus: string }[];
+  const periods = tr.map((t) => ({ title: t.title, cns: t.isConsensus === "Y" }));
+  const rows = ((fi.rowList ?? []) as { title: string; columns: Record<string, { value: string }> }[]).map(
+    (r) => ({ title: r.title, values: tr.map((t) => r.columns?.[t.key]?.value ?? null) }),
+  );
+  return { periods, rows };
+}
+
+// ---- 종목 뉴스 ----
+export interface NewsItem {
+  title: string;
+  office: string;
+  datetime: string;
+  url: string;
+}
+
+export async function stockNews(code: string, size = 12): Promise<NewsItem[]> {
+  const groups = await getJson(`https://m.stock.naver.com/api/news/stock/${code}?pageSize=${size}`);
+  const out: NewsItem[] = [];
+  for (const g of (Array.isArray(groups) ? groups : []) as { items: Record<string, string>[] }[]) {
+    for (const it of g.items ?? []) {
+      out.push({
+        title: it.title,
+        office: it.officeName,
+        datetime: it.datetime,
+        url: `https://n.news.naver.com/article/${it.officeId}/${it.articleId}`,
+      });
+    }
+  }
+  return out.slice(0, size);
+}
+
+// ---- 섹터 종합평가 (같은 업종 상위종목 점수화) ----
+export interface ScoredStock {
+  code: string;
+  name: string;
+  marketCap: number;
+  per: number;
+  pbr: number;
+  div: number;
+  threeMo: number;
+  score: number;
+}
+export interface SectorRank {
+  industryName: string;
+  total: number;
+  rank: number; // 검색종목 순위
+  ranked: ScoredStock[]; // 상위 10
+  target?: ScoredStock;
+}
+
+function normalize(vals: number[]): number[] {
+  const valid = vals.filter((v) => Number.isFinite(v));
+  const min = Math.min(...valid);
+  const max = Math.max(...valid);
+  const range = max - min || 1;
+  return vals.map((v) => (Number.isFinite(v) ? (v - min) / range : 0));
+}
+
+export async function sectorRank(code: string): Promise<SectorRank> {
+  const detail = await stockDetail(code);
+  const ind = await getJson(
+    `https://m.stock.naver.com/api/stocks/industry/${detail.industryCode}?page=1&pageSize=100`,
+  );
+  const raw = (ind.stocks ?? []) as Record<string, string>[];
+  const members = raw.map((s) => ({
+    code: s.itemCode,
+    name: s.stockName,
+    cap: n(s.marketValueRaw ?? s.marketValue),
+    threeMo: Number(s.threeMonthEarningRate) || 0,
+  }));
+  members.sort((a, b) => b.cap - a.cap);
+  const top = members.slice(0, 20);
+  if (code && !top.find((m) => m.code === code)) {
+    const me = members.find((m) => m.code === code);
+    if (me) top.push(me);
+  }
+  // 상세(PER/PBR/배당) 병렬 수집
+  const enriched = await Promise.all(
+    top.map(async (m) => {
+      try {
+        const dd = await stockDetail(m.code);
+        return { ...m, per: dd.per, pbr: dd.pbr, div: dd.dividendYield };
+      } catch {
+        return { ...m, per: 0, pbr: 0, div: 0 };
+      }
+    }),
+  );
+  // 점수: 시총(규모)↑ PER↓ PBR↓ 배당↑ 3개월↑
+  const capN = normalize(enriched.map((e) => Math.log10(Math.max(e.cap, 1))));
+  const perN = normalize(enriched.map((e) => (e.per > 0 ? -e.per : -9999))); // 낮을수록↑, 적자는 최저
+  const pbrN = normalize(enriched.map((e) => (e.pbr > 0 ? -e.pbr : -9999)));
+  const divN = normalize(enriched.map((e) => e.div));
+  const moN = normalize(enriched.map((e) => e.threeMo));
+  const scored: ScoredStock[] = enriched.map((e, i) => ({
+    code: e.code,
+    name: e.name,
+    marketCap: e.cap,
+    per: e.per,
+    pbr: e.pbr,
+    div: e.div,
+    threeMo: e.threeMo,
+    score: Math.round(
+      (capN[i] * 0.25 + perN[i] * 0.25 + pbrN[i] * 0.2 + divN[i] * 0.15 + moN[i] * 0.15) * 100,
+    ),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  const rank = scored.findIndex((s) => s.code === code) + 1;
+  return {
+    industryName: ind.groupInfo?.name ?? "",
+    total: scored.length,
+    rank,
+    ranked: scored.slice(0, 10),
+    target: scored.find((s) => s.code === code),
+  };
+}
+
 export interface SearchItem {
   code: string;
   name: string;
