@@ -20,14 +20,16 @@ interface MarketResp {
 
 function Tile({ it, fmt }: { it: Item; fmt: (v: number) => string }) {
   return (
-    <div className="rounded-lg border border-line bg-canvas/40 px-3 py-2.5">
+    <div className="min-w-0 rounded-lg border border-line bg-canvas/40 px-3 py-2.5">
       <div className="text-xs text-muted truncate">{it.label}</div>
       <div className="mt-1 flex items-end justify-between gap-1">
-        <div>
-          <div className="tnum text-sm font-semibold leading-tight">{fmt(it.price)}</div>
+        <div className="min-w-0">
+          <div className="tnum text-sm font-semibold leading-tight truncate">{fmt(it.price)}</div>
           <div className={`tnum text-xs font-medium ${signColor(it.changePct)}`}>{pct(it.changePct)}</div>
         </div>
-        <Sparkline data={it.spark} up={it.changePct >= 0} />
+        <div className="shrink-0">
+          <Sparkline data={it.spark} up={it.changePct >= 0} />
+        </div>
       </div>
     </div>
   );

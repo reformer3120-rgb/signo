@@ -52,8 +52,8 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
   const f = flow?.futures;
 
   return (
-    <div className="rounded-lg border border-line/60 p-3">
-      <div className="flex items-center justify-between mb-2">
+    <div className="min-w-0 rounded-lg border border-line/60 p-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <div className="flex items-baseline gap-2">
           <span className="font-semibold">{label}</span>
           {q && (
@@ -101,7 +101,7 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
       )}
 
       {flow?.breadth && (
-        <div className="mt-2 flex items-center justify-center gap-3 rounded-md bg-canvas/50 py-1.5 text-xs">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-md bg-canvas/50 py-1.5 text-xs">
           <span className="text-up tnum">↑ {num(flow.breadth.up)}</span>
           {flow.breadth.upper > 0 && <span className="text-up/70 tnum">상한 {flow.breadth.upper}</span>}
           <span className="text-muted tnum">보합 {num(flow.breadth.flat)}</span>
@@ -150,7 +150,7 @@ export function IndexSection() {
 
   return (
     <Card title="지수 · 수급" right={<span className="text-xs text-muted">코스피 · 코스닥</span>}>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <IndexPane market="KOSPI" label="코스피" flow={flows?.KOSPI} />
         <IndexPane market="KOSDAQ" label="코스닥" flow={flows?.KOSDAQ} />
       </div>

@@ -23,9 +23,9 @@ function Item({ label, value }: { label: string; value: string }) {
 function Ret({ label, v }: { label: string; v?: number }) {
   const has = v !== undefined && v !== null;
   return (
-    <div className="flex-1 rounded-lg border border-line bg-canvas/40 px-2 py-2 text-center min-w-[52px]">
+    <div className="min-w-0 rounded-lg border border-line bg-canvas/40 px-1 py-2 text-center">
       <div className="text-[11px] text-muted">{label}</div>
-      <div className={`tnum mt-0.5 text-sm font-bold ${has ? signColor(v!) : "text-muted"}`}>
+      <div className={`tnum mt-0.5 text-xs sm:text-sm font-bold truncate ${has ? signColor(v!) : "text-muted"}`}>
         {has ? `${v! > 0 ? "+" : ""}${v!.toFixed(1)}%` : "-"}
       </div>
     </div>
@@ -93,7 +93,7 @@ export function StockDetailCard({ code }: { code: string }) {
 
       {/* 기간별 수익률 */}
       {r && (
-        <div className="mb-3 flex gap-1.5">
+        <div className="mb-3 grid grid-cols-5 gap-1.5">
           <Ret label="1일" v={r.d1} />
           <Ret label="1주" v={r.w1} />
           <Ret label="1달" v={r.m1} />

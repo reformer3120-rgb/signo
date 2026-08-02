@@ -41,7 +41,7 @@ export function SectorSection() {
       {isLoading && !data ? (
         <div className="h-64 animate-pulse rounded-lg bg-line/30" />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <div>
             <div className="text-xs font-semibold text-up mb-2">강한 섹터</div>
             <div className="flex flex-col gap-2">

@@ -43,14 +43,14 @@ export function MoversSection() {
       {isLoading && !rows.length ? (
         <div className="h-64 animate-pulse rounded-lg bg-line/30" />
       ) : (
-        <ol className="grid gap-1.5 sm:grid-cols-2">
+        <ol className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {rows.map((s, i) => (
             <li
               key={s.code}
               className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2"
             >
               <span className="tnum text-xs text-muted w-4 shrink-0">{i + 1}</span>
-              <span className="font-medium flex-1 min-w-0 break-keep">{s.name}</span>
+              <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
               <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
               <span
                 className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
