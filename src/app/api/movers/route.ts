@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
 import { stockList, highLow, type Market, type NStock } from "@/lib/naverApi";
-import { hasKIS, fluctuationRank, stockPrice } from "@/lib/kis";
+import { hasKIS, fluctuationRank, unifiedQuote } from "@/lib/kis";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -53,11 +53,17 @@ async function mergedMovers(market: Market, dir: "up" | "down"): Promise<NStock[
     for (let i = 0; i < top.length; i += 4) {
       await Promise.all(
         top.slice(i, i + 4).map(async (s) => {
+          const prevClose = s.change ? s.price - s.change : 0; // 네이버 KRX 기준 전일종가
           try {
-            const u = await stockPrice(s.code, "UN");
+            const u = await unifiedQuote(s.code);
             if (u.price > 0) {
               s.price = u.price;
-              s.changePct = u.changePct;
+              // KIS 통합 등락률은 시간외에 '정규장 종가 대비'로 나오므로 전일 종가 기준으로 재계산
+              s.changePct =
+                prevClose > 0
+                  ? +(((u.price - prevClose) / prevClose) * 100).toFixed(2)
+                  : u.changePct;
+              if (prevClose > 0) s.change = u.price - prevClose;
               if (u.volume > 0) s.volume = u.volume;
             }
           } catch {
@@ -84,7 +90,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ market, dir: dirRaw, data: onlyStocks(raw).slice(0, 20) });
     }
     const dir: "up" | "down" = dirRaw === "down" ? "down" : "up";
-    const data = await cached(`movers-un:${market}:${dir}`, 120, () => mergedMovers(market, dir));
+    const data = await cached(`movers-un2:${market}:${dir}`, 120, () => mergedMovers(market, dir));
     return NextResponse.json({ market, dir, data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

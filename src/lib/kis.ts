@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { redis } from "./cache";
+import { cached, redis } from "./cache";
 
 export function hasKIS(): boolean {
   return !!(process.env.KIS_APP_KEY?.trim() && process.env.KIS_APP_SECRET?.trim());
@@ -201,7 +201,7 @@ export async function foreignInstitution(
     await Promise.all(
       target.slice(i, i + 4).map(async (r) => {
         try {
-          const u = await stockPrice(r.code, "UN");
+          const u = await unifiedQuote(r.code);
           if (u.volume > 0) {
             r.unVol = u.volume;
             const nxt = Math.max(0, u.volume - r.krxVol);
@@ -271,6 +271,13 @@ export async function stockPrice(code: string, exchange: Exchange = "J") {
     volume: n(o.acml_vol),
   };
 }
+
+/**
+ * 통합(KRX+NXT) 시세 — 종목 단위로 캐시.
+ * 시총 상위 '더보기'나 여러 화면에서 같은 종목을 반복 조회하므로 캐시가 크게 유리하다.
+ */
+export const unifiedQuote = (code: string) =>
+  cached(`un:${code}`, 45, () => stockPrice(code, "UN"));
 
 // ---- 등락률 순위 (거래소별) ----
 // 통합(UN)은 이 TR에서 미지원 → KRX(J) 또는 NXT(NX)만 가능
