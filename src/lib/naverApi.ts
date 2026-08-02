@@ -469,18 +469,29 @@ function finMetrics(fin: Financials) {
   };
 }
 
+// 우선주(예: "삼성전자우", "현대차2우B") 감지 — 대응하는 보통주 이름이 같은 목록에 있을 때만 우선주로 판정
+function isPreferredDuplicate(name: string, commonNames: Set<string>): boolean {
+  const m = name.match(/^(.+?)\d*우[A-Z]?$/);
+  return !!m && commonNames.has(m[1]);
+}
+
 export async function sectorRank(code: string): Promise<SectorRank> {
   const detail = await stockDetail(code);
   const ind = await getJson(
     `https://m.stock.naver.com/api/stocks/industry/${detail.industryCode}?page=1&pageSize=100`,
   );
   const raw = (ind.stocks ?? []) as Record<string, string>[];
-  const members = raw.map((s) => ({
-    code: s.itemCode,
-    name: s.stockName,
-    cap: n(s.marketValueRaw ?? s.marketValue),
-    threeMo: Number(s.threeMonthEarningRate) || 0,
-  }));
+  const commonNames = new Set(raw.map((s) => s.stockName));
+  // 우선주는 보통주와 재무는 동일하지만 애널리스트 목표주가(컨센서스)를 보통주 것을 그대로
+  // 물려받아 상승여력이 부풀려짐 → 검색한 종목이 아닌 한 랭킹 후보에서 제외
+  const members = raw
+    .filter((s) => s.itemCode === code || !isPreferredDuplicate(s.stockName, commonNames))
+    .map((s) => ({
+      code: s.itemCode,
+      name: s.stockName,
+      cap: n(s.marketValueRaw ?? s.marketValue),
+      threeMo: Number(s.threeMonthEarningRate) || 0,
+    }));
   members.sort((a, b) => b.cap - a.cap);
   const top = members.slice(0, 15);
   if (code && !top.find((m) => m.code === code)) {

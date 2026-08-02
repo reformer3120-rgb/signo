@@ -20,9 +20,19 @@ const TABS: { key: string; label: string }[] = [
 ];
 const MIN_UNITS: Interval[] = ["1", "5", "15", "30", "60", "240"];
 
-export function StockSection({ onCode }: { onCode?: (code: string, name: string) => void }) {
-  const [code, setCode] = useState("005930");
-  const [name, setName] = useState("삼성전자");
+export function StockSection({
+  code: codeProp,
+  name: nameProp,
+  onCode,
+}: {
+  code?: string;
+  name?: string;
+  onCode?: (code: string, name: string) => void;
+}) {
+  const [codeState, setCodeState] = useState("005930");
+  const [nameState, setNameState] = useState("삼성전자");
+  const code = codeProp ?? codeState;
+  const name = nameProp ?? nameState;
   const [tab, setTab] = useState("1D");
   const [minUnit, setMinUnit] = useState<Interval>("5");
   const [ind, setInd] = useState<Indicators>({});
@@ -84,8 +94,8 @@ export function StockSection({ onCode }: { onCode?: (code: string, name: string)
         <StockSearch
           current={`${name} · ${code}`}
           onSelect={(c, n) => {
-            setCode(c);
-            setName(n);
+            setCodeState(c);
+            setNameState(n);
             onCode?.(c, n);
           }}
         />

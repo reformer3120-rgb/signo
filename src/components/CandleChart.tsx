@@ -77,7 +77,8 @@ export function CandleChart({
         attributionLogo: false,
       },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-      rightPriceScale: { borderColor: "transparent" },
+      // 가격축 하단을 거래량 오버레이 몫으로 항상 비워둬 확대/축소·타임프레임 전환 시에도 캔들-거래량 겹침 방지
+      rightPriceScale: { borderColor: "transparent", scaleMargins: { top: 0.08, bottom: 0.24 } },
       timeScale: { borderColor: "transparent", timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
@@ -121,10 +122,20 @@ export function CandleChart({
       if (today.length) {
         const hi = Math.max(...today.map((c) => c.high));
         const lo = Math.min(...today.map((c) => c.low));
-        // 우측 축 가격 라벨 + 짧은 태그(H 고점 / L 저점 / C 현재가)
-        candle.createPriceLine({ price: hi, color: UP, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "H" });
-        candle.createPriceLine({ price: lo, color: DOWN, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "L" });
-        candle.createPriceLine({ price: last.close, color: "#F2A93B", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "C" });
+        // 우측 축 가격 라벨을 라인 색과 동일한 배지로 표시 (H 고점 / L 저점 / C 현재가) → 라인과 타이틀이 한 세트로 보이게
+        const axisText = "#fff";
+        candle.createPriceLine({
+          price: hi, color: UP, lineWidth: 1, lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true, title: "H", axisLabelColor: UP, axisLabelTextColor: axisText,
+        });
+        candle.createPriceLine({
+          price: lo, color: DOWN, lineWidth: 1, lineStyle: LineStyle.Dashed,
+          axisLabelVisible: true, title: "L", axisLabelColor: DOWN, axisLabelTextColor: axisText,
+        });
+        candle.createPriceLine({
+          price: last.close, color: "#F2A93B", lineWidth: 1, lineStyle: LineStyle.Solid,
+          axisLabelVisible: true, title: "C", axisLabelColor: "#F2A93B", axisLabelTextColor: axisText,
+        });
       }
     }
 

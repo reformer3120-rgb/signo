@@ -8,12 +8,21 @@ import { NewsCard } from "@/components/stock/NewsCard";
 
 export function StockView() {
   const [code, setCode] = useState("005930");
+  const [name, setName] = useState("삼성전자");
+  const select = (c: string, n: string) => {
+    setCode(c);
+    setName(n);
+  };
+  const selectFromSector = (c: string, n: string) => {
+    select(c, n);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   return (
     <>
-      <StockSection onCode={(c) => setCode(c)} />
+      <StockSection code={code} name={name} onCode={select} />
       <StockDetailCard code={code} />
       <FinancialsCard code={code} />
-      <SectorRankCard code={code} />
+      <SectorRankCard code={code} onSelect={selectFromSector} />
       <NewsCard code={code} />
     </>
   );

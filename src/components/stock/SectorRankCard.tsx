@@ -18,7 +18,13 @@ const ret = (v: number) => (
   </span>
 );
 
-export function SectorRankCard({ code }: { code: string }) {
+export function SectorRankCard({
+  code,
+  onSelect,
+}: {
+  code: string;
+  onSelect?: (code: string, name: string) => void;
+}) {
   const { data } = useSWR<{ data: SectorRank }>(`/api/sector-rank?code=${code}`, fetcher, {
     refreshInterval: 900_000,
   });
@@ -88,8 +94,16 @@ export function SectorRankCard({ code }: { code: string }) {
               return (
                 <li
                   key={s.code}
+                  onClick={() => !me && onSelect?.(s.code, s.name)}
+                  role={me ? undefined : "button"}
+                  tabIndex={me ? undefined : 0}
+                  onKeyDown={(e) => {
+                    if (!me && (e.key === "Enter" || e.key === " ")) onSelect?.(s.code, s.name);
+                  }}
                   className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm ${
-                    me ? "bg-brand/10 border border-brand/30" : "border border-line/50"
+                    me
+                      ? "bg-brand/10 border border-brand/30"
+                      : "border border-line/50 cursor-pointer hover:border-brand/40 hover:bg-brand/5"
                   }`}
                 >
                   <span className="tnum text-xs text-muted w-5">{i + 1}</span>
