@@ -121,9 +121,10 @@ export function CandleChart({
       if (today.length) {
         const hi = Math.max(...today.map((c) => c.high));
         const lo = Math.min(...today.map((c) => c.low));
-        candle.createPriceLine({ price: hi, color: UP, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "장중고" });
-        candle.createPriceLine({ price: lo, color: DOWN, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "장중저" });
-        candle.createPriceLine({ price: last.close, color: "#F2A93B", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: "현재가" });
+        // 가격값은 우측 축 라벨로만 표시(색으로 구분) — 차트 위 title 오버레이 제거
+        candle.createPriceLine({ price: hi, color: UP, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+        candle.createPriceLine({ price: lo, color: DOWN, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true });
+        candle.createPriceLine({ price: last.close, color: "#F2A93B", lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: true });
       }
     }
 

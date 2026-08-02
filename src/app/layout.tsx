@@ -41,7 +41,8 @@ export default function RootLayout({
       className={`${pretendard.variable} ${grotesk.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* 폰에서도 웹과 동일한 전체 레이아웃을 한 화면에 맞춰 표시 (컨테이너 폭 고정) */}
+        <meta name="viewport" content="width=1152" />
         {/* 초기 다크모드 플리커 방지 */}
         <script
           dangerouslySetInnerHTML={{

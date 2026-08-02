@@ -101,10 +101,11 @@ export function InvestorPanel({ code }: { code: string }) {
 
       {tab === "daily" ? (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[320px]">
+          <table className="w-full text-sm min-w-[360px]">
             <thead>
               <tr className="text-xs text-muted border-b border-line">
                 <th className="text-left font-medium py-1.5">날짜</th>
+                <th className="text-right font-medium">수익률</th>
                 <th className="text-right font-medium">종가</th>
                 <th className="text-right font-medium">외국인</th>
                 <th className="text-right font-medium">기관</th>
@@ -112,10 +113,16 @@ export function InvestorPanel({ code }: { code: string }) {
               </tr>
             </thead>
             <tbody>
-              {shown.map((r) => (
+              {shown.map((r, i) => {
+                const prev = rows[i + 1]?.close;
+                const ret = prev ? ((r.close - prev) / prev) * 100 : null;
+                return (
                 <tr key={r.date} className="border-b border-line/30">
                   <td className="py-1.5 text-muted tnum">
                     {r.date.slice(4, 6)}.{r.date.slice(6, 8)}
+                  </td>
+                  <td className={`text-right tnum ${ret === null ? "text-muted" : signColor(ret)}`}>
+                    {ret === null ? "-" : `${ret > 0 ? "+" : ""}${ret.toFixed(2)}%`}
                   </td>
                   <td className="text-right tnum">{num(r.close)}</td>
                   <td className="text-right">
@@ -128,7 +135,8 @@ export function InvestorPanel({ code }: { code: string }) {
                     <Num v={r.개인} />
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           {rows.length > 10 && (

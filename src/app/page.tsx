@@ -19,8 +19,10 @@ export default function Home() {
   return (
     <>
       <IndexSection />
-      <MarketSection />
-      <RatesSection />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
+        <MarketSection />
+        <RatesSection />
+      </div>
       <MarketFlowSection />
       <SectorSection />
       <MarketCapSection />
