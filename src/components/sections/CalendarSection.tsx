@@ -3,6 +3,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { koEvent } from "@/lib/econKo";
 import type { EconEvent } from "@/lib/calendar";
 
 const WD = ["일", "월", "화", "수", "목", "금", "토"];
@@ -91,7 +92,17 @@ export function CalendarSection() {
                 {g.date === today && " · 오늘"}
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[520px]">
+                <table className="w-full text-sm min-w-[560px]">
+                  <thead>
+                    <tr className="text-[11px] text-muted border-b border-line">
+                      <th className="text-left font-medium py-1 w-12">시각</th>
+                      <th className="text-left font-medium w-12">중요도</th>
+                      <th className="text-left font-medium">지표</th>
+                      <th className="text-right font-medium pr-2 w-20">실제</th>
+                      <th className="text-right font-medium pr-2 w-20">예상</th>
+                      <th className="text-right font-medium w-20">이전</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {g.items.map((e) => (
                       <tr key={e.id} className="border-b border-line/40">
@@ -101,8 +112,8 @@ export function CalendarSection() {
                         <td className="pr-2 w-12 whitespace-nowrap text-xs">
                           <Stars n={e.importance} />
                         </td>
-                        <td className="pr-2 font-medium">
-                          {e.event}
+                        <td className="pr-2 font-medium" title={e.event}>
+                          {koEvent(e.event)}
                           {e.reference && (
                             <span className="ml-1 text-[11px] text-muted">({e.reference})</span>
                           )}
@@ -138,7 +149,7 @@ export function CalendarSection() {
             </div>
           ))}
           <div className="text-[11px] text-muted">
-            시각은 한국시간 기준 · 값은 실제 / 예상 / 이전 순 · 미국 주요 경제지표 (finviz)
+            한국시간 기준 · 미국 주요 경제지표 · 지표명에 마우스를 올리면 원문 표기 · finviz
           </div>
         </div>
       )}
