@@ -1,5 +1,5 @@
-import { UsSection } from "@/components/sections/UsSection";
+import { UsView } from "@/components/us/UsView";
 
 export default function UsPage() {
-  return <UsSection />;
+  return <UsView />;
 }
