@@ -114,7 +114,7 @@ export function CalendarSection() {
               </button>
             ))}
           </div>
-          <span className="hidden sm:inline text-xs text-muted">한국시간 · finviz</span>
+          <span className="hidden sm:inline text-xs text-muted">한국시간 · 지표+실적</span>
         </div>
       }
     >
@@ -159,6 +159,11 @@ export function CalendarSection() {
                         </td>
                         <td className="pr-2 font-medium" title={e.event}>
                           <span className="mr-1">{FLAG[e.country]}</span>
+                          {e.category === "실적" && (
+                            <span className="mr-1 rounded border border-signal/40 bg-signal/10 px-1 py-0.5 text-[10px] font-semibold text-signal">
+                              실적
+                            </span>
+                          )}
                           {koEvent(e.event)}
                           {e.reference && (
                             <span className="ml-1 text-[11px] text-muted">({e.reference})</span>
@@ -195,7 +200,7 @@ export function CalendarSection() {
             </div>
           ))}
           <div className="text-[11px] text-muted">
-            한국시간 기준 · 미국 주요 경제지표 · 지표명에 마우스를 올리면 원문 표기 · finviz
+            한국시간 기준 · 경제지표는 앞으로 7일, 주요 기업 실적발표는 30일 · 실적은 시가총액 최상위와 섹터 대표주만 · finviz · 야후
           </div>
         </div>
       )}

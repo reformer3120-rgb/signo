@@ -9,6 +9,8 @@ const H = {
 
 export type EconCountry = "US" | "EU" | "JP" | "KR";
 
+import { earningsCalendar } from "./earnings";
+
 export interface EconEvent {
   id: number;
   country: EconCountry;
@@ -168,12 +170,13 @@ export async function economicCalendar(daysBack = 1, daysAhead = 10): Promise<Ec
 
 /** 미국(finviz) + 일본·유럽(ForexFactory)을 합친 캘린더 */
 export async function economicCalendarAll(): Promise<EconEvent[]> {
-  const [us, other] = await Promise.all([
+  const [us, other, earn] = await Promise.all([
     economicCalendar(0, 7).catch(() => [] as EconEvent[]),
     forexFactory().catch(() => [] as EconEvent[]),
+    earningsCalendar(30).catch(() => [] as EconEvent[]),
   ]);
   // 미국은 finviz 쪽이 발표치(actual)까지 있어 더 상세 → ForexFactory의 미국 항목은 제외
-  return [...us, ...other.filter((e) => e.country !== "US")].sort((a, b) =>
+  return [...us, ...other.filter((e) => e.country !== "US"), ...earn].sort((a, b) =>
     a.kst.localeCompare(b.kst),
   );
 }
