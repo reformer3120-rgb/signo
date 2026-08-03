@@ -409,3 +409,84 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
   const ranked = target && !top10.some((s) => s.symbol === symbol) ? [...top10, target] : top10;
   return { sector, total: scored.length, rank: target?.rank ?? 0, ranked, target };
 }
+
+// ---- 미국 시장지표 (국채금리 · 달러 · 원자재 · 환율 · 선물 · 가상자산) ----
+export interface UsIndicator {
+  symbol: string;
+  label: string;
+  price: number;
+  changePct: number;
+  unit?: string;
+}
+export interface UsMarketIndicators {
+  yields: UsIndicator[];
+  dollar: UsIndicator[];
+  commodities: UsIndicator[];
+  fx: UsIndicator[];
+  futures: UsIndicator[];
+  crypto: UsIndicator[];
+}
+
+// [심볼, 표시명, 단위]
+const G_YIELDS: [string, string, string][] = [
+  ["^IRX", "13주 T-Bill", "%"],
+  ["2YY=F", "2년 국채", "%"],
+  ["^FVX", "5년 국채", "%"],
+  ["^TNX", "10년 국채", "%"],
+  ["^TYX", "30년 국채", "%"],
+];
+const G_DOLLAR: [string, string, string][] = [
+  ["DX-Y.NYB", "달러인덱스 DXY", ""],
+  ["^VIX", "VIX 변동성", ""],
+  ["^MOVE", "MOVE 채권변동성", ""],
+];
+const G_COMM: [string, string, string][] = [
+  ["GC=F", "금", "$"],
+  ["SI=F", "은", "$"],
+  ["HG=F", "구리", "$"],
+  ["CL=F", "WTI 원유", "$"],
+  ["BZ=F", "브렌트유", "$"],
+  ["NG=F", "천연가스", "$"],
+];
+const G_FX: [string, string, string][] = [
+  ["EURUSD=X", "EUR/USD", ""],
+  ["GBPUSD=X", "GBP/USD", ""],
+  ["JPY=X", "USD/JPY", ""],
+  ["CNY=X", "USD/CNY", ""],
+  ["KRW=X", "USD/KRW", ""],
+];
+const G_FUT: [string, string, string][] = [
+  ["ES=F", "S&P500 선물", ""],
+  ["NQ=F", "나스닥100 선물", ""],
+  ["YM=F", "다우 선물", ""],
+  ["RTY=F", "러셀2000 선물", ""],
+];
+const G_CRYPTO: [string, string, string][] = [
+  ["BTC-USD", "비트코인", "$"],
+  ["ETH-USD", "이더리움", "$"],
+  ["SOL-USD", "솔라나", "$"],
+];
+
+export async function usMarketIndicators(): Promise<UsMarketIndicators> {
+  const all = [G_YIELDS, G_DOLLAR, G_COMM, G_FX, G_FUT, G_CRYPTO].flat();
+  const rows = await yahooFinance.quote(all.map(([s]) => s));
+  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const pick = (defs: [string, string, string][]): UsIndicator[] => {
+    const out: UsIndicator[] = [];
+    for (const [symbol, label, unit] of defs) {
+      const x = list.find((v) => v.symbol === symbol);
+      const price = Number(x?.regularMarketPrice);
+      if (!x || !price) continue;
+      out.push({ symbol, label, price, changePct: Number(x.regularMarketChangePercent) || 0, unit });
+    }
+    return out;
+  };
+  return {
+    yields: pick(G_YIELDS),
+    dollar: pick(G_DOLLAR),
+    commodities: pick(G_COMM),
+    fx: pick(G_FX),
+    futures: pick(G_FUT),
+    crypto: pick(G_CRYPTO),
+  };
+}

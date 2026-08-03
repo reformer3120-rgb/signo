@@ -2,15 +2,20 @@
 import { useState } from "react";
 import { UsSection } from "@/components/sections/UsSection";
 import { UsStockView } from "@/components/us/UsStockView";
+import { UsIndicatorSection } from "@/components/us/UsIndicatorSection";
 
 const VIEWS = [
   { key: "market", label: "시장" },
+  { key: "indicator", label: "지표" },
   { key: "stock", label: "종목" },
 ] as const;
 
+type View = (typeof VIEWS)[number]["key"];
+
 export function UsView() {
-  const [view, setView] = useState<"market" | "stock">("market");
+  const [view, setView] = useState<View>("market");
   const [picked, setPicked] = useState<string | undefined>();
+
   return (
     <>
       <div className="flex w-fit items-center gap-1 rounded-xl border border-line bg-surface p-1">
@@ -34,6 +39,8 @@ export function UsView() {
             window.scrollTo({ top: 0, behavior: "smooth" });
           }}
         />
+      ) : view === "indicator" ? (
+        <UsIndicatorSection />
       ) : (
         <UsStockView initialSymbol={picked} />
       )}
