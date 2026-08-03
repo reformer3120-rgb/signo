@@ -87,6 +87,9 @@ export function InvestorPanel({ code }: { code: string }) {
             <span className="text-xs font-semibold">
               당일 실시간 · {rows[0].date.slice(4, 6)}.{rows[0].date.slice(6, 8)}
             </span>
+            {rows[0].외국인 === 0 && rows[0].기관 === 0 && rows[0].개인 === 0 && (
+              <span className="text-[11px] text-muted">· 집계 전 (장 마감 후 확정)</span>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
             {(["외국인", "기관", "개인"] as const).map((k) => (

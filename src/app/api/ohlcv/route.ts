@@ -27,7 +27,39 @@ export async function GET(req: Request) {
   const exchange: Exchange | null = ex === "NXT" ? "NX" : ex === "UN" ? "UN" : null;
 
   try {
-    // KRX 외 거래소는 KIS에서 조회 (네이버는 KRX만 제공)
+    // 통합: KRX 과거 시계열을 바탕으로 최근 구간만 통합(UN) 값으로 덮어씀.
+    // KIS 통합 조회는 과거 데이터가 짧아 그대로 쓰면 전 거래일 이전이 비어 보인다.
+    if (exchange === "UN" && hasKIS()) {
+      const period = PERIOD[interval];
+      const key = `ohlcv:UNmix:${code}:${interval}`;
+      if (period) {
+        const data = await cached(key, interval === "1D" ? 300 : 900, async () => {
+          const base =
+            interval === "1D"
+              ? await daily(code, 250)
+              : interval === "1W"
+                ? await bars(code, "week", 250)
+                : interval === "1M"
+                  ? await bars(code, "month", 300)
+                  : await yearly(code);
+          const un = await exchangeBars(
+            code,
+            "UN",
+            period,
+            ymdOffset(SPAN_DAYS[interval] ?? 400),
+            ymdOffset(0),
+          ).catch(() => []);
+          const byTime = new Map(base.map((c) => [c.time, c]));
+          for (const c of un) byTime.set(c.time, c); // 통합 값이 있으면 우선
+          return [...byTime.values()].sort((a, b) => a.time - b.time);
+        });
+        return NextResponse.json({ code, interval, exchange: ex, data });
+      }
+      const data = await cached(key, 60, () => exchangeMinutes(code, "UN", UNIT[interval] ?? 5));
+      return NextResponse.json({ code, interval, exchange: ex, data });
+    }
+
+    // NXT는 KIS에서 그대로 조회 (네이버는 KRX만 제공)
     if (exchange && hasKIS()) {
       const key = `ohlcv:${exchange}:${code}:${interval}`;
       const period = PERIOD[interval];

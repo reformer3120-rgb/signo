@@ -11,7 +11,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const code = (searchParams.get("code") || "005930").replace(/\D/g, "");
   try {
-    const data = await cached(`investor:${code}`, 120, () => stockInvestor(code));
+    // 당일 수급이 집계되는 즉시 반영되도록 짧게 캐시
+    const data = await cached(`investor:${code}`, 30, () => stockInvestor(code));
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
