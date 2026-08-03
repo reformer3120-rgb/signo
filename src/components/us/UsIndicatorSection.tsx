@@ -45,7 +45,7 @@ export function UsIndicatorSection() {
 
   return (
     <Card
-      title="환율 · 원자재 · 가상자산 · 선물 · 달러 · 유럽"
+      title="증시 · 지수 · 지수선물 · 환율 · 원자재 · 가상자산"
       right={<span className="text-xs text-muted">야후 · 60초</span>}
     >
       {isLoading && !d ? (
@@ -54,12 +54,12 @@ export function UsIndicatorSection() {
         <div className="grid h-24 place-items-center text-sm text-muted">데이터 없음</div>
       ) : (
         <div className="flex flex-col gap-3.5">
+          <Group title="유럽 증시" items={d.europe} />
+          <Group title="달러인덱스 · 변동성" items={d.dollar} />
+          <Group title="지수선물" items={d.futures} />
           <Group title="환율" items={d.fx} />
           <Group title="원자재" items={d.commodities} />
           <Group title="가상자산" items={d.crypto} />
-          <Group title="지수선물" items={d.futures} />
-          <Group title="달러 · 변동성" items={d.dollar} />
-          <Group title="유럽 증시" items={d.europe} />
         </div>
       )}
     </Card>
