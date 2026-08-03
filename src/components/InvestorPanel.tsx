@@ -5,6 +5,7 @@ import { fetcher } from "@/lib/swr";
 import { num, signColor } from "@/lib/format";
 import type { InvestorRow } from "@/lib/kis";
 import type { TrendRow } from "@/lib/naverApi";
+import type { InvestorEstimate } from "@/lib/kis";
 
 const PERIODS: { key: string; label: string; days: number }[] = [
   { key: "1d", label: "일", days: 1 },
@@ -32,6 +33,15 @@ export function InvestorPanel({ code }: { code: string }) {
     fetcher,
     { refreshInterval: 30_000 },
   );
+
+  // 장중 실시간 추정 수급 (KIS 시간대별 가집계)
+  const { data: estResp } = useSWR<{ data: InvestorEstimate[] }>(
+    `/api/investor-estimate?code=${code}`,
+    fetcher,
+    { refreshInterval: 60_000 },
+  );
+  const est = estResp?.data ?? [];
+  const latestEst = est[est.length - 1];
 
   // 누적탭: 장기 외국인/기관 (네이버 최대 1년치)
   const { data: longResp } = useSWR<{ data: TrendRow[] }>(
@@ -80,28 +90,76 @@ export function InvestorPanel({ code }: { code: string }) {
         </div>
       </div>
 
-      {rows[0] && (
+      {(latestEst || rows[0]) && (
         <div className="mb-3 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2">
-          <div className="flex items-center gap-1.5 mb-1">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1">
             <span className="w-1.5 h-1.5 rounded-full bg-confirm animate-pulse" />
             <span className="text-xs font-semibold">
-              당일 실시간 · {rows[0].date.slice(4, 6)}.{rows[0].date.slice(6, 8)}
+              {latestEst ? `당일 실시간 추정 · ${latestEst.time}` : `당일 · ${rows[0].date.slice(4, 6)}.${rows[0].date.slice(6, 8)}`}
             </span>
-            {rows[0].외국인 === 0 && rows[0].기관 === 0 && rows[0].개인 === 0 && (
+            {latestEst && <span className="text-[11px] text-muted">· 장중 추정 누적</span>}
+            {!latestEst && rows[0].외국인 === 0 && rows[0].기관 === 0 && rows[0].개인 === 0 && (
               <span className="text-[11px] text-muted">· 집계 전 (장 마감 후 확정)</span>
             )}
           </div>
           <div className="grid grid-cols-3 gap-2 text-sm">
-            {(["외국인", "기관", "개인"] as const).map((k) => (
-              <div
-                key={k}
-                className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5"
-              >
-                <span className="text-[11px] text-muted">{k}</span>
-                <Num v={rows[0][k]} />
-              </div>
-            ))}
+            {latestEst ? (
+              <>
+                <div className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5">
+                  <span className="text-[11px] text-muted">외국인</span>
+                  <Num v={latestEst.외국인} />
+                </div>
+                <div className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5">
+                  <span className="text-[11px] text-muted">기관</span>
+                  <Num v={latestEst.기관} />
+                </div>
+                <div className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5">
+                  <span className="text-[11px] text-muted">합계</span>
+                  <Num v={latestEst.합계} />
+                </div>
+              </>
+            ) : (
+              (["외국인", "기관", "개인"] as const).map((k) => (
+                <div
+                  key={k}
+                  className="flex flex-col items-center gap-0.5 rounded-md bg-canvas/40 px-2 py-1.5"
+                >
+                  <span className="text-[11px] text-muted">{k}</span>
+                  <Num v={rows[0][k]} />
+                </div>
+              ))
+            )}
           </div>
+          {/* 시간대별 추정 추이 */}
+          {est.length > 1 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-xs min-w-[280px]">
+                <thead>
+                  <tr className="text-[11px] text-muted">
+                    <th className="text-left font-medium py-1">시각</th>
+                    {est.map((e) => (
+                      <th key={e.time} className="tnum text-right font-medium px-1">
+                        {e.time}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(["외국인", "기관"] as const).map((k) => (
+                    <tr key={k}>
+                      <td className="py-0.5 text-muted whitespace-nowrap">{k}</td>
+                      {est.map((e) => (
+                        <td key={e.time} className={`tnum text-right px-1 ${signColor(e[k])}`}>
+                          {e[k] > 0 ? "+" : ""}
+                          {Math.round(e[k] / 10000)}만
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

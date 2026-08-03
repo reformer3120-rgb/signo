@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -146,7 +147,14 @@ export function MarketFlowSection() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.code} className="border-b border-line/40 hover:bg-surface/70">
-                  <td className="font-medium py-1.5 pl-1">{r.name}</td>
+                  <td className="font-medium py-1.5 pl-1">
+                    <Link
+                      href={`/stock?code=${r.code}&name=${encodeURIComponent(r.name)}`}
+                      className="hover:text-brand hover:underline"
+                    >
+                      {r.name}
+                    </Link>
+                  </td>
                   <td className="text-right tnum px-2">{num(r.price)}</td>
                   <td className={`text-right tnum px-2 ${signColor(r.changePct)}`}>{pct(r.changePct)}</td>
                   {byValue ? (

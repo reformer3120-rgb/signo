@@ -662,3 +662,39 @@ export async function fluctuationRank(
   rows.sort((a, b) => (dir === "up" ? b.changePct - a.changePct : a.changePct - b.changePct));
   return rows;
 }
+
+// ---- 종목별 외국인·기관 실시간 추정 순매수 ----
+// 확정 수급(가집계)은 장 마감 후에만 나오지만, 이 TR은 장중 시간대별 추정치를 제공한다.
+// 제공 시점: 09:30 / 10:00 / 11:20 / 13:20 / 14:30 (누적 기준)
+const EST_HOURS: Record<string, string> = {
+  "1": "09:30",
+  "2": "10:00",
+  "3": "11:20",
+  "4": "13:20",
+  "5": "14:30",
+};
+
+export interface InvestorEstimate {
+  time: string; // "14:30"
+  외국인: number; // 추정 순매수 수량(주)
+  기관: number;
+  합계: number;
+}
+
+export async function stockInvestorEstimate(code: string): Promise<InvestorEstimate[]> {
+  const j = await kisGet(
+    "/uapi/domestic-stock/v1/quotations/investor-trend-estimate",
+    "HHPTJ04160200",
+    { MKSC_SHRN_ISCD: code },
+  );
+  const rows = (j.output2 as Record<string, string>[]) ?? [];
+  return rows
+    .map((r) => ({
+      time: EST_HOURS[r.bsop_hour_gb] ?? r.bsop_hour_gb,
+      외국인: n(r.frgn_fake_ntby_qty),
+      기관: n(r.orgn_fake_ntby_qty),
+      합계: n(r.sum_fake_ntby_qty),
+    }))
+    .filter((r) => r.외국인 !== 0 || r.기관 !== 0)
+    .sort((a, b) => a.time.localeCompare(b.time));
+}

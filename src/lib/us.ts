@@ -76,29 +76,64 @@ export async function usSectors(): Promise<UsSector[]> {
 
 export type UsMoverKind = "gainers" | "losers" | "actives";
 
-const SCR_ID = {
-  gainers: "day_gainers",
-  losers: "day_losers",
-  actives: "most_actives",
-} as const;
-
-/** 특징주 (상승률 · 하락률 · 거래활발) */
-export async function usMovers(kind: UsMoverKind, count = 20): Promise<UsQuote[]> {
-  const r = await yahooFinance.screener({ scrIds: SCR_ID[kind], count });
-  return ((r.quotes ?? []) as unknown as Record<string, unknown>[]).map(q);
+/** 심볼이 많을 때 나눠서 조회 */
+async function quoteMany(symbols: string[]): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  for (let i = 0; i < symbols.length; i += 120) {
+    const r = await yahooFinance.quote(symbols.slice(i, i + 120));
+    out.push(...((Array.isArray(r) ? r : [r]) as Record<string, unknown>[]));
+  }
+  return out;
 }
 
-/** 시가총액 상위 — 대형주 종목군에서 시총순 정렬 */
-const MEGA_CAPS = [
-  "NVDA", "AAPL", "MSFT", "GOOGL", "AMZN", "META", "AVGO", "TSLA", "BRK-B", "JPM",
-  "WMT", "LLY", "V", "ORCL", "MA", "NFLX", "XOM", "COST", "JNJ", "HD",
-  "PG", "ABBV", "BAC", "PLTR", "AMD", "CVX", "KO", "TMUS", "CRM", "WFC",
-  "CSCO", "PM", "IBM", "MCD", "GE", "ABT", "LIN", "MRK", "NOW", "PEP",
-  "ACN", "ISRG", "AXP", "TMO", "INTU", "GS", "QCOM", "ADBE", "TXN", "DIS",
-];
+/**
+ * 특징주 — 대형주 유니버스(시총 상위 종목군) 안에서만 산출.
+ * 야후 스크리너는 소형주까지 섞여 나와서 유니버스를 직접 조회해 정렬한다.
+ */
+export async function usMovers(kind: UsMoverKind, count = 20): Promise<UsQuote[]> {
+  const list = await quoteMany(LARGE_CAP_UNIVERSE);
+  const rows = list.map(q).filter((x) => x.price > 0);
+  if (kind === "actives") {
+    rows.sort((a, b) => b.volume * b.price - a.volume * a.price); // 거래대금 기준
+  } else if (kind === "losers") {
+    rows.sort((a, b) => a.changePct - b.changePct);
+  } else {
+    rows.sort((a, b) => b.changePct - a.changePct);
+  }
+  return rows.slice(0, count);
+}
 
+/** 대형주 유니버스 — 특징주·시총상위 산출 기준 (S&P500 상위 종목군) */
+export const LARGE_CAP_UNIVERSE = [
+  "NVDA","AAPL","MSFT","GOOGL","GOOG","AMZN","META","AVGO","TSLA","BRK-B",
+  "JPM","WMT","LLY","V","ORCL","MA","NFLX","XOM","COST","JNJ",
+  "HD","PG","ABBV","BAC","PLTR","AMD","CVX","KO","TMUS","CRM",
+  "WFC","CSCO","PM","IBM","MCD","GE","ABT","LIN","MRK","NOW",
+  "PEP","ACN","ISRG","AXP","TMO","INTU","GS","QCOM","ADBE","TXN",
+  "DIS","CAT","RTX","VZ","AMGN","MS","PFE","BKNG","SPGI","UNH",
+  "BLK","T","LOW","NEE","HON","SCHW","UNP","ETN","C","BSX",
+  "SYK","ANET","PGR","TJX","ADP","GILD","CMCSA","VRTX","DE","LRCX",
+  "MU","BX","PANW","REGN","KLAC","AMAT","MDT","CB","ADI","MMC",
+  "SO","LMT","ICE","MO","INTC","PLD","CI","SHW","DUK","APH",
+  "ELV","MDLZ","CME","AON","WM","EQIX","MCK","CTAS","ZTS","PYPL",
+  "MCO","APD","CL","TT","NOC","SNPS","MSI","EMR","ITW","GD",
+  "ORLY","CVS","MMM","BDX","FCX","USB","CDNS","ECL","PNC","MAR",
+  "NKE","CRWD","ABNB","ROP","AJG","COF","TGT","AZO","WELL","SLB",
+  "TFC","HLT","AEP","SPG","PSA","AMT","CCI","DLR","O","VST",
+  "CEG","SRE","D","EXC","XEL","ED","PEG","WEC","EIX","DTE",
+  "COP","EOG","PSX","MPC","WMB","OXY","VLO","KMI","OKE","HES",
+  "NEM","DOW","NUE","PPG","VMC","MLM","ALB","IFF","CTVA","LYB",
+  "SBUX","CMG","YUM","DHI","LEN","GM","F","RCL","CCL","EBAY",
+  "KMB","GIS","KHC","SYY","STZ","HSY","K","gis","GEHC","DXCM",
+  "IDXX","A","IQV","RMD","WST","MTD","HUM","CNC","BIIB","MRNA",
+  "SNOW","DDOG","TEAM","NET","ZS","MDB","HOOD","COIN","SQ","SHOP",
+  "UBER","LYFT","DASH","RBLX","SPOT","TTD","APP","ARM","SMCI","MRVL",
+  "DELL","HPQ","HPE","WDC","STX","ON","MCHP","NXPI","TER","SWKS",
+].filter((v, i, a) => a.indexOf(v) === i && v === v.toUpperCase());
+
+/** 시가총액 상위 — 대형주 종목군에서 시총순 정렬 */
 export async function usMarketCap(limit = 20): Promise<UsQuote[]> {
-  const rows = await yahooFinance.quote(MEGA_CAPS.slice(0, Math.max(limit, 20)));
+  const rows = await quoteMany(LARGE_CAP_UNIVERSE);
   const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
   return list
     .map(q)
