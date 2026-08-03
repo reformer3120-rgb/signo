@@ -16,11 +16,37 @@ export interface MarketIndicators {
   futures: MarketItem[];
 }
 
-const FX: [string, string, number][] = [
-  ["달러 USD/KRW", "KRW=X", 1],
-  ["유로 EUR/KRW", "EURKRW=X", 1],
-  ["엔 JPY/KRW · 100엔", "JPYKRW=X", 100],
+// 환율은 국내 고시환율(네이버/하나은행) 기준 — 전 거래일 대비 등락이 국내 표기와 일치한다.
+// 스파크라인 모양만 야후 시계열을 사용.
+const FX_KR: [string, string, string, number][] = [
+  ["달러 USD/KRW", "FX_USDKRW", "KRW=X", 1],
+  ["유로 EUR/KRW", "FX_EURKRW", "EURKRW=X", 1],
+  ["엔 JPY/KRW · 100엔", "FX_JPYKRW", "JPYKRW=X", 100],
+  ["위안 CNY/KRW", "FX_CNYKRW", "CNY=X", 0],
 ];
+
+const NAVER_H = {
+  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+  Referer: "https://m.stock.naver.com/",
+  Accept: "application/json",
+};
+
+async function naverFx(code: string): Promise<{ price: number; changePct: number } | null> {
+  try {
+    const r = await fetch(`https://api.stock.naver.com/marketindex/exchange/${code}`, {
+      headers: NAVER_H,
+      cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const e = j.exchangeInfo ?? {};
+    const price = Number(String(e.closePrice ?? "").replace(/,/g, "")) || 0;
+    const changePct = Number(e.fluctuationsRatio) || 0;
+    return price > 0 ? { price, changePct } : null;
+  } catch {
+    return null;
+  }
+}
 const COMM: [string, string][] = [
   ["금", "GC=F"],
   ["은", "SI=F"],
@@ -42,30 +68,27 @@ const FUT_GLOBAL: [string, string][] = [
 ];
 
 export async function marketIndicators(): Promise<MarketIndicators> {
-  const fxBase = await Promise.all(
-    FX.map(async ([label, sym, m]) => ({ label, ...(await spark(sym, m)) })),
+  const fx = await Promise.all(
+    FX_KR.map(async ([label, nCode, ySym, mult]) => {
+      const [kr, yh] = await Promise.all([
+        naverFx(nCode),
+        spark(ySym, mult || 1).catch(() => ({ price: 0, changePct: 0, spark: [] as number[] })),
+      ]);
+      // 스파크라인은 야후 시계열을 국내 고시가 수준으로 맞춰 표시
+      let sparkline = yh.spark;
+      if (kr && yh.price > 0 && sparkline.length) {
+        const scale = kr.price / yh.price;
+        sparkline = sparkline.map((v) => +(v * scale).toFixed(2));
+      }
+      return {
+        label,
+        price: kr?.price ?? yh.price,
+        changePct: kr?.changePct ?? yh.changePct,
+        spark: sparkline,
+      };
+    }),
   );
-  // 위안/원 = USD/KRW ÷ USD/CNY (CNYKRW=X는 야후 데이터 희박)
-  const usdkrwItem = fxBase.find((f) => f.label.startsWith("달러"))!;
-  const usdcny = await spark("CNY=X");
-  const kS = usdkrwItem.spark;
-  const cS = usdcny.spark;
-  const n = Math.min(kS.length, cS.length);
-  const cnySpark = Array.from({ length: n }, (_, i) =>
-    +(kS[kS.length - n + i] / cS[cS.length - n + i]).toFixed(2),
-  );
-  const cnyPrev = cnySpark[cnySpark.length - 2] ?? cnySpark[cnySpark.length - 1] ?? 0;
-  const cnyPrice = +(usdkrwItem.price / (usdcny.price || 1)).toFixed(2);
-  const fx = [
-    ...fxBase,
-    {
-      label: "위안 CNY/KRW",
-      price: cnyPrice,
-      changePct: cnyPrev ? (cnyPrice / cnyPrev - 1) * 100 : 0,
-      spark: cnySpark,
-    },
-  ];
-  const usdkrw = usdkrwItem.price || 1;
+  const usdkrw = fx.find((f) => f.label.startsWith("달러"))?.price || 1;
   const [commodities, crypto] = await Promise.all([
     Promise.all(COMM.map(async ([label, sym]) => ({ label, ...(await spark(sym)) }))),
     Promise.all(CRYPTO.map(async ([label, sym]) => ({ label, ...(await spark(sym, usdkrw)) }))),

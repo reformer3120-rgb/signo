@@ -60,13 +60,20 @@ export interface Spark {
 export async function spark(symbol: string, mult = 1): Promise<Spark> {
   const period1 = new Date(Date.now() - 50 * 86400_000);
   const r = await yahooFinance.chart(symbol, { period1, interval: "1d" });
-  const closes = (r.quotes ?? [])
-    .map((q) => q.close)
-    .filter((c): c is number => c != null);
-  const meta = (r.meta ?? {}) as { regularMarketPrice?: number };
+  const bars = (r.quotes ?? [])
+    .filter((q) => q.close != null && q.date != null)
+    .map((q) => ({ date: q.date as Date, close: q.close as number }));
+  const closes = bars.map((q) => q.close);
+  const meta = (r.meta ?? {}) as { regularMarketPrice?: number; previousClose?: number };
   const rmp = meta.regularMarketPrice ?? closes[closes.length - 1] ?? 0;
-  // 일간 등락률: 최근 2개 종가 기준
-  const prev = closes[closes.length - 2] ?? rmp;
+  // 등락률은 '전 거래일 종가' 기준.
+  // 마지막 봉이 '현재 진행 중인 세션'이면 그 직전 봉이 전 거래일 종가다.
+  // (현재가와 마지막 종가는 미세하게 다를 수 있어 값이 아닌 봉 날짜로 판정)
+  const lastBar = bars[bars.length - 1];
+  const ageHours = lastBar ? (Date.now() - new Date(lastBar.date).getTime()) / 3_600_000 : 999;
+  const prev =
+    meta.previousClose ??
+    (ageHours < 30 ? (closes[closes.length - 2] ?? rmp) : (closes[closes.length - 1] ?? rmp));
   return {
     price: rmp * mult,
     changePct: prev ? (rmp / prev - 1) * 100 : 0,

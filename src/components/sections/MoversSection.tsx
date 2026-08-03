@@ -55,25 +55,36 @@ export function MoversSection() {
           {dir === "high" ? "오늘 52주 신고가 종목 없음" : dir === "low" ? "오늘 52주 신저가 종목 없음" : "데이터 없음"}
         </div>
       ) : (
-        <ol className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {rows.map((s, i) => (
-            <li key={s.code}>
-              <Link
-                href={`/stock?code=${s.code}&name=${encodeURIComponent(s.name)}`}
-                className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 transition-colors hover:border-brand/40 hover:bg-brand/5"
-              >
-                <span className="tnum text-xs text-muted w-4 shrink-0">{i + 1}</span>
-                <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
-                <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
-                <span
-                  className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
-                >
-                  {pct(s.changePct)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ol>
+        /* 왼쪽 열에 1~n, 오른쪽 열에 n+1~ (열 우선 배치) */
+        <div className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2">
+          {[rows.slice(0, Math.ceil(rows.length / 2)), rows.slice(Math.ceil(rows.length / 2))].map(
+            (col, ci) =>
+              col.length > 0 && (
+                <ol key={ci} className="flex flex-col gap-1.5">
+                  {col.map((s, i) => {
+                    const rank = ci === 0 ? i + 1 : Math.ceil(rows.length / 2) + i + 1;
+                    return (
+                      <li key={s.code}>
+                        <Link
+                          href={`/stock?code=${s.code}&name=${encodeURIComponent(s.name)}`}
+                          className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 transition-colors hover:border-brand/40 hover:bg-brand/5"
+                        >
+                          <span className="tnum text-xs text-muted w-5 shrink-0">{rank}</span>
+                          <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
+                          <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
+                          <span
+                            className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
+                          >
+                            {pct(s.changePct)}
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ol>
+              ),
+          )}
+        </div>
       )}
       <div className="mt-2 text-[11px] text-muted">
         {dir === "high" || dir === "low"

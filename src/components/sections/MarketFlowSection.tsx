@@ -31,12 +31,16 @@ const SESSION_LABEL: Record<string, string> = {
 
 export function MarketFlowSection() {
   const [market, setMarket] = useState<"ALL" | "KOSPI" | "KOSDAQ">("ALL");
+  const [dir, setDir] = useState<"buy" | "sell">("buy");
   const { data, isLoading } = useSWR<{
     data: FiRow[];
     needKey?: boolean;
     mode?: "KRX+NXT" | "NXT" | "PENDING";
     session?: string;
-  }>(`/api/market-flow?market=${market}`, fetcher, { refreshInterval: 120_000 });
+  }>(`/api/market-flow?market=${market}&dir=${dir}`, fetcher, {
+    refreshInterval: 120_000,
+    keepPreviousData: true,
+  });
   const rows = (data?.data ?? []).slice(0, 15);
   // 순매수(가집계) 이전: 거래대금 상위로 대체 표시
   const byValue = data?.mode === "NXT" || data?.mode === "PENDING";
@@ -47,10 +51,32 @@ export function MarketFlowSection() {
       title={
         byValue
           ? `시장 수급 · ${nxtOnly ? "NXT" : "통합"} 거래대금 상위`
-          : "시장 수급 · 외국인·기관 순매수 상위"
+          : `시장 수급 · 외국인·기관 ${dir === "sell" ? "순매도" : "순매수"} 상위`
       }
       right={
         <div className="flex items-center gap-2">
+          {!byValue && (
+            <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+              {([
+                ["buy", "순매수"],
+                ["sell", "순매도"],
+              ] as const).map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => setDir(k)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    dir === k
+                      ? k === "buy"
+                        ? "bg-up text-white"
+                        : "bg-down text-white"
+                      : "text-muted hover:text-fg"
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           {data?.session && (
             <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
               {SESSION_LABEL[data.session] ?? data.session}

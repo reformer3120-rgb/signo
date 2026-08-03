@@ -162,6 +162,7 @@ export interface FiRow {
 export async function foreignInstitution(
   market: "ALL" | "KOSPI" | "KOSDAQ" = "ALL",
   enrich = 15,
+  dir: "buy" | "sell" = "buy",
 ): Promise<FiRow[]> {
   const iscd = market === "KOSPI" ? "0001" : market === "KOSDAQ" ? "1001" : "0000";
   const j = await kisGet(
@@ -172,7 +173,7 @@ export async function foreignInstitution(
       FID_COND_SCR_DIV_CODE: "16449",
       FID_INPUT_ISCD: iscd,
       FID_DIV_CLS_CODE: "0",
-      FID_RANK_SORT_CLS_CODE: "0",
+      FID_RANK_SORT_CLS_CODE: dir === "sell" ? "1" : "0", // 0=순매수 상위, 1=순매도 상위
       FID_ETC_CLS_CODE: "0",
     },
   );
@@ -192,8 +193,8 @@ export async function foreignInstitution(
     unVol: 0,
     nxtShare: -1,
   }));
-  // 순매수 대금(외국인+기관) 큰 순
-  rows.sort((a, b) => b.netValue - a.netValue);
+  // 순매수 대금(외국인+기관) 큰 순 / 순매도는 작은(음수 큰) 순
+  rows.sort((a, b) => (dir === "sell" ? a.netValue - b.netValue : b.netValue - a.netValue));
 
   // 상위 표시분만 통합(KRX+NXT) 거래량 조회 → NXT 비중 산출 (멀티종목 1회 호출)
   const target = rows.slice(0, enrich);

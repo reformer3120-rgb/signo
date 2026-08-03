@@ -73,7 +73,7 @@ export function StockSection({
   return (
     <Card>
       {/* 종목명·현재가 — 박스가 화면에 있는 동안 스크롤해도 보이도록 고정 */}
-      <div className="sticky top-[5.9rem] z-10 -mx-4 mb-2 border-b border-line/60 bg-surface/95 px-4 py-2 backdrop-blur">
+      <div className="sticky top-[5.9rem] z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-xl font-semibold">{name}</span>
           {q && (

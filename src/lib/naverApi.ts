@@ -680,6 +680,10 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     { key: "industry", name: industryName || "업종", count: 0 },
     ...themes.slice(0, 8).map((t) => ({ key: `theme:${t.no}`, name: t.name, count: t.codes.length })),
   ];
+  // 다른 종목에서 고른 비교군을 그대로 유지할 수 있게, 현재 선택된 그룹이 목록에 없으면 추가
+  if (!groups.some((g) => g.key === groupKey)) {
+    groups.push({ key: groupKey, name: groupName || groupKey, count: raw.length });
+  }
 
   const commonNames = new Set(raw.map((s) => s.stockName));
   // 우선주는 보통주와 재무는 동일하지만 애널리스트 목표주가(컨센서스)를 보통주 것을 그대로

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -40,9 +40,8 @@ export function SectorRankCard({
   code: string;
   onSelect?: (code: string, name: string) => void;
 }) {
+  // 종목을 바꿔도 선택한 비교군(업종/테마)은 그대로 유지
   const [group, setGroup] = useState("industry");
-  // 종목이 바뀌면 테마 선택은 초기화 (이전 종목의 테마일 수 있으므로)
-  useEffect(() => setGroup("industry"), [code]);
 
   const { data, isLoading } = useSWR<{ data: SectorRank }>(
     `/api/sector-rank?code=${code}&group=${group}`,
