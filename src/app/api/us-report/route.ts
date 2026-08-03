@@ -10,6 +10,7 @@ import {
   type UsQuote,
 } from "@/lib/us";
 import { koName } from "@/lib/usKo";
+import { bonds } from "@/lib/naverApi";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -54,6 +55,8 @@ async function build() {
     usMarketCap(15).catch(() => []),
     usMarketIndicators().catch(() => null),
   ]);
+  // 시장지표 화면과 같은 4개국 국채금리 (한국·일본·미국·유럽)
+  const bondRows = await bonds().catch(() => []);
 
   const L: string[] = [];
   L.push("SIGNO 미국증시 마감 리포트");
@@ -96,30 +99,47 @@ async function build() {
   }
 
   if (ind) {
-    const grp = (title: string, items: UsIndicator[], d = 2) => {
+    // 값의 크기에 따라 소수 자릿수를 정한다 — 비트코인(6만$)과 리플(1$ 미만)이
+    // 한 묶음에 있어 자릿수를 고정하면 작은 값이 통째로 잘려 나간다
+    const digitsFor = (v: number) => (Math.abs(v) >= 1000 ? 0 : Math.abs(v) >= 10 ? 2 : 4);
+    const grp = (title: string, items: UsIndicator[], d?: number) => {
       if (!items.length) return;
       L.push(`  ${title}`);
-      for (const x of items)
-        L.push(`    ${x.label.padEnd(18)} ${f(x.price, x.unit === "%" ? 3 : d).padStart(12)}  ${sign(x.changePct)}%`);
+      for (const x of items) {
+        const dg = x.unit === "%" ? 3 : (d ?? digitsFor(x.price));
+        L.push(`    ${x.label.padEnd(18)} ${f(x.price, dg).padStart(12)}  ${sign(x.changePct)}%`);
+      }
     };
+    // 화면과 같은 순서: 증시 → 지수 → 지수선물 → 환율 → 원자재 → 가상자산
     L.push("[ 시장지표 ]");
-    grp("미국 국채금리", ind.yields);
-    grp("달러 · 변동성", ind.dollar);
+    grp("유럽 증시", ind.europe);
+    grp("달러인덱스 · 변동성", ind.dollar);
     grp("지수선물", ind.futures);
-    grp("원자재", ind.commodities);
     grp("환율", ind.fx, 4);
-    grp("가상자산", ind.crypto, 0);
+    grp("원자재", ind.commodities);
+    grp("가상자산", ind.crypto);
+    L.push("");
+  }
+
+  if (bondRows.length) {
+    L.push("[ 국채 금리 ]");
+    for (const row of bondRows) {
+      const cells = Object.entries(row.yields)
+        .map(([k, v]) => `${k} ${f(v.value, 3)}(${sign(v.change, 3)})`)
+        .join("  ");
+      if (cells) L.push(`  ${row.country}: ${cells}`);
+    }
     L.push("");
   }
 
   L.push("-".repeat(50));
-  L.push("SIGNO · 데이터: 야후 파이낸스");
+  L.push("SIGNO · 데이터: 야후 파이낸스 · 국채금리 네이버");
   return { text: L.join("\n"), date: t.date, time: t.time };
 }
 
 export async function GET() {
   try {
-    const data = await cached(`us-report:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
+    const data = await cached(`us-report2:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

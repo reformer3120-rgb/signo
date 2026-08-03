@@ -14,6 +14,7 @@ import { marketIndicators } from "@/lib/marketIndex";
 import { indexChart } from "@/lib/yahoo";
 import { minute } from "@/lib/naver";
 import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
+import { marketDeposit } from "@/lib/deposit";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -100,6 +101,10 @@ async function build() {
     minute("005930", 30).catch(() => []),
     minute("000660", 30).catch(() => []),
   ]);
+  // 대시보드의 증시 주변자금 카드와 같은 데이터
+  const deposits = await marketDeposit().catch(() => []);
+  // 대시보드 지수·수급 카드의 선물 투자자 수급 (코스피200 선물, 계약 단위)
+  const futFlow = await indexTrend("FUT").catch(() => null);
 
   const L: string[] = [];
   L.push(`SIGNO 장 마감 리포트`);
@@ -118,7 +123,21 @@ async function build() {
   if (pk || pq) {
     L.push(`  프로그램 순매수: 코스피 ${pk ?? "-"} / 코스닥 ${pq ?? "-"}`);
   }
+  if (futFlow) {
+    L.push(
+      `  선물 수급(계약): 개인 ${sign(futFlow.personal, 0)} / 외국인 ${sign(futFlow.foreign, 0)} / 기관 ${sign(futFlow.institutional, 0)}`,
+    );
+  }
   L.push("");
+
+  if (deposits.length) {
+    const [cur, prev] = deposits;
+    L.push("[ 증시 주변자금 ]");
+    L.push(`  기준일 ${cur.date}${prev ? ` (전일 ${prev.date} 대비)` : ""} · 단위 억원`);
+    for (const it of cur.items)
+      L.push(`  ${it.label.padEnd(10)} ${f(it.value).padStart(12)}  ${sign(it.change, 0)}`);
+    L.push("");
+  }
 
   for (const b of byMarket) {
     const label = b.market === "KOSPI" ? "코스피" : "코스닥";
@@ -214,13 +233,6 @@ async function build() {
     L.push("");
   }
 
-  if (mi?.asia?.length) {
-    L.push("[ 아시아 증시 마감 ]");
-    for (const a of mi.asia)
-      L.push(`  ${a.label.padEnd(14)} ${f(a.price, 2).padStart(12)}  ${sign(a.changePct)}%`);
-    L.push("");
-  }
-
   if (mi) {
     const grp = (title: string, items: typeof mi.fx, digits = 2) => {
       if (!items.length) return;
@@ -229,11 +241,11 @@ async function build() {
         L.push(`    ${it.label.padEnd(18)} ${f(it.price, digits).padStart(14)}  ${sign(it.changePct)}%`);
     };
     L.push("[ 시장지표 ]");
+    grp("아시아 증시", mi.asia);
+    grp("지수선물", mi.futures);
     grp("환율", mi.fx);
     grp("원자재", mi.commodities);
     grp("가상자산 (원화)", mi.crypto, 0);
-    grp("선물", mi.futures);
-    grp("아시아 증시", mi.asia);
     L.push("");
   }
 
@@ -264,7 +276,7 @@ export async function GET() {
     // 마감 후에는 당일 확정본이므로 오래 캐시, 장중에는 짧게
     const closed = t.minutes >= 15 * 60 + 40;
     const data = await cached(
-      `close-report3:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report4:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );
