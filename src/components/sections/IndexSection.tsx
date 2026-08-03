@@ -99,7 +99,13 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
         {ind.ma && <MaLegend />}
       </div>
       {candles.length ? (
-        <CandleChart data={candles} height={230} indicators={ind} session={ctab === "min" || ctab === "1D"} />
+        <CandleChart
+          data={candles}
+          height={230}
+          indicators={ind}
+          session={ctab === "min" || ctab === "1D"}
+          viewKey={`kridx:${market}:${kind}`}
+        />
       ) : (
         <div className="h-[230px] animate-pulse rounded-lg bg-line/30" />
       )}

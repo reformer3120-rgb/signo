@@ -561,7 +561,13 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
         {isLoading && !candles.length ? (
           <div className="h-[440px] animate-pulse rounded-lg bg-line/40" />
         ) : candles.length ? (
-          <CandleChart data={candles} indicators={ind} session={tab === "min" || tab === "1D"} precision={2} />
+          <CandleChart
+            data={candles}
+            indicators={ind}
+            session={tab === "min" || tab === "1D"}
+            precision={2}
+            viewKey={`us:${symbol}:${tab === "min" ? minU : tab}`}
+          />
         ) : (
           <div className="grid h-[440px] place-items-center text-sm text-muted">데이터 없음</div>
         )}

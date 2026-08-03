@@ -22,18 +22,51 @@ export interface Indicators {
 
 const t = (n: number) => n as UTCTimestamp;
 
+/**
+ * 사용자가 확대·이동해 둔 화면 범위를 기억한다.
+ * 차트는 시세가 갱신될 때마다 새로 그려지고 화면을 옮기면 아예 사라지므로,
+ * 저장해 두지 않으면 맞춰 둔 구간이 매번 처음으로 되돌아간다.
+ * 창을 닫으면 지워지는 저장소(sessionStorage)를 쓴다.
+ */
+interface SavedView {
+  from: number;
+  to: number;
+  len: number; // 저장 당시 봉 개수 — 새 봉이 붙었는지 판단용
+}
+
+function loadView(key?: string): SavedView | null {
+  if (!key) return null;
+  try {
+    const raw = sessionStorage.getItem(`signo:view:${key}`);
+    return raw ? (JSON.parse(raw) as SavedView) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveView(key: string, v: SavedView) {
+  try {
+    sessionStorage.setItem(`signo:view:${key}`, JSON.stringify(v));
+  } catch {
+    /* 저장공간이 막혀 있어도 차트는 그대로 동작해야 한다 */
+  }
+}
+
 export function CandleChart({
   data,
   height = 440,
   indicators,
   session,
   precision = 2,
+  viewKey,
 }: {
   data: Candle[];
   height?: number;
   indicators?: Indicators;
   session?: boolean;
   precision?: number;
+  /** 확대·이동 상태를 기억할 식별자 (종목·봉주기별로 따로 기억) */
+  viewKey?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -176,13 +209,35 @@ export function CandleChart({
     panes[0]?.setStretchFactor(showRsi || showMacd ? 3 : 1);
     for (let i = 1; i < panes.length; i++) panes[i]?.setStretchFactor(1);
 
-    chart.timeScale().fitContent();
+    // 맞춰 둔 화면 범위가 있으면 그대로 되살리고, 없을 때만 전체 보기
+    const ts = chart.timeScale();
+    const saved = loadView(viewKey);
+    if (saved) {
+      // 오른쪽 끝을 보고 있었다면 새로 붙은 봉만큼 밀어 계속 최신을 따라가게 한다
+      const atEnd = saved.to >= saved.len - 1.5;
+      const shift = atEnd ? data.length - saved.len : 0;
+      ts.setVisibleLogicalRange({ from: saved.from + shift, to: saved.to + shift });
+    } else {
+      ts.fitContent();
+    }
+
+    // 되살리는 동안 발생하는 변경은 저장하지 않는다 (사용자 조작만 기억)
+    let armed = false;
+    const arm = setTimeout(() => (armed = true), 300);
+    const onRange = (r: { from: number; to: number } | null) => {
+      if (!armed || !viewKey || !r) return;
+      saveView(viewKey, { from: r.from, to: r.to, len: data.length });
+    };
+    ts.subscribeVisibleLogicalRangeChange(onRange);
+
     return () => {
+      clearTimeout(arm);
+      ts.unsubscribeVisibleLogicalRangeChange(onRange);
       chart.remove();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, viewKey]);
 
   return <div ref={ref} style={{ height: totalH, width: "100%" }} />;
 }

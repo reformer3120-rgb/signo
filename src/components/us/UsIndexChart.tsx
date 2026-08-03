@@ -109,7 +109,14 @@ export function UsIndexChart({ indices }: { indices: UsQuote[] }) {
       {isLoading && !candles.length ? (
         <div className="h-[280px] animate-pulse rounded-lg bg-line/30" />
       ) : candles.length ? (
-        <CandleChart data={candles} height={280} indicators={ind} session={tab === "min"} precision={2} />
+        <CandleChart
+          data={candles}
+          height={280}
+          indicators={ind}
+          session={tab === "min"}
+          precision={2}
+          viewKey={`usidx:${sym}:${tab === "min" ? minU : tab}`}
+        />
       ) : (
         <div className="grid h-[280px] place-items-center text-sm text-muted">데이터 없음</div>
       )}
