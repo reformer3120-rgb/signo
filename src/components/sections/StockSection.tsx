@@ -53,9 +53,11 @@ export function StockSection({
     { refreshInterval: tab === "min" ? 60_000 : 0, keepPreviousData: true },
   );
 
-  const { data: quote } = useSWR<{ data: Quote }>(`/api/quote?code=${code}`, fetcher, {
-    refreshInterval: 30_000,
-  });
+  const { data: quote } = useSWR<{ data: Quote }>(
+    `/api/quote?code=${code}&exchange=${exch}`,
+    fetcher,
+    { refreshInterval: 30_000, keepPreviousData: true },
+  );
 
   const candles = ohlcv?.data ?? [];
   const stat = useMemo(() => {
@@ -82,6 +84,14 @@ export function StockSection({
               </span>
             </>
           )}
+          {/* 어느 거래소 기준인지 명시 */}
+          <span
+            className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${
+              exch === "KRX" ? "border-line text-muted" : "border-signal/40 bg-signal/10 text-signal"
+            }`}
+          >
+            {exch === "UN" ? "통합" : exch}
+          </span>
           {stat && (
             <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
               <span>
