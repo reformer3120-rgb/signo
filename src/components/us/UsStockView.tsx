@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { Search } from "lucide-react";
 import { fetcher } from "@/lib/swr";
@@ -14,12 +15,13 @@ import { koName } from "@/lib/usKo";
 import type { UsDetail, UsFinRow, UsNews, UsSearchItem, UsSectorRank } from "@/lib/us";
 
 const TABS = [
-  { key: "5m", label: "분봉" },
+  { key: "min", label: "분봉" },
   { key: "1D", label: "일봉" },
   { key: "1W", label: "주봉" },
   { key: "1M", label: "월봉" },
   { key: "1Y", label: "연봉" },
 ];
+const MIN_UNITS = ["1m", "5m", "15m", "30m", "60m"];
 
 /** 달러 금액 축약 */
 function usd(v: number) {
@@ -377,7 +379,8 @@ function NewsCard({ symbol }: { symbol: string }) {
 
 export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) {
   const [symbol, setSymbol] = useState(initialSymbol ?? "AAPL");
-  const [tab, setTab] = useState("1D");
+  const [tab, setTab] = useSticky("us.stock.tab", "1D");
+  const [minU, setMinU] = useSticky("us.stock.min", "5m");
   const { money } = useCur();
   const [ind, setInd] = useState<Indicators>({});
 
@@ -387,9 +390,9 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
     { refreshInterval: 60_000 },
   );
   const { data: chart, isLoading } = useSWR<{ data: Candle[] }>(
-    `/api/us-stock?part=chart&symbol=${symbol}&kind=${tab}`,
+    `/api/us-stock?part=chart&symbol=${symbol}&kind=${tab === "min" ? minU : tab}`,
     fetcher,
-    { refreshInterval: tab === "5m" ? 60_000 : 0, keepPreviousData: true },
+    { refreshInterval: tab === "min" ? 60_000 : 0, keepPreviousData: true },
   );
   const d = detail?.data;
   const candles = chart?.data ?? [];
@@ -435,6 +438,20 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
             <IndicatorBar value={ind} onChange={setInd} />
             {ind.ma && <MaLegend />}
           </div>
+          <div className="flex items-center gap-2">
+          {tab === "min" && (
+            <select
+              value={minU}
+              onChange={(e) => setMinU(e.target.value)}
+              className="rounded-lg border border-line bg-canvas px-2 py-1 text-xs font-medium outline-none focus:border-brand"
+            >
+              {MIN_UNITS.map((u) => (
+                <option key={u} value={u}>
+                  {u.replace("m", "분")}
+                </option>
+              ))}
+            </select>
+          )}
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
             {TABS.map((t) => (
               <button
@@ -448,12 +465,13 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
               </button>
             ))}
           </div>
+          </div>
         </div>
 
         {isLoading && !candles.length ? (
           <div className="h-[440px] animate-pulse rounded-lg bg-line/40" />
         ) : candles.length ? (
-          <CandleChart data={candles} indicators={ind} session={tab === "5m"} precision={2} />
+          <CandleChart data={candles} indicators={ind} session={tab === "min"} precision={2} />
         ) : (
           <div className="grid h-[440px] place-items-center text-sm text-muted">데이터 없음</div>
         )}

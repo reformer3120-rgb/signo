@@ -16,6 +16,7 @@ interface MarketResp {
   commodities: Item[];
   crypto: Item[];
   futures: Item[];
+  asia: Item[];
 }
 
 function Tile({ it, fmt }: { it: Item; fmt: (v: number) => string }) {
@@ -54,7 +55,7 @@ export function MarketSection() {
 
   if (!data) {
     return (
-      <Card title="환율 · 원자재 · 가상자산 · 선물">
+      <Card title="환율 · 원자재 · 가상자산 · 선물 · 아시아">
         <div className="h-48 animate-pulse rounded-lg bg-line/30" />
       </Card>
     );
@@ -63,7 +64,7 @@ export function MarketSection() {
   const w2 = (v: number) => num(v, 2);
   return (
     <Card
-      title="환율 · 원자재 · 가상자산 · 선물"
+      title="환율 · 원자재 · 가상자산 · 선물 · 아시아"
       right={<span className="text-xs text-muted">라인 · 60초</span>}
     >
       <div className="flex flex-col gap-3.5">
@@ -71,6 +72,7 @@ export function MarketSection() {
         <Group title="원자재" items={data.commodities} fmt={w2} />
         <Group title="가상자산 (원화)" items={data.crypto} fmt={(v) => `${won(v)}원`} />
         <Group title="선물" items={data.futures} fmt={w2} />
+        <Group title="아시아 증시" items={data.asia} fmt={w2} />
       </div>
     </Card>
   );

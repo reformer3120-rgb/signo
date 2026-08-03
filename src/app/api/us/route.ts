@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ limit, hasMore: limit < 50, data });
     }
     if (part === "indicators") {
-      const data = await cached("us:indicators", 60, usMarketIndicators);
+      const data = await cached("us:indicators2", 60, usMarketIndicators);
       return NextResponse.json({ data });
     }
     const [indices, sectors] = await Promise.all([

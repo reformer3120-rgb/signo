@@ -15,6 +15,7 @@ export interface MarketIndicators {
   commodities: MarketItem[];
   crypto: MarketItem[];
   futures: MarketItem[];
+  asia: MarketItem[];
 }
 
 // 환율은 국내 고시환율(네이버/하나은행) 기준 — 전 거래일 대비 등락이 국내 표기와 일치한다.
@@ -59,6 +60,15 @@ const CRYPTO: [string, string][] = [
   ["비트코인", "BTC-USD"],
   ["이더리움", "ETH-USD"],
   ["리플", "XRP-USD"],
+  ["테더", "USDT-USD"],
+];
+// 아시아 주요 지수 (TOPIX는 야후에 지수가 없어 연동 ETF로 대체)
+const ASIA: [string, string][] = [
+  ["니케이 225", "^N225"],
+  ["TOPIX 연동", "1306.T"],
+  ["상해 종합", "000001.SS"],
+  ["항셍", "^HSI"],
+  ["대만 가권", "^TWII"],
 ];
 // 글로벌 지수선물 (야후)
 const FUT_GLOBAL: [string, string][] = [
@@ -133,5 +143,15 @@ export async function marketIndicators(): Promise<MarketIndicators> {
     }),
   );
   futures = [...futures, ...globalFut.filter((x): x is MarketItem => !!x && x.price > 0)];
-  return { fx, commodities, crypto, futures };
+  const asiaRows = await Promise.all(
+    ASIA.map(async ([label, sym]) => {
+      try {
+        return { label, ...(await spark(sym)) };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const asia = asiaRows.filter((x): x is MarketItem => !!x && x.price > 0);
+  return { fx, commodities, crypto, futures, asia };
 }

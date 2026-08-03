@@ -105,7 +105,7 @@ export function SectorRankCard({
               </div>
 
               {/* 세부 점수 */}
-              <div className="mt-3 grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+              <div className="mt-3 grid grid-cols-4 sm:grid-cols-8 gap-1.5">
                 {(
                   [
                     ["재무", r.target.parts.재무],
@@ -115,6 +115,7 @@ export function SectorRankCard({
                     ["애널리스트", r.target.parts.애널],
                     ["외국인 비중", r.target.parts.외국인],
                     ["배당", r.target.parts.배당],
+                    ["시가총액", r.target.parts.시총],
                   ] as [string, number][]
                 ).map(([k, v]) => (
                   <div key={k} className="rounded-lg bg-canvas/60 px-1.5 py-1.5 text-center">
@@ -229,9 +230,9 @@ export function SectorRankCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
-            점수 = 재무건전성(ROE·부채·이익률) 27 + 주가흐름(기간수익률·골든크로스) 18 +
-            밸류(PER·PBR·EPS) 18 + 성장성 15 + 애널리스트(목표가) 10 + 외국인보유비중 6 + 배당 4 + 시총 2
-            (비교군 내 상대평가, 100점)
+            점수 = 재무건전성(ROE·부채·이익률) 25 + 주가흐름(기간수익률·골든크로스) 17 +
+            밸류(PER·PBR·EPS) 17 + 성장성 14 + 애널리스트(목표가) 10 + 시가총액 9 + 외국인보유비중 5 +
+            배당 3 (비교군 내 상대평가, 100점)
           </div>
         </>
       )}

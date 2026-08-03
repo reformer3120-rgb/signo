@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 export async function GET() {
   try {
-    const data = await cached("market:spark5", 60, marketIndicators);
+    const data = await cached("market:spark6", 60, marketIndicators);
     return NextResponse.json(data);
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

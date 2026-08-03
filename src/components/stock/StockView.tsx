@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSticky } from "@/lib/useSticky";
 import { StockSection } from "@/components/sections/StockSection";
 import { StockStickyBar } from "@/components/stock/StockStickyBar";
 import { StockDetailCard } from "@/components/stock/StockDetailCard";
@@ -17,8 +18,8 @@ export function StockView({
 } = {}) {
   const [code, setCode] = useState(initialCode ?? "005930");
   const [name, setName] = useState(initialName ?? (initialCode ? initialCode : "삼성전자"));
-  const [tab, setTab] = useState("1D");
-  const [minUnit, setMinUnit] = useState<Interval>("5");
+  const [tab, setTab] = useSticky("kr.stock.tab", "1D");
+  const [minUnit, setMinUnit] = useSticky<Interval>("kr.stock.min", "5");
 
   const select = (c: string, n: string) => {
     setCode(c);

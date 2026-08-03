@@ -1,5 +1,6 @@
 // 미국 증시 데이터 (야후 파이낸스). 서버 전용.
 import { yahooFinance } from "./yahoo";
+import { bonds } from "./naverApi";
 
 export interface UsQuote {
   symbol: string;
@@ -474,7 +475,13 @@ export interface UsIndicator {
   changePct: number;
   unit?: string;
 }
+export interface UsBondRow {
+  country: string;
+  flag: string;
+  yields: Record<string, { value: number; change: number }>;
+}
 export interface UsMarketIndicators {
+  bonds: UsBondRow[];
   yields: UsIndicator[];
   dollar: UsIndicator[];
   commodities: UsIndicator[];
@@ -494,7 +501,6 @@ const G_YIELDS: [string, string, string][] = [
 const G_DOLLAR: [string, string, string][] = [
   ["DX-Y.NYB", "달러인덱스 DXY", ""],
   ["^VIX", "VIX 변동성", ""],
-  ["^MOVE", "MOVE 채권변동성", ""],
 ];
 const G_COMM: [string, string, string][] = [
   ["GC=F", "금", "$"],
@@ -520,7 +526,8 @@ const G_FUT: [string, string, string][] = [
 const G_CRYPTO: [string, string, string][] = [
   ["BTC-USD", "비트코인", "$"],
   ["ETH-USD", "이더리움", "$"],
-  ["SOL-USD", "솔라나", "$"],
+  ["XRP-USD", "리플", "$"],
+  ["USDT-USD", "테더", "$"],
 ];
 
 export async function usMarketIndicators(): Promise<UsMarketIndicators> {
@@ -537,7 +544,16 @@ export async function usMarketIndicators(): Promise<UsMarketIndicators> {
     }
     return out;
   };
+  // 국채금리는 미국만이 아니라 한국·일본·유럽까지 2/3/5/10/30년 전 구간 (네이버)
+  const bondRows = await bonds().catch(() => []);
   return {
+    bonds: bondRows.map((b) => ({
+      country: b.country,
+      flag: b.flag,
+      yields: Object.fromEntries(
+        Object.entries(b.yields).map(([k, v]) => [k, { value: v.value, change: v.change }]),
+      ),
+    })),
     yields: pick(G_YIELDS),
     dollar: pick(G_DOLLAR),
     commodities: pick(G_COMM),

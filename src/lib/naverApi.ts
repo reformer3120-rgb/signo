@@ -493,6 +493,7 @@ export interface ScoredStock {
     모멘텀: number;
     배당: number;
     외국인: number;
+    시총: number;
   };
 }
 export interface SectorGroupOption {
@@ -789,15 +790,16 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     const 모멘텀 = trend[i]; // 주가흐름 성적표(수익률+골든크로스)를 모멘텀 점수로 사용
     const 배당 = divN[i];
     const 외국인 = frgnN[i];
+    const 시총 = capN[i];
     const score = Math.round(
-      (재무 * 0.27 +
-        모멘텀 * 0.18 +
-        밸류 * 0.18 +
-        성장 * 0.15 +
+      (재무 * 0.25 +
+        모멘텀 * 0.17 +
+        밸류 * 0.17 +
+        성장 * 0.14 +
         애널 * 0.1 +
-        외국인 * 0.06 +
-        배당 * 0.04 +
-        capN[i] * 0.02) *
+        시총 * 0.09 +
+        외국인 * 0.05 +
+        배당 * 0.03) *
         100,
     );
     return {
@@ -833,6 +835,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         모멘텀: Math.round(모멘텀 * 100),
         배당: Math.round(배당 * 100),
         외국인: Math.round(외국인 * 100),
+        시총: Math.round(시총 * 100),
       },
     };
   });

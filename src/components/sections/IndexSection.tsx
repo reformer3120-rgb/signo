@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -38,8 +39,8 @@ function Chip({ label, text, cls }: { label: string; text: string; cls: string }
 const MIN_UNITS = ["1m", "5m", "15m", "30m", "60m"];
 
 function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label: string; flow?: Flow }) {
-  const [ctab, setCtab] = useState("1D");
-  const [minU, setMinU] = useState("5m");
+  const [ctab, setCtab] = useSticky(`kr.index.${market}.tab`, "1D");
+  const [minU, setMinU] = useSticky(`kr.index.${market}.min`, "5m");
   const [ind, setInd] = useState<Indicators>({});
   const kind = ctab === "min" ? minU : ctab;
   const { data: idx } = useSWR<{ data: Quote[] }>("/api/indices", fetcher, { refreshInterval: 30_000 });
