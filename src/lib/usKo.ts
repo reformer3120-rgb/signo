@@ -77,3 +77,52 @@ const NAMES: Record<string, string> = {
 
 /** 티커의 한글명 (없으면 undefined) */
 export const koName = (symbol: string): string | undefined => NAMES[symbol];
+
+/**
+ * 자주 다른 이름으로 부르는 종목들 — 사전의 정식 한글명으로 못 찾는 경우를 보완.
+ * (예: "구글"은 사전에 "알파벳(구글)"로 들어 있어 그대로 걸리지만,
+ *  "페이스북"처럼 옛 이름이나 줄임말은 여기서 이어준다)
+ */
+const ALIASES: Record<string, string[]> = {
+  META: ["페이스북", "페북"],
+  GOOGL: ["구글"],
+  BRK_B: ["버크셔"],
+  "BRK-B": ["버크셔해서웨이", "버크셔"],
+  TSLA: ["테슬라"],
+  NVDA: ["엔비디아", "엔디비아"],
+  AAPL: ["애플", "사과"],
+  MSFT: ["MS", "엠에스"],
+  AMZN: ["아마존"],
+  NFLX: ["넷플"],
+  TSM: ["TSMC", "티에스엠씨"],
+  KO: ["코카콜라"],
+  DIS: ["디즈니"],
+  BABA: ["알리바바"],
+  V: ["비자"],
+  MA: ["마스터카드"],
+};
+
+/** 검색어를 소문자·공백제거로 정규화 */
+const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+
+/**
+ * 한글(또는 영문) 검색어로 티커 찾기.
+ * 앞에서부터 일치하는 것을 먼저 돌려준다 — "애플" 검색에 애플이 맨 위로 오도록.
+ */
+export function koSearch(query: string, limit = 10): string[] {
+  const q = norm(query);
+  if (!q) return [];
+  const starts: string[] = [];
+  const contains: string[] = [];
+  for (const [sym, ko] of Object.entries(NAMES)) {
+    const k = norm(ko);
+    if (k.startsWith(q) || norm(sym).startsWith(q)) starts.push(sym);
+    else if (k.includes(q)) contains.push(sym);
+  }
+  for (const [sym, list] of Object.entries(ALIASES)) {
+    if (starts.includes(sym) || contains.includes(sym)) continue;
+    if (list.some((a) => norm(a).startsWith(q))) starts.push(sym);
+    else if (list.some((a) => norm(a).includes(q))) contains.push(sym);
+  }
+  return [...starts, ...contains].slice(0, limit);
+}

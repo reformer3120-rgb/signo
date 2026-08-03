@@ -65,7 +65,7 @@ function SymbolSearch({ onSelect }: { onSelect: (symbol: string) => void }) {
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="티커 · 종목명 검색"
+          placeholder="티커 · 한글/영문 종목명"
           className="w-full bg-transparent text-sm outline-none placeholder:font-normal placeholder:text-muted"
         />
       </div>
@@ -561,7 +561,7 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
         {isLoading && !candles.length ? (
           <div className="h-[440px] animate-pulse rounded-lg bg-line/40" />
         ) : candles.length ? (
-          <CandleChart data={candles} indicators={ind} session={tab === "min"} precision={2} />
+          <CandleChart data={candles} indicators={ind} session={tab === "min" || tab === "1D"} precision={2} />
         ) : (
           <div className="grid h-[440px] place-items-center text-sm text-muted">데이터 없음</div>
         )}

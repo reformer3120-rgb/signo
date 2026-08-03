@@ -1,6 +1,7 @@
 // 미국 증시 데이터 (야후 파이낸스). 서버 전용.
 import { yahooFinance } from "./yahoo";
 import { bonds } from "./naverApi";
+import { koName, koSearch } from "./usKo";
 // 채점 규칙은 한국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
 import {
   dimScaler,
@@ -185,16 +186,42 @@ export interface UsSearchItem {
 
 /** 종목 검색 (미국 상장 주식/ETF) */
 export async function usSearch(query: string): Promise<UsSearchItem[]> {
-  if (!query.trim()) return [];
-  const r = await yahooFinance.search(query, { quotesCount: 12, newsCount: 0 });
-  return ((r.quotes ?? []) as unknown as Record<string, unknown>[])
+  const q = query.trim();
+  if (!q) return [];
+  const hangul = /[가-힣]/.test(q);
+  // 야후는 한글 종목명을 모르므로 한글명 사전에서 먼저 찾는다
+  const hits = koSearch(q);
+
+  // 한글로 검색했으면 사전 결과만 (야후를 부르면 엉뚱한 국내 상장물이 섞인다)
+  if (hangul) {
+    if (!hits.length) return [];
+    const rows = await yahooFinance.quote(hits).catch(() => []);
+    const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+    const meta = new Map(list.map((x) => [String(x.symbol), x]));
+    return hits.map((sym) => {
+      const m = meta.get(sym);
+      return {
+        symbol: sym,
+        name: String(m?.shortName ?? m?.longName ?? koName(sym) ?? sym),
+        exchange: String(m?.fullExchangeName ?? m?.exchange ?? ""),
+      };
+    });
+  }
+
+  // 영문·티커 검색은 야후 결과를 쓰되, 사전에 걸린 티커를 위로 올린다
+  const r = await yahooFinance.search(q, { quotesCount: 12, newsCount: 0 });
+  const found = ((r.quotes ?? []) as unknown as Record<string, unknown>[])
     .filter((x) => x.symbol && (x.quoteType === "EQUITY" || x.quoteType === "ETF"))
     .map((x) => ({
       symbol: String(x.symbol),
       name: String(x.shortname ?? x.longname ?? x.symbol),
       exchange: String(x.exchange ?? ""),
-    }))
-    .slice(0, 10);
+    }));
+  const seen = new Set(found.map((f) => f.symbol));
+  const extra = hits
+    .filter((sym) => !seen.has(sym))
+    .map((sym) => ({ symbol: sym, name: koName(sym) ?? sym, exchange: "" }));
+  return [...extra, ...found].slice(0, 10);
 }
 
 export interface UsDetail {
