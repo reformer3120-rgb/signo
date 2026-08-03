@@ -49,9 +49,25 @@ export function MarketFlowSection() {
   return (
     <Card
       title={
-        byValue
-          ? `시장 수급 · ${nxtOnly ? "NXT" : "통합"} 거래대금 상위`
-          : `시장 수급 · 외국인·기관 ${dir === "sell" ? "순매도" : "순매수"} 상위`
+        <span className="flex items-center gap-2">
+          {byValue
+            ? `시장 수급 · ${nxtOnly ? "NXT" : "통합"} 거래대금 상위`
+            : `시장 수급 · 외국인·기관 ${dir === "sell" ? "순매도" : "순매수"} 상위`}
+          {/* 현재 거래 세션(정규장 / NXT 프리·애프터마켓) */}
+          {data?.session && (
+            <span
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                data.session === "REGULAR"
+                  ? "border-confirm/40 bg-confirm/10 text-confirm"
+                  : data.session === "CLOSED"
+                    ? "border-line text-muted"
+                    : "border-signal/40 bg-signal/10 text-signal"
+              }`}
+            >
+              {SESSION_LABEL[data.session] ?? data.session}
+            </span>
+          )}
+        </span>
       }
       right={
         <div className="flex items-center gap-2">
@@ -76,11 +92,6 @@ export function MarketFlowSection() {
                 </button>
               ))}
             </div>
-          )}
-          {data?.session && (
-            <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
-              {SESSION_LABEL[data.session] ?? data.session}
-            </span>
           )}
         <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
           {MARKETS.map((m) => (
