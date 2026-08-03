@@ -587,6 +587,7 @@ export interface UsMarketIndicators {
   fx: UsIndicator[];
   futures: UsIndicator[];
   crypto: UsIndicator[];
+  europe: UsIndicator[];
 }
 
 // [심볼, 표시명, 단위]
@@ -622,6 +623,14 @@ const G_FUT: [string, string, string][] = [
   ["YM=F", "다우 선물", ""],
   ["RTY=F", "러셀2000 선물", ""],
 ];
+// 유럽 주요 지수 (헝가리 BUX는 부다페스트 거래소 코드 ^BUX.BD)
+const G_EUROPE: [string, string, string][] = [
+  ["^FTSE", "영국 FTSE 100", ""],
+  ["^GDAXI", "독일 DAX", ""],
+  ["^FCHI", "프랑스 CAC 40", ""],
+  ["FTSEMIB.MI", "이탈리아 FTSE MIB", ""],
+  ["^BUX.BD", "헝가리 BUX", ""],
+];
 const G_CRYPTO: [string, string, string][] = [
   ["BTC-USD", "비트코인", "$"],
   ["ETH-USD", "이더리움", "$"],
@@ -630,7 +639,7 @@ const G_CRYPTO: [string, string, string][] = [
 ];
 
 export async function usMarketIndicators(): Promise<UsMarketIndicators> {
-  const all = [G_YIELDS, G_DOLLAR, G_COMM, G_FX, G_FUT, G_CRYPTO].flat();
+  const all = [G_YIELDS, G_DOLLAR, G_COMM, G_FX, G_FUT, G_CRYPTO, G_EUROPE].flat();
   const rows = await yahooFinance.quote(all.map(([s]) => s));
   const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
   const pick = (defs: [string, string, string][]): UsIndicator[] => {
@@ -651,5 +660,6 @@ export async function usMarketIndicators(): Promise<UsMarketIndicators> {
     fx: pick(G_FX),
     futures: pick(G_FUT),
     crypto: pick(G_CRYPTO),
+    europe: pick(G_EUROPE),
   };
 }

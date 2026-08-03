@@ -45,7 +45,7 @@ export function UsIndicatorSection() {
 
   return (
     <Card
-      title="환율 · 원자재 · 가상자산 · 선물 · 달러"
+      title="환율 · 원자재 · 가상자산 · 선물 · 달러 · 유럽"
       right={<span className="text-xs text-muted">야후 · 60초</span>}
     >
       {isLoading && !d ? (
@@ -59,6 +59,7 @@ export function UsIndicatorSection() {
           <Group title="가상자산" items={d.crypto} />
           <Group title="지수선물" items={d.futures} />
           <Group title="달러 · 변동성" items={d.dollar} />
+          <Group title="유럽 증시" items={d.europe} />
         </div>
       )}
     </Card>
