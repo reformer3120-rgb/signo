@@ -1,6 +1,8 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef } from "react";
+import { usePublishHeight } from "@/lib/useStickyOffset";
 
 /** 1단계: 시장 구분 */
 const MARKETS = [
@@ -33,11 +35,14 @@ function marketOf(path: string) {
 
 export function Nav() {
   const path = usePathname();
+  const ref = useRef<HTMLDivElement>(null);
+  // 상단 여백(top-2 = 8px)을 더해 아래 고정 요소들이 참조할 바닥 위치를 알린다
+  usePublishHeight(ref, "--nav-bottom", 8);
   const cur = marketOf(path);
   const subs = SUB[cur] ?? [];
 
   return (
-    <div className="sticky top-2 z-30 flex w-fit flex-col gap-1.5">
+    <div ref={ref} className="sticky top-2 z-30 flex w-fit flex-col gap-1.5">
       <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface p-1">
         {MARKETS.map((m) => (
           <Link

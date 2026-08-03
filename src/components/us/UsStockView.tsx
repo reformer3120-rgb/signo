@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSticky } from "@/lib/useSticky";
+import { usePublishHeight } from "@/lib/useStickyOffset";
 import useSWR from "swr";
 import { Search } from "lucide-react";
 import { fetcher } from "@/lib/swr";
@@ -384,6 +385,9 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
   const [minU, setMinU] = useSticky("us.stock.min", "5m");
   const { money } = useCur();
   const [ind, setInd] = useState<Indicators>({});
+  const barRef = useRef<HTMLDivElement>(null);
+  // 카드 안 시세줄이 이 바 바로 아래에 붙도록 높이를 알린다
+  usePublishHeight(barRef, "--stockbar-h", 6);
 
   const { data: detail } = useSWR<{ data: UsDetail }>(
     `/api/us-stock?part=detail&symbol=${symbol}`,
@@ -402,7 +406,11 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
 
   return (
     <>
-      <div className="sticky top-[3.4rem] z-20 flex w-fit flex-wrap items-center gap-2">
+      <div
+        ref={barRef}
+        style={{ top: "calc(var(--nav-bottom, 90px) + 4px)" }}
+        className="sticky z-20 flex w-fit flex-wrap items-center gap-2"
+      >
         <SymbolSearch onSelect={setSymbol} />
         <WatchButton item={{ code: symbol, name: d?.name ?? symbol, market: "US" }} />
         <CurrencyToggle />
@@ -410,7 +418,10 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
 
       <Card>
         {/* 티커·현재가 — 카드가 보이는 동안 고정 */}
-        <div className="sticky top-[5.9rem] z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur">
+        <div
+          style={{ top: "calc(var(--nav-bottom, 90px) + var(--stockbar-h, 44px) + 4px)" }}
+          className="sticky z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur"
+        >
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-xl font-semibold">{koName(symbol) ?? d?.name ?? symbol}</span>
             <span className="tnum text-xs text-muted">{symbol}</span>
