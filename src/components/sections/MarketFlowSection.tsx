@@ -118,8 +118,12 @@ export function MarketFlowSection() {
                   </th>
                 ) : (
                   <>
-                    <th className="text-right font-medium px-2 whitespace-nowrap">외국인 순매수</th>
-                    <th className="text-right font-medium px-2 whitespace-nowrap">기관 순매수</th>
+                    <th className="text-right font-medium px-2 whitespace-nowrap">
+                      외국인 {dir === "sell" ? "순매도" : "순매수"}
+                    </th>
+                    <th className="text-right font-medium px-2 whitespace-nowrap">
+                      기관 {dir === "sell" ? "순매도" : "순매수"}
+                    </th>
                   </>
                 )}
                 <th className="text-right font-medium px-2 whitespace-nowrap">거래량</th>
@@ -167,7 +171,7 @@ export function MarketFlowSection() {
               ? "NXT만 거래되는 시간대 — NXT 체결 기준 거래대금 상위 · KIS"
               : byValue
                 ? "외국인·기관 순매수는 장 마감 후 가집계로 제공됩니다. 그전까지는 KRX+NXT 통합 거래대금 상위를 표시하며, 집계가 들어오면 자동으로 순매수 순위로 전환됩니다 · KIS"
-                : "순매수 대금 기준 · KRX+NXT 합산 · 거래량은 통합 기준 · KIS"}
+                : `${dir === "sell" ? "순매도" : "순매수"} 대금 기준 · KRX+NXT 합산 · 거래량은 통합 기준 · KIS`}
           </div>
         </div>
       )}
