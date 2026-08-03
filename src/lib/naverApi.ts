@@ -2,6 +2,18 @@
 // 시총상위 · 상승/하락률 상위(특징주) · 국내 지수 시세.
 import { daily } from "./naver";
 import { themesOf, themeByNo } from "./theme";
+// 채점 규칙은 미국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
+import {
+  dimScaler,
+  finScore,
+  gradeOf,
+  maCross,
+  periodReturns,
+  totalScore,
+  trendScore,
+  valueScore,
+  type MaSignal,
+} from "./score";
 
 const H = {
   "User-Agent":
@@ -404,31 +416,11 @@ export interface Returns {
   y1: number;
 }
 
-// 종가 배열(오름차순)에서 n거래일 전 대비 수익률
-function pctBack(closes: number[], back: number): number {
-  const last = closes[closes.length - 1];
-  const idx = closes.length - 1 - back;
-  const base = idx >= 0 ? closes[idx] : closes[0];
-  return base > 0 ? +(((last - base) / base) * 100).toFixed(2) : 0;
-}
-
 export async function stockReturns(code: string): Promise<Returns> {
   const bars = await daily(code, 270);
   const closes = bars.map((b) => b.close).filter((c) => c > 0);
-  if (closes.length < 2) return { d1: 0, w1: 0, m1: 0, m6: 0, y1: 0 };
-  return {
-    d1: pctBack(closes, 1),
-    w1: pctBack(closes, 5),
-    m1: pctBack(closes, 20),
-    m6: pctBack(closes, 120),
-    y1: pctBack(closes, 245),
-  };
-}
-
-// 종가 배열에서 1일/1주/1달만 (섹터 멤버용, 짧은 일봉)
-function shortReturns(closes: number[]): { d1: number; w1: number; m1: number } {
-  if (closes.length < 2) return { d1: 0, w1: 0, m1: 0 };
-  return { d1: pctBack(closes, 1), w1: pctBack(closes, 5), m1: pctBack(closes, 20) };
+  const { d1, w1, m1, m6, y1 } = periodReturns(closes);
+  return { d1, w1, m1, m6, y1 };
 }
 
 // ---- 최근 수급: 어느 주체가 매수 우위인가 ----
@@ -510,24 +502,6 @@ export interface SectorRank {
   target?: ScoredStock;
 }
 
-/**
- * 방향(hi=클수록 좋음, lo=작을수록 좋음) 정규화 스케일러.
- * 기준(min/max)은 '비교군 고정 멤버'로만 만든다 — 검색한 종목이 무엇이냐에 따라
- * 기준이 흔들려 같은 업종인데 순위가 매번 달라지는 것을 막기 위함.
- * 기준 밖의 값(검색 종목이 최댓값을 넘는 등)은 0~1로 클램프.
- */
-function dimScaler(baseVals: number[], dir: "hi" | "lo"): (v: number) => number {
-  const valid = baseVals.filter((v) => Number.isFinite(v));
-  if (!valid.length) return () => 0.5;
-  const min = Math.min(...valid);
-  const max = Math.max(...valid);
-  const range = max - min || 1;
-  return (v: number) => {
-    if (!Number.isFinite(v)) return 0;
-    const t = Math.min(1, Math.max(0, (v - min) / range));
-    return dir === "hi" ? t : 1 - t;
-  };
-}
 
 const avgFinite = (xs: number[]) => {
   const v = xs.filter(Number.isFinite);
@@ -569,64 +543,10 @@ function isPreferredDuplicate(name: string, commonNames: Set<string>): boolean {
 }
 
 // ---- 이동평균 교차 (골든크로스/데드크로스) ----
-export type MaSignal = "골든크로스" | "정배열" | "역배열" | "데드크로스" | "-";
 
-function movingAvg(closes: number[], p: number): (number | null)[] {
-  const out: (number | null)[] = [];
-  let sum = 0;
-  for (let i = 0; i < closes.length; i++) {
-    sum += closes[i];
-    if (i >= p) sum -= closes[i - p];
-    out.push(i >= p - 1 ? sum / p : null);
-  }
-  return out;
-}
 
-/**
- * 20일선과 60일선의 교차 상태.
- * 골든크로스 = 최근 20거래일 내 20일선이 60일선을 상향 돌파(가장 강한 신호)
- * 정배열 = 20일선이 60일선 위 / 역배열 = 아래 / 데드크로스 = 최근 하향 돌파
- */
-function maCross(closes: number[]): { signal: MaSignal; days: number; score: number } {
-  if (closes.length < 61) return { signal: "-", days: -1, score: 0.5 };
-  const s = movingAvg(closes, 20);
-  const l = movingAvg(closes, 60);
-  const above = (i: number) => s[i] !== null && l[i] !== null && (s[i] as number) > (l[i] as number);
-  const last = closes.length - 1;
-  // 가장 최근 교차 시점 찾기
-  let cross = -1;
-  for (let i = last; i > 0; i--) {
-    if (s[i] === null || l[i] === null || s[i - 1] === null || l[i - 1] === null) break;
-    if (above(i) !== above(i - 1)) {
-      cross = last - i;
-      break;
-    }
-  }
-  const up = above(last);
-  const fresh = cross >= 0 && cross <= 20;
-  if (up) {
-    // 갓 만들어진 골든크로스일수록 가점 ↑
-    return {
-      signal: fresh ? "골든크로스" : "정배열",
-      days: cross,
-      score: fresh ? 1 - (cross / 20) * 0.2 : 0.7,
-    };
-  }
-  return {
-    signal: fresh ? "데드크로스" : "역배열",
-    days: cross,
-    score: fresh ? 0.05 : 0.25,
-  };
-}
 
 // 주가흐름 성적 등급 (0~100 → A+ ~ D)
-function gradeOf(s: number): string {
-  if (s >= 85) return "A+";
-  if (s >= 70) return "A";
-  if (s >= 55) return "B";
-  if (s >= 40) return "C";
-  return "D";
-}
 
 /** 그룹(업종 또는 테마)의 구성종목 원본 */
 async function groupMembers(
@@ -734,12 +654,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         ? finMetrics(finA)
         : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
       const closes = bars.map((b) => b.close).filter((c) => c > 0);
-      const sr = {
-        ...shortReturns(closes),
-        m3: closes.length > 1 ? pctBack(closes, 60) : 0,
-        m6: closes.length > 1 ? pctBack(closes, 120) : 0,
-        y1: closes.length > 1 ? pctBack(closes, 245) : 0,
-      };
+      const sr = periodReturns(closes);
       // 테마 그룹은 시총/3개월수익률이 비어 있으므로 상세·일봉에서 보완
       const cap = m.cap || (dd?.marketCap ?? 0) * 1e8;
       const threeMo = m.threeMo || sr.m3;
@@ -784,30 +699,19 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const m3N = mk((e) => e.m3 || e.threeMo, "hi");
   const m6N = mk((e) => e.m6, "hi");
   const y1N = mk((e) => e.y1, "hi");
-  const trend = enriched.map(
-    (e, i) =>
-      (w1N[i] * 0.15 + m1N[i] * 0.3 + m3N[i] * 0.25 + m6N[i] * 0.2 + y1N[i] * 0.1) * 0.75 +
-      e.cross.score * 0.25,
+  const trend = enriched.map((e, i) =>
+    trendScore({ w1: w1N[i], m1: m1N[i], m3: m3N[i], m6: m6N[i], y1: y1N[i] }, e.cross.score),
   );
 
   const scored: ScoredStock[] = enriched.map((e, i) => {
-    const 재무 = roeN[i] * 0.5 + debtN[i] * 0.3 + opN[i] * 0.2;
+    const 재무 = finScore(roeN[i], debtN[i], opN[i]);
     const 성장 = growthN[i];
-    const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
+    const 밸류 = valueScore(perN[i], pbrN[i], epsN[i]);
     const 모멘텀 = trend[i]; // 주가흐름 성적표(수익률+골든크로스)를 모멘텀 점수로 사용
     const 배당 = divN[i];
     const 외국인 = frgnN[i];
     const 시총 = capN[i];
-    const score = Math.round(
-      (재무 * 0.25 +
-        밸류 * 0.23 +
-        성장 * 0.15 +
-        시총 * 0.14 +
-        모멘텀 * 0.1 +
-        외국인 * 0.1 +
-        배당 * 0.03) *
-        100,
-    );
+    const score = totalScore({ 재무, 밸류, 성장, 시총, 모멘텀, 기관: 외국인, 배당 });
     return {
       code: e.code,
       name: e.name,

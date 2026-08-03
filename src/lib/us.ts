@@ -1,6 +1,18 @@
 // 미국 증시 데이터 (야후 파이낸스). 서버 전용.
 import { yahooFinance } from "./yahoo";
 import { bonds } from "./naverApi";
+// 채점 규칙은 한국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
+import {
+  dimScaler,
+  finScore,
+  gradeOf,
+  maCross,
+  periodReturns,
+  totalScore,
+  trendScore,
+  valueScore,
+  type MaSignal,
+} from "./score";
 
 export interface UsQuote {
   symbol: string;
@@ -210,15 +222,38 @@ export interface UsDetail {
   revenueGrowth: number; // %
   debtToEquity: number;
   heldByInstitutions: number; // %
+  /** 기간별 수익률 % — 한국 종목상세와 동일 항목 */
+  d1: number;
+  w1: number;
+  m1: number;
+  m6: number;
+  y1: number;
+}
+
+/** 일봉 종가 2년치 — 기간수익률·이동평균 교차 계산용 */
+async function dailyCloses(symbol: string): Promise<number[]> {
+  try {
+    const r = await yahooFinance.chart(symbol, {
+      period1: new Date(Date.now() - 760 * 86400_000),
+      interval: "1d",
+    });
+    return (r.quotes ?? []).map((x) => x.close).filter((c): c is number => c != null && c > 0);
+  } catch {
+    return [];
+  }
 }
 
 const pctOf = (v: unknown) => (Number(v) || 0) * 100;
 
 /** 종목 상세 (지표 + 애널리스트 + 수익성) */
 export async function usDetail(symbol: string): Promise<UsDetail> {
-  const d = await yahooFinance.quoteSummary(symbol, {
-    modules: ["assetProfile", "summaryDetail", "defaultKeyStatistics", "financialData", "price"],
-  });
+  const [d, closes] = await Promise.all([
+    yahooFinance.quoteSummary(symbol, {
+      modules: ["assetProfile", "summaryDetail", "defaultKeyStatistics", "financialData", "price"],
+    }),
+    dailyCloses(symbol),
+  ]);
+  const ret = periodReturns(closes);
   const p = (d.price ?? {}) as Record<string, unknown>;
   const sd = (d.summaryDetail ?? {}) as Record<string, unknown>;
   const ks = (d.defaultKeyStatistics ?? {}) as Record<string, unknown>;
@@ -251,6 +286,11 @@ export async function usDetail(symbol: string): Promise<UsDetail> {
     revenueGrowth: pctOf(fd.revenueGrowth),
     debtToEquity: Number(fd.debtToEquity) || 0,
     heldByInstitutions: pctOf(ks.heldPercentInstitutions),
+    d1: ret.d1,
+    w1: ret.w1,
+    m1: ret.m1,
+    m6: ret.m6,
+    y1: ret.y1,
   };
 }
 
@@ -348,12 +388,31 @@ export interface UsScored {
   dividendYield: number;
   eps: number;
   changePct: number;
-  year1: number; // 1년 수익률 %
-  vs200d: number; // 200일선 대비 %
-  vs50d: number; // 50일선 대비 %
+  roe: number; // %
+  debt: number; // 부채비율 %
+  growth: number; // 매출성장률 %
+  heldByInstitutions: number; // 기관 보유비중 % (한국의 외국인 보유비중에 대응)
+  d1: number;
+  w1: number;
+  m1: number;
+  m3: number;
+  m6: number;
+  y1: number;
+  maSignal: MaSignal;
+  crossDays: number;
+  trendScore: number;
+  trendGrade: string;
   score: number;
   rank: number;
-  parts: { 밸류: number; 성장: number; 수익성: number; 모멘텀: number; 배당: number; 규모: number };
+  parts: {
+    재무: number;
+    성장: number;
+    밸류: number;
+    모멘텀: number;
+    배당: number;
+    기관: number;
+    시총: number;
+  };
 }
 
 export interface UsSectorRank {
@@ -364,17 +423,25 @@ export interface UsSectorRank {
   target?: UsScored;
 }
 
-/** 방향 정규화 스케일러 — 기준은 비교군 고정 멤버로만 산출 */
-function scaler(base: number[], dir: "hi" | "lo"): (v: number) => number {
-  const ok = base.filter(Number.isFinite);
-  if (!ok.length) return () => 0.5;
-  const min = Math.min(...ok);
-  const max = Math.max(...ok);
-  const range = max - min || 1;
-  return (v) => {
-    if (!Number.isFinite(v)) return 0;
-    const t = Math.min(1, Math.max(0, (v - min) / range));
-    return dir === "hi" ? t : 1 - t;
+/** 종목별 재무·수급·장기 시세 — 한국의 섹터평가와 같은 항목을 야후에서 모은다 */
+async function usPeerStats(sym: string) {
+  const [sum, closes] = await Promise.all([
+    yahooFinance
+      .quoteSummary(sym, { modules: ["financialData", "defaultKeyStatistics"] })
+      .catch(() => null),
+    dailyCloses(sym),
+  ]);
+  const fd = (sum?.financialData ?? {}) as Record<string, unknown>;
+  const ks = (sum?.defaultKeyStatistics ?? {}) as Record<string, unknown>;
+  const nOr = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : NaN);
+  return {
+    roe: nOr(fd.returnOnEquity) * 100,
+    debt: nOr(fd.debtToEquity),
+    opMargin: nOr(fd.operatingMargins) * 100,
+    growth: nOr(fd.revenueGrowth) * 100,
+    held: nOr(ks.heldPercentInstitutions) * 100,
+    cross: maCross(closes),
+    ...periodReturns(closes),
   };
 }
 
@@ -386,55 +453,55 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
 
   const rows = await yahooFinance.quote(codes);
   const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
-  const items = list
+  const quoted = list
     .filter((x) => Number(x.marketCap) > 0)
     .map((x) => ({
       symbol: String(x.symbol),
       name: String(x.shortName ?? x.symbol),
       marketCap: Number(x.marketCap) || 0,
       per: Number(x.trailingPE) || NaN,
-      forwardPer: Number(x.forwardPE) || NaN,
       pbr: Number(x.priceToBook) || NaN,
       dividendYield: Number(x.dividendYield) || 0,
       eps: Number(x.epsTrailingTwelveMonths) || NaN,
-      epsForward: Number(x.epsForward) || NaN,
       changePct: Number(x.regularMarketChangePercent) || 0,
-      year1: Number(x.fiftyTwoWeekChangePercent) || 0,
-      vs200d: Number(x.twoHundredDayAverageChangePercent) * 100 || 0,
-      vs50d: Number(x.fiftyDayAverageChangePercent) * 100 || 0,
     }));
+  // 재무·수급·장기 시세는 종목별 조회가 필요하므로 병렬로 모은다
+  const stats = await Promise.all(quoted.map((q) => usPeerStats(q.symbol)));
+  const items = quoted.map((q, i) => ({ ...q, ...stats[i] }));
 
-  // 정규화 기준은 큐레이션된 섹터 대표 종목으로만 (검색 종목이 기준을 흔들지 않게)
+  // 정규화 기준은 섹터 대표 종목으로만 (검색 종목이 기준을 흔들지 않게)
   const baseRows = items.filter((e) => base.includes(e.symbol));
   const mk = (pick: (e: (typeof items)[number]) => number, dir: "hi" | "lo") => {
-    const s = scaler(baseRows.map(pick), dir);
-    return items.map((e) => s(pick(e)));
+    const f = dimScaler(baseRows.map(pick), dir);
+    return items.map((e) => f(pick(e)));
   };
+  const roeN = mk((e) => e.roe, "hi");
+  const debtN = mk((e) => e.debt, "lo");
+  const opN = mk((e) => e.opMargin, "hi");
+  const growthN = mk((e) => e.growth, "hi");
   const perN = mk((e) => (e.per > 0 ? e.per : NaN), "lo");
   const pbrN = mk((e) => (e.pbr > 0 ? e.pbr : NaN), "lo");
-  const epsN = mk((e) => e.eps, "hi");
-  // 성장: 선행EPS가 후행EPS보다 높을수록 이익 개선
-  const growthN = mk(
-    (e) => (Number.isFinite(e.eps) && e.eps !== 0 ? (e.epsForward - e.eps) / Math.abs(e.eps) : NaN),
-    "hi",
-  );
-  // 수익성 대용: 선행 PER이 낮을수록 이익 대비 저평가
-  const profitN = mk((e) => (e.forwardPer > 0 ? e.forwardPer : NaN), "lo");
-  const y1N = mk((e) => e.year1, "hi");
-  const m200N = mk((e) => e.vs200d, "hi");
-  const m50N = mk((e) => e.vs50d, "hi");
+  const epsN = mk((e) => (e.eps > 0 ? e.eps : NaN), "hi");
   const divN = mk((e) => e.dividendYield, "hi");
   const capN = mk((e) => Math.log10(Math.max(e.marketCap, 1)), "hi");
+  const heldN = mk((e) => (e.held > 0 ? e.held : NaN), "hi");
+  const w1N = mk((e) => e.w1, "hi");
+  const m1N = mk((e) => e.m1, "hi");
+  const m3N = mk((e) => e.m3, "hi");
+  const m6N = mk((e) => e.m6, "hi");
+  const y1N = mk((e) => e.y1, "hi");
+  const trend = items.map((e, i) =>
+    trendScore({ w1: w1N[i], m1: m1N[i], m3: m3N[i], m6: m6N[i], y1: y1N[i] }, e.cross.score),
+  );
 
   const scored: UsScored[] = items.map((e, i) => {
-    const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
+    const 재무 = finScore(roeN[i], debtN[i], opN[i]);
     const 성장 = growthN[i];
-    const 수익성 = profitN[i];
-    const 모멘텀 = y1N[i] * 0.4 + m200N[i] * 0.35 + m50N[i] * 0.25;
+    const 밸류 = valueScore(perN[i], pbrN[i], epsN[i]);
+    const 모멘텀 = trend[i];
     const 배당 = divN[i];
-    const score = Math.round(
-      (밸류 * 0.25 + 성장 * 0.2 + 수익성 * 0.18 + 모멘텀 * 0.22 + 배당 * 0.08 + capN[i] * 0.07) * 100,
-    );
+    const 기관 = heldN[i];
+    const 시총 = capN[i];
     return {
       symbol: e.symbol,
       name: e.name,
@@ -444,18 +511,30 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
       dividendYield: +e.dividendYield.toFixed(2),
       eps: Number.isFinite(e.eps) ? +e.eps.toFixed(2) : 0,
       changePct: +e.changePct.toFixed(2),
-      year1: +e.year1.toFixed(1),
-      vs200d: +e.vs200d.toFixed(1),
-      vs50d: +e.vs50d.toFixed(1),
-      score,
+      roe: Number.isFinite(e.roe) ? +e.roe.toFixed(1) : 0,
+      debt: Number.isFinite(e.debt) ? +e.debt.toFixed(0) : 0,
+      growth: Number.isFinite(e.growth) ? +e.growth.toFixed(1) : 0,
+      heldByInstitutions: Number.isFinite(e.held) ? +e.held.toFixed(1) : 0,
+      d1: e.d1,
+      w1: e.w1,
+      m1: e.m1,
+      m3: e.m3,
+      m6: e.m6,
+      y1: e.y1,
+      maSignal: e.cross.signal,
+      crossDays: e.cross.days,
+      trendScore: Math.round(trend[i] * 100),
+      trendGrade: gradeOf(trend[i] * 100),
+      score: totalScore({ 재무, 밸류, 성장, 시총, 모멘텀, 기관, 배당 }),
       rank: 0,
       parts: {
-        밸류: Math.round(밸류 * 100),
+        재무: Math.round(재무 * 100),
         성장: Math.round(성장 * 100),
-        수익성: Math.round(수익성 * 100),
+        밸류: Math.round(밸류 * 100),
         모멘텀: Math.round(모멘텀 * 100),
         배당: Math.round(배당 * 100),
-        규모: Math.round(capN[i] * 100),
+        기관: Math.round(기관 * 100),
+        시총: Math.round(시총 * 100),
       },
     };
   });

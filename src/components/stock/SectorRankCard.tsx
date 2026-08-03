@@ -3,7 +3,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
-import { signColor } from "@/lib/format";
+import { gradeColor, maColor, signColor } from "@/lib/format";
 import type { SectorRank } from "@/lib/naverApi";
 
 function scoreColor(s: number) {
@@ -12,19 +12,7 @@ function scoreColor(s: number) {
   return "text-muted";
 }
 
-function maColor(s: string) {
-  if (s === "골든크로스") return "bg-up/20 text-up border-up/40";
-  if (s === "정배열") return "bg-up/10 text-up border-up/25";
-  if (s === "데드크로스") return "bg-down/20 text-down border-down/40";
-  return "bg-down/10 text-down border-down/25";
-}
 
-function gradeColor(g: string) {
-  if (g.startsWith("A")) return "bg-up/15 text-up border-up/30";
-  if (g === "B") return "bg-signal/15 text-signal border-signal/30";
-  if (g === "C") return "bg-muted/10 text-muted border-line";
-  return "bg-down/15 text-down border-down/30";
-}
 
 const ret = (v: number) => (
   <span className={`tnum ${signColor(v)}`}>

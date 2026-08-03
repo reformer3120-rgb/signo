@@ -1,9 +1,10 @@
 "use client";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { koName } from "@/lib/usKo";
 import { num } from "@/lib/format";
+import { useSticky } from "@/lib/useSticky";
 
 export type Cur = "USD" | "KRW";
 
@@ -28,7 +29,8 @@ const CurrencyCtx = createContext<Ctx>({
 export const useCur = () => useContext(CurrencyCtx);
 
 export function UsCurrencyProvider({ children }: { children: ReactNode }) {
-  const [cur, setCur] = useState<Cur>("USD");
+  // 다른 화면에 갔다 돌아와도 선택한 통화가 유지되도록 저장
+  const [cur, setCur] = useSticky<Cur>("us.cur", "USD");
   // 원화 환산은 국내 고시환율(대시보드 시장지표와 동일 소스) 사용
   const { data } = useSWR<{ fx: { label: string; price: number }[] }>("/api/market", fetcher, {
     refreshInterval: 300_000,

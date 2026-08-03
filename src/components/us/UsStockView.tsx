@@ -9,7 +9,7 @@ import { Card } from "@/components/Card";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
-import { num, pct, signColor } from "@/lib/format";
+import { gradeColor, maColor, num, pct, signColor } from "@/lib/format";
 import type { Candle } from "@/lib/types";
 import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
@@ -95,6 +95,21 @@ function SymbolSearch({ onSelect }: { onSelect: (symbol: string) => void }) {
   );
 }
 
+/** 기간 수익률 칸 — 한국 종목상세와 동일 */
+function Ret({ label, v }: { label: string; v?: number }) {
+  const has = v !== undefined && v !== null;
+  return (
+    <div className="min-w-0 rounded-lg border border-line bg-canvas/40 px-1 py-2 text-center">
+      <div className="text-[11px] text-muted">{label}</div>
+      <div
+        className={`tnum mt-0.5 truncate text-xs font-bold sm:text-sm ${has ? signColor(v!) : "text-muted"}`}
+      >
+        {has ? `${v! > 0 ? "+" : ""}${v!.toFixed(1)}%` : "-"}
+      </div>
+    </div>
+  );
+}
+
 function Item({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-line bg-canvas/40 px-3 py-2.5">
@@ -128,6 +143,15 @@ function DetailCard({ symbol }: { symbol: string }) {
         </span>
       }
     >
+      {/* 기간별 수익률 */}
+      <div className="mb-3 grid grid-cols-5 gap-1.5">
+        <Ret label="1일" v={d.d1} />
+        <Ret label="1주" v={d.w1} />
+        <Ret label="1달" v={d.m1} />
+        <Ret label="6달" v={d.m6} />
+        <Ret label="1년" v={d.y1} />
+      </div>
+
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         <Item label="시가총액" value={big(d.marketCap)} />
         <Item label="PER" value={d.per ? `${d.per.toFixed(1)}배` : "-"} />
@@ -277,21 +301,21 @@ function SectorCard({
                     {r.sector} 내 <b className="text-fg">{r.rank}위</b> / {r.total}종목
                   </div>
                   <div className="tnum mt-1 text-[11px] text-muted">
-                    PER {r.target.per || "-"} · PBR {r.target.pbr || "-"} · 배당{" "}
-                    {r.target.dividendYield || 0}% · 1년 {r.target.year1 > 0 ? "+" : ""}
-                    {r.target.year1}%
+                    ROE {r.target.roe || "-"}% · 부채 {r.target.debt || "-"}% · 기관{" "}
+                    {r.target.heldByInstitutions || "-"}%
                   </div>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+              <div className="mt-3 grid grid-cols-4 gap-1.5 sm:grid-cols-7">
                 {(
                   [
+                    ["재무", r.target.parts.재무],
                     ["밸류", r.target.parts.밸류],
                     ["성장", r.target.parts.성장],
-                    ["수익성", r.target.parts.수익성],
-                    ["모멘텀", r.target.parts.모멘텀],
+                    ["시가총액", r.target.parts.시총],
+                    ["주가흐름", r.target.parts.모멘텀],
+                    ["기관 비중", r.target.parts.기관],
                     ["배당", r.target.parts.배당],
-                    ["규모", r.target.parts.규모],
                   ] as [string, number][]
                 ).map(([k, v]) => (
                   <div key={k} className="rounded-lg bg-canvas/60 px-1.5 py-1.5 text-center">
@@ -299,6 +323,56 @@ function SectorCard({
                     <div className="tnum text-sm font-bold">{v}</div>
                   </div>
                 ))}
+              </div>
+
+              {/* 최근 주가흐름 성적표 — 한국 종목 화면과 동일 */}
+              <div className="mt-3 rounded-lg bg-canvas/60 px-3 py-2">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="text-[11px] font-semibold">최근 주가흐름 성적표</span>
+                  <span
+                    className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${gradeColor(
+                      r.target.trendGrade,
+                    )}`}
+                  >
+                    {r.target.trendGrade}
+                  </span>
+                  <span className="tnum text-[11px] text-muted">{r.target.trendScore}점</span>
+                  {r.target.maSignal !== "-" && (
+                    <span
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
+                        r.target.maSignal,
+                      )}`}
+                      title="20일선 vs 60일선"
+                    >
+                      {r.target.maSignal}
+                      {(r.target.maSignal === "골든크로스" || r.target.maSignal === "데드크로스") &&
+                        r.target.crossDays >= 0 &&
+                        ` ${r.target.crossDays}일`}
+                    </span>
+                  )}
+                  <span className="ml-auto hidden text-[10px] text-muted sm:inline">
+                    섹터 내 상대성적
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1 text-center">
+                  {(
+                    [
+                      ["1주", r.target.w1],
+                      ["1달", r.target.m1],
+                      ["3달", r.target.m3],
+                      ["6달", r.target.m6],
+                      ["1년", r.target.y1],
+                    ] as [string, number][]
+                  ).map(([k, v]) => (
+                    <div key={k}>
+                      <div className="text-[10px] text-muted">{k}</div>
+                      <div className={`tnum text-xs font-bold ${signColor(v)}`}>
+                        {v > 0 ? "+" : ""}
+                        {v.toFixed(1)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -328,9 +402,9 @@ function SectorCard({
                   <span className="tnum hidden shrink-0 text-[11px] text-muted sm:inline">
                     PER {s.per || "-"}
                   </span>
-                  <span className={`tnum w-16 shrink-0 text-right text-[11px] ${signColor(s.year1)}`}>
-                    {s.year1 > 0 ? "+" : ""}
-                    {s.year1}%
+                  <span className={`tnum w-16 shrink-0 text-right text-[11px] ${signColor(s.y1)}`}>
+                    {s.y1 > 0 ? "+" : ""}
+                    {s.y1}%
                   </span>
                   <span className={`tnum w-9 shrink-0 text-right text-sm font-bold ${scoreColor(s.score)}`}>
                     {s.score}
@@ -340,8 +414,9 @@ function SectorCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] leading-relaxed text-muted">
-            점수 = 밸류(PER·PBR·EPS) 25 + 모멘텀(1년·200일선·50일선) 22 + 성장(선행EPS 개선) 20 +
-            수익성(선행PER) 18 + 배당 8 + 규모 7 (섹터 내 상대평가, 100점)
+            점수 = 재무건전성(ROE·부채·이익률) 25 + 밸류(PER·PBR·EPS) 23 + 성장성 15 +
+            시가총액 14 + 주가흐름(기간수익률·골든크로스) 10 + 기관보유비중 10 + 배당 3
+            (섹터 내 상대평가, 100점) · 한국 증시와 동일 기준
           </div>
         </>
       )}
