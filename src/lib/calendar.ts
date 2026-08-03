@@ -7,8 +7,11 @@ const H = {
   Accept: "application/json",
 };
 
+export type EconCountry = "US" | "EU" | "JP" | "KR";
+
 export interface EconEvent {
   id: number;
+  country: EconCountry;
   event: string;
   category: string;
   /** KST ISO 문자열 (YYYY-MM-DDTHH:mm) */
@@ -84,6 +87,51 @@ interface RawEvent {
   allDay: boolean;
 }
 
+// ---- ForexFactory 주간 캘린더 (일본·유럽 등 미국 외 지역) ----
+// finviz는 미국 지표만 제공하므로 그 외 지역을 이 피드로 보완한다.
+interface FfEvent {
+  title: string;
+  country: string; // 통화코드 (USD/JPY/EUR/...)
+  date: string; // ISO with offset
+  impact: "High" | "Medium" | "Low" | string;
+  forecast: string;
+  previous: string;
+}
+
+const FF_COUNTRY: Record<string, EconCountry> = { JPY: "JP", EUR: "EU", KRW: "KR" };
+const FF_IMPORTANCE: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
+
+async function forexFactory(): Promise<EconEvent[]> {
+  const r = await fetch("https://nfs.faireconomy.media/ff_calendar_thisweek.json", {
+    headers: { "User-Agent": H["User-Agent"] },
+    cache: "no-store",
+  });
+  if (!r.ok) throw new Error(`ff ${r.status}`);
+  const rows = (await r.json()) as FfEvent[];
+  return rows
+    .filter((x) => x?.date && FF_COUNTRY[x.country])
+    .map((x, i) => {
+      const utc = new Date(x.date); // 오프셋이 포함돼 있어 그대로 파싱 가능
+      const { date, time } = kstParts(utc);
+      return {
+        id: 900_000_000 + i,
+        country: FF_COUNTRY[x.country],
+        event: x.title,
+        category: "",
+        kst: `${date}T${time}`,
+        dateKst: date,
+        timeKst: time,
+        allDay: false,
+        importance: FF_IMPORTANCE[x.impact] ?? 1,
+        reference: "",
+        actual: null, // 이 피드는 발표치를 제공하지 않음
+        forecast: x.forecast || null,
+        previous: x.previous || null,
+        higherIsPositive: true,
+      };
+    });
+}
+
 export async function economicCalendar(daysBack = 1, daysAhead = 10): Promise<EconEvent[]> {
   const from = ymd(new Date(Date.now() - daysBack * 86400_000));
   const to = ymd(new Date(Date.now() + daysAhead * 86400_000));
@@ -100,6 +148,7 @@ export async function economicCalendar(daysBack = 1, daysAhead = 10): Promise<Ec
       const { date, time } = kstParts(utc);
       return {
         id: x.calendarId,
+        country: "US" as const,
         event: x.event,
         category: x.category,
         kst: `${date}T${time}`,
@@ -115,4 +164,16 @@ export async function economicCalendar(daysBack = 1, daysAhead = 10): Promise<Ec
       };
     })
     .sort((a, b) => a.kst.localeCompare(b.kst));
+}
+
+/** 미국(finviz) + 일본·유럽(ForexFactory)을 합친 캘린더 */
+export async function economicCalendarAll(): Promise<EconEvent[]> {
+  const [us, other] = await Promise.all([
+    economicCalendar(0, 7).catch(() => [] as EconEvent[]),
+    forexFactory().catch(() => [] as EconEvent[]),
+  ]);
+  // 미국은 finviz 쪽이 발표치(actual)까지 있어 더 상세 → ForexFactory의 미국 항목은 제외
+  return [...us, ...other.filter((e) => e.country !== "US")].sort((a, b) =>
+    a.kst.localeCompare(b.kst),
+  );
 }

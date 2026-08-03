@@ -34,13 +34,26 @@ function Stars({ n }: { n: number }) {
   );
 }
 
+const COUNTRIES = [
+  { key: "ALL", label: "전체", flag: "" },
+  { key: "US", label: "미국", flag: "🇺🇸" },
+  { key: "EU", label: "유럽", flag: "🇪🇺" },
+  { key: "JP", label: "일본", flag: "🇯🇵" },
+  { key: "KR", label: "한국", flag: "🇰🇷" },
+] as const;
+
+const FLAG: Record<string, string> = { US: "🇺🇸", EU: "🇪🇺", JP: "🇯🇵", KR: "🇰🇷" };
+
 export function CalendarSection() {
   const [minImp, setMinImp] = useState(1);
+  const [country, setCountry] = useState<string>("ALL");
   const { data, isLoading } = useSWR<{ data: EconEvent[] }>("/api/calendar", fetcher, {
     refreshInterval: 600_000,
   });
   const all = data?.data ?? [];
-  const rows = all.filter((e) => e.importance >= minImp);
+  const rows = all.filter(
+    (e) => e.importance >= minImp && (country === "ALL" || e.country === country),
+  );
   const today = todayKst();
 
   // 날짜별 그룹
@@ -55,7 +68,21 @@ export function CalendarSection() {
     <Card
       title="경제 캘린더"
       right={
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+            {COUNTRIES.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => setCountry(c.key)}
+                className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                  country === c.key ? "bg-brand text-white" : "text-muted hover:text-fg"
+                }`}
+              >
+                {c.flag && <span className="mr-0.5">{c.flag}</span>}
+                {c.label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
             {([
               [1, "전체"],
@@ -80,7 +107,11 @@ export function CalendarSection() {
       {isLoading && !all.length ? (
         <div className="h-72 animate-pulse rounded-lg bg-line/30" />
       ) : !groups.length ? (
-        <div className="grid h-24 place-items-center text-sm text-muted">일정 없음</div>
+        <div className="grid h-24 place-items-center px-4 text-center text-sm text-muted">
+          {country === "KR"
+            ? "한국 경제지표 일정은 무료로 공개된 소스를 찾지 못했습니다."
+            : "해당 조건의 일정이 없습니다."}
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {groups.map((g) => (
@@ -113,6 +144,7 @@ export function CalendarSection() {
                           <Stars n={e.importance} />
                         </td>
                         <td className="pr-2 font-medium" title={e.event}>
+                          <span className="mr-1">{FLAG[e.country]}</span>
                           {koEvent(e.event)}
                           {e.reference && (
                             <span className="ml-1 text-[11px] text-muted">({e.reference})</span>

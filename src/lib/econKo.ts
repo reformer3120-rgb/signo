@@ -10,12 +10,21 @@ const STAGE: [RegExp, string][] = [
   [/\s+Rev(ised)?$/i, " 수정"],
 ];
 
-/** 비교 기간 */
+/** 비교 기간 (finviz는 MoM/YoY, ForexFactory는 m/m·y/y 표기) */
 const PERIOD: [RegExp, string][] = [
-  [/\s+MoM$/i, " (전월대비)"],
-  [/\s+YoY$/i, " (전년대비)"],
-  [/\s+QoQ$/i, " (전분기대비)"],
-  [/\s+WoW$/i, " (전주대비)"],
+  [/\s+(MoM|m\/m)$/i, " (전월대비)"],
+  [/\s+(YoY|y\/y)$/i, " (전년대비)"],
+  [/\s+(QoQ|q\/q)$/i, " (전분기대비)"],
+  [/\s+(WoW|w\/w)$/i, " (전주대비)"],
+];
+
+/** 국가 접두어 (ForexFactory 유럽 지표) */
+const PREFIX: [RegExp, string][] = [
+  [/^German\s+/i, "독일 "],
+  [/^French\s+/i, "프랑스 "],
+  [/^Italian\s+/i, "이탈리아 "],
+  [/^Spanish\s+/i, "스페인 "],
+  [/^Belgian\s+/i, "벨기에 "],
 ];
 
 /** 지표 본체 사전 (긴 이름이 먼저 매칭되도록 정렬해서 사용) */
@@ -137,6 +146,47 @@ const DICT: Record<string, string> = {
   "Treasury Refunding Announcement": "재무부 국채발행 계획",
   "Treasury Refunding Financing Estimates": "재무부 자금조달 추정",
   "2-Year FRN Auction": "2년 변동금리채 입찰",
+  // 일본·유럽 (ForexFactory 표기)
+  "Final Manufacturing PMI": "제조업 PMI 확정",
+  "Final Services PMI": "서비스업 PMI 확정",
+  "Flash Manufacturing PMI": "제조업 PMI 속보",
+  "Flash Services PMI": "서비스업 PMI 속보",
+  "Manufacturing PMI": "제조업 PMI",
+  "Services PMI": "서비스업 PMI",
+  "Final Composite PMI": "종합 PMI 확정",
+  "Bank Holiday": "휴장일",
+  "Industrial Production": "산업생산",
+  "Trade Balance": "무역수지",
+  "Current Account": "경상수지",
+  "Main Refinancing Rate": "ECB 기준금리",
+  "ECB Press Conference": "ECB 기자회견",
+  "Monetary Policy Statement": "통화정책 성명",
+  "BOJ Policy Rate": "일본은행 기준금리",
+  "BOJ Press Conference": "일본은행 기자회견",
+  "BOJ Summary of Opinions": "일본은행 의견 요약",
+  "Household Spending": "가계지출",
+  "Average Cash Earnings": "평균 현금소득",
+  "Leading Indicators": "경기선행지수",
+  "Consumer Confidence": "소비자신뢰지수",
+  "Economic Sentiment": "경제심리지수",
+  "Sentix Investor Confidence": "센틱스 투자자신뢰지수",
+  "German Buba": "분데스방크",
+  "Prelim Flash GDP": "GDP 속보 잠정",
+  "Prelim GDP": "GDP 잠정",
+  "Final GDP": "GDP 확정",
+  "Monetary Base": "본원통화",
+  "Retail Sales m/m": "소매판매",
+  "Unemployment Claims": "실업수당 청구",
+  "Consumer Spending": "소비지출",
+  "Employment Change": "고용 변화",
+  "Producer Prices": "생산자물가",
+  "Core Retail Sales": "근원 소매판매",
+  "Household Confidence": "가계신뢰지수",
+  "Machinery Orders": "기계수주",
+  "Tankan Manufacturing Index": "단칸 제조업지수",
+  "Tankan Non-Manufacturing Index": "단칸 비제조업지수",
+  "10-y Bond Auction": "10년 국채 입찰",
+  "30-y Bond Auction": "30년 국채 입찰",
 };
 
 /** 연준 인사 이름 */
@@ -172,12 +222,24 @@ const PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [
   [/^(\d+)-Year Bond Auction$/i, (m) => `${m[1]}년 국채 입찰`],
   [/^(\d+)-(Week|Month) Bill Auction$/i, (m) => `${m[1]}${m[2].toLowerCase() === "week" ? "주" : "개월"} 단기국채 입찰`],
   [/^NY Fed Bill Purchases (.+)$/i, (m) => `뉴욕 연은 단기국채 매입 (${m[1]})`],
+  // ForexFactory 표기: "10-y Bond Auction", "30-y Bond Auction"
+  [/^(\d+)-y Bond Auction$/i, (m) => `${m[1]}년 국채 입찰`],
+  [/^(\d+)-y Note Auction$/i, (m) => `${m[1]}년 국채 입찰`],
 ];
 
 /** 영문 지표명을 한글로. 사전에 없으면 원문 유지 */
 export function koEvent(name: string): string {
   let rest = name.trim();
   let suffix = "";
+  let prefix = "";
+
+  for (const [re, ko] of PREFIX) {
+    if (re.test(rest)) {
+      prefix = ko;
+      rest = rest.replace(re, "");
+      break;
+    }
+  }
 
   for (const [re, ko] of STAGE) {
     if (re.test(rest)) {
@@ -194,16 +256,16 @@ export function koEvent(name: string): string {
 
   for (const [re, fn] of PATTERNS) {
     const m = rest.match(re);
-    if (m) return fn(m) + suffix;
+    if (m) return prefix + fn(m) + suffix;
   }
 
   const hit = DICT[rest];
-  if (hit) return hit + suffix;
+  if (hit) return prefix + hit + suffix;
 
   // 부분 일치(가장 긴 키 우선)
   const keys = Object.keys(DICT).sort((a, b) => b.length - a.length);
   for (const k of keys) {
-    if (rest.startsWith(k)) return DICT[k] + rest.slice(k.length) + suffix;
+    if (rest.startsWith(k)) return prefix + DICT[k] + rest.slice(k.length) + suffix;
   }
-  return rest + suffix;
+  return prefix + rest + suffix;
 }
