@@ -19,8 +19,8 @@ export default function Home() {
     <>
       <CloseReportButton />
       <IndexSection />
-      <MarketFlowSection />
       <DepositSection />
+      <MarketFlowSection />
       <SectorSection />
       <MoversSection />
       <MarketCapSection />

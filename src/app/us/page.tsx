@@ -1,5 +1,5 @@
-import { UsView } from "@/components/us/UsView";
+import { UsDashboard } from "@/components/us/UsDashboard";
 
 export default function UsPage() {
-  return <UsView />;
+  return <UsDashboard />;
 }

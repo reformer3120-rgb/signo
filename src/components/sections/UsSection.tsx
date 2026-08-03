@@ -5,6 +5,7 @@ import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { num, pct, signColor } from "@/lib/format";
 import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
+import { Sparkline } from "@/components/Sparkline";
 import { UsIndexChart } from "@/components/us/UsIndexChart";
 import { koName } from "@/lib/usKo";
 import type { UsQuote, UsSector } from "@/lib/us";
@@ -29,19 +30,28 @@ function Overview() {
 
   return (
     <>
-      <Card title="미국 지수" right={<span className="text-xs text-muted">야후 · 60초</span>}>
+      <Card title="미국 지수" right={<CurrencyToggle />}>
         {isLoading && !idx.length ? (
           <div className="h-24 animate-pulse rounded-lg bg-line/30" />
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {idx.map((x) => (
               <div key={x.symbol} className="min-w-0 rounded-lg border border-line bg-canvas/40 px-3 py-2.5">
-                <div className="text-xs text-muted truncate">{x.name}</div>
-                <div className="tnum mt-1 text-lg font-bold leading-tight truncate">
-                  {num(x.price, 2)}
-                </div>
-                <div className={`tnum text-xs font-medium ${signColor(x.changePct)}`}>
-                  {pct(x.changePct)}
+                <div className="truncate text-xs text-muted">{x.name}</div>
+                <div className="mt-1 flex items-end justify-between gap-1">
+                  <div className="min-w-0">
+                    <div className="tnum truncate text-lg font-bold leading-tight">
+                      {num(x.price, 2)}
+                    </div>
+                    <div className={`tnum text-xs font-medium ${signColor(x.changePct)}`}>
+                      {pct(x.changePct)}
+                    </div>
+                  </div>
+                  {!!x.spark?.length && (
+                    <div className="shrink-0">
+                      <Sparkline data={x.spark} up={x.changePct >= 0} />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -57,9 +67,8 @@ function Overview() {
         ) : (
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {sectors.map((s) => (
-              <div key={s.symbol} className="flex items-center gap-2 text-sm">
-                <span className="w-24 shrink-0 truncate">{s.name}</span>
-                <span className="tnum w-12 shrink-0 text-[11px] text-muted">{s.symbol}</span>
+              <div key={s.symbol} className="flex items-center gap-1.5 text-sm">
+                <span className="w-20 shrink-0 truncate">{s.name}</span>
                 <div className="relative h-2 flex-1 rounded-full bg-line/30">
                   <div
                     className={`absolute top-0 h-full rounded-full ${s.changePct >= 0 ? "bg-up" : "bg-down"}`}
@@ -71,7 +80,7 @@ function Overview() {
                   />
                   <div className="absolute left-1/2 top-0 h-full w-px bg-line" />
                 </div>
-                <span className={`tnum w-16 shrink-0 text-right font-medium ${signColor(s.changePct)}`}>
+                <span className={`tnum w-14 shrink-0 text-right font-medium ${signColor(s.changePct)}`}>
                   {pct(s.changePct)}
                 </span>
               </div>
@@ -164,7 +173,7 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
   const rows = data?.data ?? [];
 
   return (
-    <Card title="시가총액 상위" right={<CurrencyToggle />}>
+    <Card title="시가총액 상위" right={<span className="text-xs text-muted">시총순</span>}>
       {isLoading && !rows.length ? (
         <div className="h-72 animate-pulse rounded-lg bg-line/30" />
       ) : (

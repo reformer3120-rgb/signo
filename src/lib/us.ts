@@ -9,6 +9,7 @@ export interface UsQuote {
   changePct: number;
   volume: number;
   marketCap: number;
+  spark?: number[];
 }
 
 const q = (x: Record<string, unknown>): UsQuote => ({
@@ -22,7 +23,7 @@ const q = (x: Record<string, unknown>): UsQuote => ({
 });
 
 /** 주요 지수 (S&P500 · 나스닥 · 다우 · 러셀2000 · VIX) */
-const INDEX_SYMBOLS = ["^GSPC", "^IXIC", "^DJI", "^RUT", "^VIX"];
+const INDEX_SYMBOLS = ["^DJI", "^IXIC", "^GSPC", "^RUT", "^VIX"];
 const INDEX_KO: Record<string, string> = {
   "^GSPC": "S&P 500",
   "^IXIC": "나스닥 종합",
@@ -34,10 +35,30 @@ const INDEX_KO: Record<string, string> = {
 export async function usIndices(): Promise<UsQuote[]> {
   const rows = await yahooFinance.quote(INDEX_SYMBOLS);
   const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
-  return INDEX_SYMBOLS.map((s) => {
+  // 카드 안에 흐름을 보여줄 30일 라인 데이터
+  const sparks = await Promise.all(
+    INDEX_SYMBOLS.map(async (s) => {
+      try {
+        const r = await yahooFinance.chart(s, {
+          period1: new Date(Date.now() - 50 * 86400_000),
+          interval: "1d",
+        });
+        return (r.quotes ?? [])
+          .map((x) => x.close)
+          .filter((c): c is number => c != null)
+          .slice(-30);
+      } catch {
+        return [];
+      }
+    }),
+  );
+  const out: UsQuote[] = [];
+  INDEX_SYMBOLS.forEach((s, i) => {
     const hit = list.find((x) => x.symbol === s);
-    return hit ? { ...q(hit), name: INDEX_KO[s] ?? q(hit).name } : null;
-  }).filter((x): x is UsQuote => !!x);
+    if (!hit) return;
+    out.push({ ...q(hit), name: INDEX_KO[s] ?? q(hit).name, spark: sparks[i] });
+  });
+  return out;
 }
 
 /** 섹터별 등락 — SPDR 섹터 ETF 기준 */

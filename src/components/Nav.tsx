@@ -2,32 +2,72 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const TABS = [
-  { href: "/", label: "대시보드" },
-  { href: "/market", label: "시장지표" },
-  { href: "/stock", label: "종목" },
-  { href: "/us", label: "미국증시" },
-  { href: "/calendar", label: "캘린더" },
+/** 1단계: 시장 구분 */
+const MARKETS = [
+  { key: "kr", label: "한국증시", root: "/" },
+  { key: "us", label: "미국증시", root: "/us" },
+  { key: "cal", label: "캘린더", root: "/calendar" },
 ];
+
+/** 2단계: 시장별 화면 */
+const SUB: Record<string, { href: string; label: string }[]> = {
+  kr: [
+    { href: "/", label: "대시보드" },
+    { href: "/market", label: "시장지표" },
+    { href: "/stock", label: "종목" },
+  ],
+  us: [
+    { href: "/us", label: "대시보드" },
+    { href: "/us/market", label: "시장지표" },
+    { href: "/us/stock", label: "종목" },
+  ],
+};
+
+function marketOf(path: string) {
+  if (path.startsWith("/us")) return "us";
+  if (path.startsWith("/calendar")) return "cal";
+  return "kr";
+}
 
 export function Nav() {
   const path = usePathname();
+  const cur = marketOf(path);
+  const subs = SUB[cur] ?? [];
+
   return (
-    <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface p-1 sticky top-2 z-30 w-fit">
-      {TABS.map((t) => {
-        const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
-        return (
+    <div className="sticky top-2 z-30 flex w-fit flex-col gap-1.5">
+      <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface p-1">
+        {MARKETS.map((m) => (
           <Link
-            key={t.href}
-            href={t.href}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              active ? "bg-brand text-white" : "text-muted hover:text-fg"
+            key={m.key}
+            href={m.root}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+              cur === m.key ? "bg-brand text-white" : "text-muted hover:text-fg"
             }`}
           >
-            {t.label}
+            {m.label}
           </Link>
-        );
-      })}
-    </nav>
+        ))}
+      </nav>
+      {subs.length > 0 && (
+        <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface/80 p-1">
+          {subs.map((s) => {
+            const active =
+              s.href === "/" || s.href === "/us" ? path === s.href : path.startsWith(s.href);
+            return (
+              <Link
+                key={s.href}
+                href={s.href}
+                className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
+                  active ? "bg-brand/15 text-brand" : "text-muted hover:text-fg"
+                }`}
+              >
+                {s.label}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+    </div>
   );
 }

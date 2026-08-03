@@ -31,6 +31,7 @@ export function MoversSection() {
       title="특징주"
       right={
         <div className="flex items-center gap-2">
+          <MarketToggle value={market} onChange={setMarket} />
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
             {DIRS.map((d) => (
               <button
@@ -44,7 +45,6 @@ export function MoversSection() {
               </button>
             ))}
           </div>
-          <MarketToggle value={market} onChange={setMarket} />
         </div>
       }
     >
