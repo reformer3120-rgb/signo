@@ -489,7 +489,6 @@ export interface ScoredStock {
     재무: number;
     성장: number;
     밸류: number;
-    애널: number;
     모멘텀: number;
     배당: number;
     외국인: number;
@@ -658,10 +657,20 @@ async function groupMembers(
       return { name: g.name, raw: raw.filter((x): x is Record<string, string> => !!x) };
     }
   }
-  const ind = await getJson(
-    `https://m.stock.naver.com/api/stocks/industry/${detail.industryCode}?page=1&pageSize=100`,
+  // 업종 목록은 100건씩 끊어 오고 시총순 정렬도 아니다.
+  // 1페이지만 읽으면 대형주가 뒤 페이지로 밀려 비교군에서 통째로 빠지므로 전 페이지를 모은다.
+  const url = (page: number) =>
+    `https://m.stock.naver.com/api/stocks/industry/${detail.industryCode}?page=${page}&pageSize=100`;
+  const first = await getJson(url(1));
+  const total = Number(first.totalCount) || 0;
+  const pages = Math.min(Math.ceil(total / 100), 5); // 안전장치: 최대 500종목
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(pages - 1, 0) }, (_, i) =>
+      getJson(url(i + 2)).catch(() => ({ stocks: [] })),
+    ),
   );
-  return { name: ind.groupInfo?.name ?? "", raw: (ind.stocks ?? []) as Record<string, string>[] };
+  const raw = [first, ...rest].flatMap((p) => (p.stocks ?? []) as Record<string, string>[]);
+  return { name: first.groupInfo?.name ?? "", raw };
 }
 
 export async function sectorRank(code: string, groupKey = "industry"): Promise<SectorRank> {
@@ -766,7 +775,6 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const perN = mk((e) => (e.per > 0 ? e.per : NaN), "lo");
   const pbrN = mk((e) => (e.pbr > 0 ? e.pbr : NaN), "lo");
   const epsN = mk((e) => (e.eps > 0 ? e.eps : NaN), "hi");
-  const upsideN = mk((e) => e.upside, "hi");
   const divN = mk((e) => e.div, "hi");
   const capN = mk((e) => Math.log10(Math.max(e.cap, 1)), "hi");
   const frgnN = mk((e) => (e.foreignRate > 0 ? e.foreignRate : NaN), "hi");
@@ -786,19 +794,17 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     const 재무 = roeN[i] * 0.5 + debtN[i] * 0.3 + opN[i] * 0.2;
     const 성장 = growthN[i];
     const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
-    const 애널 = upsideN[i];
     const 모멘텀 = trend[i]; // 주가흐름 성적표(수익률+골든크로스)를 모멘텀 점수로 사용
     const 배당 = divN[i];
     const 외국인 = frgnN[i];
     const 시총 = capN[i];
     const score = Math.round(
       (재무 * 0.25 +
-        모멘텀 * 0.17 +
-        밸류 * 0.17 +
-        성장 * 0.14 +
-        애널 * 0.1 +
-        시총 * 0.09 +
-        외국인 * 0.05 +
+        밸류 * 0.23 +
+        성장 * 0.15 +
+        시총 * 0.14 +
+        모멘텀 * 0.1 +
+        외국인 * 0.1 +
         배당 * 0.03) *
         100,
     );
@@ -831,7 +837,6 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         재무: Math.round(재무 * 100),
         성장: Math.round(성장 * 100),
         밸류: Math.round(밸류 * 100),
-        애널: Math.round(애널 * 100),
         모멘텀: Math.round(모멘텀 * 100),
         배당: Math.round(배당 * 100),
         외국인: Math.round(외국인 * 100),

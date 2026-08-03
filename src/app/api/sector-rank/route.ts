@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const group = /^theme:\d+$/.test(raw) ? raw : "industry";
   try {
     return NextResponse.json({
-      data: await cached(`sector9:${group}:${code}`, 900, () => sectorRank(code, group)),
+      data: await cached(`sector11:${group}:${code}`, 900, () => sectorRank(code, group)),
     });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
