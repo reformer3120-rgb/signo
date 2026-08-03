@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -35,7 +36,6 @@ function Stars({ n }: { n: number }) {
 }
 
 const COUNTRIES = [
-  { key: "ALL", label: "전체", flag: "" },
   { key: "US", label: "미국", flag: "🇺🇸" },
   { key: "EU", label: "유럽", flag: "🇪🇺" },
   { key: "JP", label: "일본", flag: "🇯🇵" },
@@ -45,14 +45,17 @@ const COUNTRIES = [
 const FLAG: Record<string, string> = { US: "🇺🇸", EU: "🇪🇺", JP: "🇯🇵", KR: "🇰🇷" };
 
 export function CalendarSection() {
-  const [minImp, setMinImp] = useState(1);
-  const [country, setCountry] = useState<string>("ALL");
+  const [minImp, setMinImp] = useSticky("cal.imp", 1);
+  // 여러 나라를 동시에 켜고 끌 수 있게 (빈 배열 = 전체)
+  const [picked, setPicked] = useSticky<string[]>("cal.countries", []);
+  const toggle = (k: string) =>
+    setPicked(picked.includes(k) ? picked.filter((x) => x !== k) : [...picked, k]);
   const { data, isLoading } = useSWR<{ data: EconEvent[] }>("/api/calendar", fetcher, {
     refreshInterval: 600_000,
   });
   const all = data?.data ?? [];
   const rows = all.filter(
-    (e) => e.importance >= minImp && (country === "ALL" || e.country === country),
+    (e) => e.importance >= minImp && (picked.length === 0 || picked.includes(e.country)),
   );
   const today = todayKst();
 
@@ -70,15 +73,26 @@ export function CalendarSection() {
       right={
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+            <button
+              onClick={() => setPicked([])}
+              className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                picked.length === 0 ? "bg-brand text-white" : "text-muted hover:text-fg"
+              }`}
+            >
+              전체
+            </button>
             {COUNTRIES.map((c) => (
               <button
                 key={c.key}
-                onClick={() => setCountry(c.key)}
-                className={`px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-                  country === c.key ? "bg-brand text-white" : "text-muted hover:text-fg"
+                onClick={() => toggle(c.key)}
+                aria-pressed={picked.includes(c.key)}
+                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  picked.includes(c.key)
+                    ? "bg-brand text-white"
+                    : "text-muted hover:text-fg"
                 }`}
               >
-                {c.flag && <span className="mr-0.5">{c.flag}</span>}
+                <span className="mr-0.5">{c.flag}</span>
                 {c.label}
               </button>
             ))}
@@ -108,7 +122,7 @@ export function CalendarSection() {
         <div className="h-72 animate-pulse rounded-lg bg-line/30" />
       ) : !groups.length ? (
         <div className="grid h-24 place-items-center px-4 text-center text-sm text-muted">
-          {country === "KR"
+          {picked.length === 1 && picked[0] === "KR"
             ? "한국 경제지표 일정은 무료로 공개된 소스를 찾지 못했습니다."
             : "해당 조건의 일정이 없습니다."}
         </div>

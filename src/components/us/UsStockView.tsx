@@ -12,6 +12,7 @@ import { num, pct, signColor } from "@/lib/format";
 import type { Candle } from "@/lib/types";
 import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
+import { WatchButton } from "@/components/WatchButton";
 import type { UsDetail, UsFinRow, UsNews, UsSearchItem, UsSectorRank } from "@/lib/us";
 
 const TABS = [
@@ -403,6 +404,7 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
     <>
       <div className="sticky top-[3.4rem] z-20 flex w-fit flex-wrap items-center gap-2">
         <SymbolSearch onSelect={setSymbol} />
+        <WatchButton item={{ code: symbol, name: d?.name ?? symbol, market: "US" }} />
         <CurrencyToggle />
       </div>
 

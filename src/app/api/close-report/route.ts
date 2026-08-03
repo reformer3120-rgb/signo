@@ -11,6 +11,8 @@ import {
 } from "@/lib/naverApi";
 import { breadth } from "@/lib/naver";
 import { marketIndicators } from "@/lib/marketIndex";
+import { indexChart } from "@/lib/yahoo";
+import { minute } from "@/lib/naver";
 import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
 
 export const revalidate = 0;
@@ -64,7 +66,7 @@ async function build() {
     ...(["KOSPI", "KOSDAQ"] as Market[]).flatMap((m) => [
       indexTrend(m).catch(() => null),
       breadth(m).catch(() => null),
-      stockList("marketValue", m, 10).catch(() => []),
+      stockList("marketValue", m, 20).catch(() => []),
       stockList("up", m, 100).catch(() => []),
       stockList("down", m, 100).catch(() => []),
       highLow(m, "high", 200).catch(() => []),
@@ -82,6 +84,22 @@ async function build() {
     high: rest[i * per + 5] as Awaited<ReturnType<typeof highLow>>,
     low: rest[i * per + 6] as Awaited<ReturnType<typeof highLow>>,
   }));
+
+  // 30분 간격 장중 흐름 (지수 · 주요 종목)
+  const halfHour = async (label: string, bars: { time: number; close: number }[]) => {
+    if (!bars.length) return null;
+    const today = new Date(bars[bars.length - 1].time * 1000).toISOString().slice(0, 10);
+    const pts = bars
+      .filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === today)
+      .map((b) => `${new Date(b.time * 1000).toISOString().slice(11, 16)} ${f(b.close, 2)}`);
+    return pts.length ? `  ${label}: ${pts.join(" → ")}` : null;
+  };
+  const [kospiBars, kosdaqBars, samsungBars, hynixBars] = await Promise.all([
+    indexChart("^KS11", "30m").catch(() => []),
+    indexChart("^KQ11", "30m").catch(() => []),
+    minute("005930", 30).catch(() => []),
+    minute("000660", 30).catch(() => []),
+  ]);
 
   const L: string[] = [];
   L.push(`SIGNO 장 마감 리포트`);
@@ -130,13 +148,51 @@ async function build() {
       `  신저가(${b.low.length}): ${b.low.slice(0, 8).map((s) => s.name).join(", ") || "없음"}`,
     );
     if (b.cap.length) {
-      L.push("  시총 상위 10:");
+      L.push("  시총 상위 20:");
       b.cap.forEach((s, i) =>
         L.push(`    ${String(i + 1).padStart(2)}. ${s.name}  ${f(s.price)}  ${sign(s.changePct)}%  ${s.marketCap}`),
       );
     }
     L.push("");
   }
+
+  // 장중 흐름 (30분 간격)
+  const flowLines = (
+    await Promise.all([
+      halfHour("코스피", kospiBars),
+      halfHour("코스닥", kosdaqBars),
+      halfHour("삼성전자", samsungBars),
+      halfHour("SK하이닉스", hynixBars),
+    ])
+  ).filter((x): x is string => !!x);
+  if (flowLines.length) {
+    L.push("[ 장중 흐름 (30분 간격) ]");
+    L.push(...flowLines);
+    L.push("");
+  }
+
+  // 장내 특이점 — 상·하한가, 급등락 종목 수로 판단
+  const notes: string[] = [];
+  for (const b of byMarket) {
+    const label = b.market === "KOSPI" ? "코스피" : "코스닥";
+    if (b.br?.upper) notes.push(`${label} 상한가 ${b.br.upper}종목`);
+    if (b.br?.lower) notes.push(`${label} 하한가 ${b.br.lower}종목`);
+    const surge = onlyStocks(b.up).filter((s) => s.changePct >= 20).length;
+    const plunge = onlyStocks(b.down).filter((s) => s.changePct <= -15).length;
+    if (surge) notes.push(`${label} 20%↑ 급등 ${surge}종목`);
+    if (plunge) notes.push(`${label} 15%↓ 급락 ${plunge}종목`);
+    if (b.br && b.br.up + b.br.down > 0) {
+      const ratio = (b.br.up / (b.br.up + b.br.down)) * 100;
+      if (ratio >= 75) notes.push(`${label} 상승 종목 편중(${ratio.toFixed(0)}%)`);
+      if (ratio <= 25) notes.push(`${label} 하락 종목 편중(${(100 - ratio).toFixed(0)}%)`);
+    }
+  }
+  const q = idx.find((x) => x.name === "코스피");
+  if (q && Math.abs(q.changePct) >= 2) notes.push(`코스피 ${sign(q.changePct)}% 급변동`);
+  L.push("[ 장내 특이점 ]");
+  if (notes.length) L.push(...notes.map((x) => `  · ${x}`));
+  else L.push("  특이사항 없음");
+  L.push("");
 
   if (fi.length) {
     L.push("[ 시장 수급 · 외국인·기관 순매수 상위 ]");
@@ -158,6 +214,13 @@ async function build() {
     L.push("");
   }
 
+  if (mi?.asia?.length) {
+    L.push("[ 아시아 증시 마감 ]");
+    for (const a of mi.asia)
+      L.push(`  ${a.label.padEnd(14)} ${f(a.price, 2).padStart(12)}  ${sign(a.changePct)}%`);
+    L.push("");
+  }
+
   if (mi) {
     const grp = (title: string, items: typeof mi.fx, digits = 2) => {
       if (!items.length) return;
@@ -170,6 +233,7 @@ async function build() {
     grp("원자재", mi.commodities);
     grp("가상자산 (원화)", mi.crypto, 0);
     grp("선물", mi.futures);
+    grp("아시아 증시", mi.asia);
     L.push("");
   }
 
@@ -200,7 +264,7 @@ export async function GET() {
     // 마감 후에는 당일 확정본이므로 오래 캐시, 장중에는 짧게
     const closed = t.minutes >= 15 * 60 + 40;
     const data = await cached(
-      `close-report:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report3:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );

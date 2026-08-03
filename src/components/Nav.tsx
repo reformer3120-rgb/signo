@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const MARKETS = [
   { key: "kr", label: "한국증시", root: "/" },
   { key: "us", label: "미국증시", root: "/us" },
+  { key: "watch", label: "관심종목", root: "/watchlist" },
   { key: "cal", label: "캘린더", root: "/calendar" },
 ];
 
@@ -25,6 +26,7 @@ const SUB: Record<string, { href: string; label: string }[]> = {
 
 function marketOf(path: string) {
   if (path.startsWith("/us")) return "us";
+  if (path.startsWith("/watchlist")) return "watch";
   if (path.startsWith("/calendar")) return "cal";
   return "kr";
 }

@@ -32,7 +32,7 @@ export function StockView({
 
   return (
     <>
-      <StockStickyBar onSelect={select} />
+      <StockStickyBar code={code} name={name} onSelect={select} />
       <StockSection
         code={code}
         name={name}
