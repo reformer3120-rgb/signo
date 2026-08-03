@@ -265,3 +265,147 @@ export async function usNews(symbol: string, count = 10): Promise<UsNews[]> {
     time: n.providerPublishTime ? new Date(n.providerPublishTime as string).toISOString() : "",
   }));
 }
+
+// ---- 섹터 종합평가 ----
+// 야후 스크리너는 섹터별 조회를 지원하지 않아, GICS 11개 섹터의 대표 종목을 비교군으로 사용.
+const SECTOR_PEERS: Record<string, string[]> = {
+  Technology: ["NVDA", "AAPL", "MSFT", "AVGO", "ORCL", "CRM", "AMD", "CSCO", "ACN", "TXN", "QCOM", "ADBE", "IBM", "NOW", "INTU"],
+  "Communication Services": ["GOOGL", "META", "NFLX", "TMUS", "DIS", "CMCSA", "VZ", "T", "EA", "WBD"],
+  "Consumer Cyclical": ["AMZN", "TSLA", "HD", "MCD", "BKNG", "LOW", "NKE", "SBUX", "TJX", "GM"],
+  "Consumer Defensive": ["WMT", "COST", "PG", "KO", "PEP", "PM", "MO", "MDLZ", "CL", "TGT"],
+  "Financial Services": ["BRK-B", "JPM", "V", "MA", "BAC", "WFC", "GS", "MS", "AXP", "SCHW"],
+  Healthcare: ["LLY", "JNJ", "ABBV", "UNH", "MRK", "TMO", "ABT", "PFE", "AMGN", "ISRG"],
+  Industrials: ["GE", "CAT", "RTX", "HON", "UNP", "BA", "DE", "LMT", "UPS", "ETN"],
+  Energy: ["XOM", "CVX", "COP", "EOG", "SLB", "PSX", "MPC", "WMB", "OXY", "VLO"],
+  Utilities: ["NEE", "SO", "DUK", "CEG", "AEP", "SRE", "D", "EXC", "XEL", "ED"],
+  "Real Estate": ["PLD", "AMT", "EQIX", "WELL", "SPG", "PSA", "O", "CCI", "DLR", "CBRE"],
+  "Basic Materials": ["LIN", "SHW", "APD", "ECL", "FCX", "NEM", "DOW", "NUE", "PPG", "VMC"],
+};
+
+export interface UsScored {
+  symbol: string;
+  name: string;
+  marketCap: number;
+  per: number;
+  pbr: number;
+  dividendYield: number;
+  eps: number;
+  changePct: number;
+  year1: number; // 1년 수익률 %
+  vs200d: number; // 200일선 대비 %
+  vs50d: number; // 50일선 대비 %
+  score: number;
+  rank: number;
+  parts: { 밸류: number; 성장: number; 수익성: number; 모멘텀: number; 배당: number; 규모: number };
+}
+
+export interface UsSectorRank {
+  sector: string;
+  total: number;
+  rank: number;
+  ranked: UsScored[];
+  target?: UsScored;
+}
+
+/** 방향 정규화 스케일러 — 기준은 비교군 고정 멤버로만 산출 */
+function scaler(base: number[], dir: "hi" | "lo"): (v: number) => number {
+  const ok = base.filter(Number.isFinite);
+  if (!ok.length) return () => 0.5;
+  const min = Math.min(...ok);
+  const max = Math.max(...ok);
+  const range = max - min || 1;
+  return (v) => {
+    if (!Number.isFinite(v)) return 0;
+    const t = Math.min(1, Math.max(0, (v - min) / range));
+    return dir === "hi" ? t : 1 - t;
+  };
+}
+
+export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
+  const detail = await usDetail(symbol);
+  const sector = detail.sector || "Technology";
+  const base = SECTOR_PEERS[sector] ?? SECTOR_PEERS.Technology;
+  const codes = base.includes(symbol) ? base : [...base, symbol];
+
+  const rows = await yahooFinance.quote(codes);
+  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const items = list
+    .filter((x) => Number(x.marketCap) > 0)
+    .map((x) => ({
+      symbol: String(x.symbol),
+      name: String(x.shortName ?? x.symbol),
+      marketCap: Number(x.marketCap) || 0,
+      per: Number(x.trailingPE) || NaN,
+      forwardPer: Number(x.forwardPE) || NaN,
+      pbr: Number(x.priceToBook) || NaN,
+      dividendYield: Number(x.dividendYield) || 0,
+      eps: Number(x.epsTrailingTwelveMonths) || NaN,
+      epsForward: Number(x.epsForward) || NaN,
+      changePct: Number(x.regularMarketChangePercent) || 0,
+      year1: Number(x.fiftyTwoWeekChangePercent) || 0,
+      vs200d: Number(x.twoHundredDayAverageChangePercent) * 100 || 0,
+      vs50d: Number(x.fiftyDayAverageChangePercent) * 100 || 0,
+    }));
+
+  // 정규화 기준은 큐레이션된 섹터 대표 종목으로만 (검색 종목이 기준을 흔들지 않게)
+  const baseRows = items.filter((e) => base.includes(e.symbol));
+  const mk = (pick: (e: (typeof items)[number]) => number, dir: "hi" | "lo") => {
+    const s = scaler(baseRows.map(pick), dir);
+    return items.map((e) => s(pick(e)));
+  };
+  const perN = mk((e) => (e.per > 0 ? e.per : NaN), "lo");
+  const pbrN = mk((e) => (e.pbr > 0 ? e.pbr : NaN), "lo");
+  const epsN = mk((e) => e.eps, "hi");
+  // 성장: 선행EPS가 후행EPS보다 높을수록 이익 개선
+  const growthN = mk(
+    (e) => (Number.isFinite(e.eps) && e.eps !== 0 ? (e.epsForward - e.eps) / Math.abs(e.eps) : NaN),
+    "hi",
+  );
+  // 수익성 대용: 선행 PER이 낮을수록 이익 대비 저평가
+  const profitN = mk((e) => (e.forwardPer > 0 ? e.forwardPer : NaN), "lo");
+  const y1N = mk((e) => e.year1, "hi");
+  const m200N = mk((e) => e.vs200d, "hi");
+  const m50N = mk((e) => e.vs50d, "hi");
+  const divN = mk((e) => e.dividendYield, "hi");
+  const capN = mk((e) => Math.log10(Math.max(e.marketCap, 1)), "hi");
+
+  const scored: UsScored[] = items.map((e, i) => {
+    const 밸류 = perN[i] * 0.4 + pbrN[i] * 0.35 + epsN[i] * 0.25;
+    const 성장 = growthN[i];
+    const 수익성 = profitN[i];
+    const 모멘텀 = y1N[i] * 0.4 + m200N[i] * 0.35 + m50N[i] * 0.25;
+    const 배당 = divN[i];
+    const score = Math.round(
+      (밸류 * 0.25 + 성장 * 0.2 + 수익성 * 0.18 + 모멘텀 * 0.22 + 배당 * 0.08 + capN[i] * 0.07) * 100,
+    );
+    return {
+      symbol: e.symbol,
+      name: e.name,
+      marketCap: e.marketCap,
+      per: Number.isFinite(e.per) ? +e.per.toFixed(1) : 0,
+      pbr: Number.isFinite(e.pbr) ? +e.pbr.toFixed(1) : 0,
+      dividendYield: +e.dividendYield.toFixed(2),
+      eps: Number.isFinite(e.eps) ? +e.eps.toFixed(2) : 0,
+      changePct: +e.changePct.toFixed(2),
+      year1: +e.year1.toFixed(1),
+      vs200d: +e.vs200d.toFixed(1),
+      vs50d: +e.vs50d.toFixed(1),
+      score,
+      rank: 0,
+      parts: {
+        밸류: Math.round(밸류 * 100),
+        성장: Math.round(성장 * 100),
+        수익성: Math.round(수익성 * 100),
+        모멘텀: Math.round(모멘텀 * 100),
+        배당: Math.round(배당 * 100),
+        규모: Math.round(capN[i] * 100),
+      },
+    };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  scored.forEach((s, i) => (s.rank = i + 1));
+  const target = scored.find((s) => s.symbol === symbol);
+  const top10 = scored.slice(0, 10);
+  const ranked = target && !top10.some((s) => s.symbol === symbol) ? [...top10, target] : top10;
+  return { sector, total: scored.length, rank: target?.rank ?? 0, ranked, target };
+}

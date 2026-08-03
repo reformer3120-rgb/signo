@@ -9,7 +9,7 @@ import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { num, pct, signColor } from "@/lib/format";
 import type { Candle } from "@/lib/types";
-import type { UsDetail, UsFinRow, UsNews, UsSearchItem } from "@/lib/us";
+import type { UsDetail, UsFinRow, UsNews, UsSearchItem, UsSectorRank } from "@/lib/us";
 
 const TABS = [
   { key: "5m", label: "분봉" },
@@ -224,6 +224,121 @@ function FinancialsCard({ symbol }: { symbol: string }) {
   );
 }
 
+function scoreColor(s: number) {
+  if (s >= 70) return "text-confirm";
+  if (s >= 45) return "text-signal";
+  return "text-muted";
+}
+
+function SectorCard({
+  symbol,
+  onSelect,
+}: {
+  symbol: string;
+  onSelect: (s: string) => void;
+}) {
+  const { data } = useSWR<{ data: UsSectorRank }>(
+    `/api/us-stock?part=sector&symbol=${symbol}`,
+    fetcher,
+    { refreshInterval: 900_000, keepPreviousData: true },
+  );
+  const r = data?.data;
+  return (
+    <Card title="섹터 종합평가" right={<span className="text-xs text-muted">{r?.sector ?? "야후"}</span>}>
+      {!r ? (
+        <div className="h-56 animate-pulse rounded-lg bg-line/30" />
+      ) : (
+        <>
+          {r.target && (
+            <div className="mb-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3">
+              <div className="flex items-center gap-4">
+                <div className="shrink-0 text-center">
+                  <div className={`tnum text-3xl font-bold ${scoreColor(r.target.score)}`}>
+                    {r.target.score}
+                  </div>
+                  <div className="text-[11px] text-muted">점 / 100</div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">
+                    <span className="tnum">{r.target.symbol}</span> · {r.target.name}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted">
+                    {r.sector} 내 <b className="text-fg">{r.rank}위</b> / {r.total}종목
+                  </div>
+                  <div className="tnum mt-1 text-[11px] text-muted">
+                    PER {r.target.per || "-"} · PBR {r.target.pbr || "-"} · 배당{" "}
+                    {r.target.dividendYield || 0}% · 1년 {r.target.year1 > 0 ? "+" : ""}
+                    {r.target.year1}%
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
+                {(
+                  [
+                    ["밸류", r.target.parts.밸류],
+                    ["성장", r.target.parts.성장],
+                    ["수익성", r.target.parts.수익성],
+                    ["모멘텀", r.target.parts.모멘텀],
+                    ["배당", r.target.parts.배당],
+                    ["규모", r.target.parts.규모],
+                  ] as [string, number][]
+                ).map(([k, v]) => (
+                  <div key={k} className="rounded-lg bg-canvas/60 px-1.5 py-1.5 text-center">
+                    <div className="truncate text-[10px] text-muted">{k}</div>
+                    <div className="tnum text-sm font-bold">{v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="mb-1.5 text-xs text-muted">
+            {r.sector} 대표 종목 (종합점수순) · 클릭하면 해당 종목으로 이동
+          </div>
+          <ol className="flex flex-col gap-1">
+            {r.ranked.map((s) => {
+              const me = s.symbol === symbol;
+              return (
+                <li
+                  key={s.symbol}
+                  onClick={() => !me && onSelect(s.symbol)}
+                  role={me ? undefined : "button"}
+                  tabIndex={me ? undefined : 0}
+                  onKeyDown={(e) => {
+                    if (!me && (e.key === "Enter" || e.key === " ")) onSelect(s.symbol);
+                  }}
+                  className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm ${
+                    me
+                      ? "border border-brand/30 bg-brand/10"
+                      : "cursor-pointer border border-line/50 hover:border-brand/40 hover:bg-brand/5"
+                  }`}
+                >
+                  <span className="tnum w-6 shrink-0 text-xs text-muted">{s.rank}</span>
+                  <span className="tnum w-14 shrink-0 font-semibold">{s.symbol}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-muted">{s.name}</span>
+                  <span className="tnum hidden shrink-0 text-[11px] text-muted sm:inline">
+                    PER {s.per || "-"}
+                  </span>
+                  <span className={`tnum w-16 shrink-0 text-right text-[11px] ${signColor(s.year1)}`}>
+                    {s.year1 > 0 ? "+" : ""}
+                    {s.year1}%
+                  </span>
+                  <span className={`tnum w-9 shrink-0 text-right text-sm font-bold ${scoreColor(s.score)}`}>
+                    {s.score}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-2 text-[11px] leading-relaxed text-muted">
+            점수 = 밸류(PER·PBR·EPS) 25 + 모멘텀(1년·200일선·50일선) 22 + 성장(선행EPS 개선) 20 +
+            수익성(선행PER) 18 + 배당 8 + 규모 7 (섹터 내 상대평가, 100점)
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function NewsCard({ symbol }: { symbol: string }) {
   const { data } = useSWR<{ data: UsNews[] }>(`/api/us-stock?part=news&symbol=${symbol}`, fetcher, {
     refreshInterval: 600_000,
@@ -254,8 +369,8 @@ function NewsCard({ symbol }: { symbol: string }) {
   );
 }
 
-export function UsStockView() {
-  const [symbol, setSymbol] = useState("AAPL");
+export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) {
+  const [symbol, setSymbol] = useState(initialSymbol ?? "AAPL");
   const [tab, setTab] = useState("1D");
   const [ind, setInd] = useState<Indicators>({});
 
@@ -338,6 +453,13 @@ export function UsStockView() {
 
       <DetailCard symbol={symbol} />
       <FinancialsCard symbol={symbol} />
+      <SectorCard
+        symbol={symbol}
+        onSelect={(s) => {
+          setSymbol(s);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
       <NewsCard symbol={symbol} />
     </>
   );

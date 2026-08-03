@@ -10,6 +10,7 @@ const VIEWS = [
 
 export function UsView() {
   const [view, setView] = useState<"market" | "stock">("market");
+  const [picked, setPicked] = useState<string | undefined>();
   return (
     <>
       <div className="flex w-fit items-center gap-1 rounded-xl border border-line bg-surface p-1">
@@ -25,7 +26,17 @@ export function UsView() {
           </button>
         ))}
       </div>
-      {view === "market" ? <UsSection /> : <UsStockView />}
+      {view === "market" ? (
+        <UsSection
+          onPick={(s) => {
+            setPicked(s);
+            setView("stock");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        />
+      ) : (
+        <UsStockView initialSymbol={picked} />
+      )}
     </>
   );
 }

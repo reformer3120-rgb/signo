@@ -85,7 +85,7 @@ function Overview() {
 }
 
 /** 특징주 */
-function Movers() {
+function Movers({ onPick }: { onPick?: (s: string) => void }) {
   const [kind, setKind] = useState<(typeof MOVERS)[number]["key"]>("gainers");
   const { data, isLoading } = useSWR<{ data: UsQuote[] }>(
     `/api/us?part=movers&kind=${kind}`,
@@ -125,7 +125,11 @@ function Movers() {
                   {col.map((s, i) => (
                     <li
                       key={s.symbol}
-                      className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2"
+                      onClick={() => onPick?.(s.symbol)}
+                      role={onPick ? "button" : undefined}
+                      className={`flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 ${
+                        onPick ? "cursor-pointer transition-colors hover:border-brand/40 hover:bg-brand/5" : ""
+                      }`}
                     >
                       <span className="tnum w-5 shrink-0 text-xs text-muted">
                         {ci === 0 ? i + 1 : half + i + 1}
@@ -150,7 +154,7 @@ function Movers() {
 }
 
 /** 시가총액 상위 */
-function MarketCap() {
+function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
   const [limit, setLimit] = useState(20);
   const { data, isLoading } = useSWR<{ data: UsQuote[]; hasMore: boolean }>(
     `/api/us?part=marketcap&limit=${limit}`,
@@ -178,7 +182,13 @@ function MarketCap() {
               </thead>
               <tbody>
                 {rows.map((s, i) => (
-                  <tr key={s.symbol} className="border-b border-line/40 transition-colors hover:bg-surface/70">
+                  <tr
+                    key={s.symbol}
+                    onClick={() => onPick?.(s.symbol)}
+                    className={`border-b border-line/40 transition-colors hover:bg-surface/70 ${
+                      onPick ? "cursor-pointer" : ""
+                    }`}
+                  >
                     <td className="tnum py-2 pl-1 text-muted">{i + 1}</td>
                     <td className="max-w-[12rem] truncate">
                       <span className="tnum font-semibold">{s.symbol}</span>
@@ -220,12 +230,12 @@ function MarketCap() {
   );
 }
 
-export function UsSection() {
+export function UsSection({ onPick }: { onPick?: (s: string) => void }) {
   return (
     <>
       <Overview />
-      <Movers />
-      <MarketCap />
+      <Movers onPick={onPick} />
+      <MarketCap onPick={onPick} />
     </>
   );
 }

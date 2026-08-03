@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
-import { usSearch, usDetail, usFinancials, usNews } from "@/lib/us";
+import { usSearch, usDetail, usFinancials, usNews, usSectorRank } from "@/lib/us";
 import { indexChart } from "@/lib/yahoo";
 
 export const revalidate = 0;
@@ -30,6 +30,10 @@ export async function GET(req: Request) {
         usFinancials(symbol, period),
       );
       return NextResponse.json({ symbol, period, data });
+    }
+    if (part === "sector") {
+      const data = await cached(`us:sector:${symbol}`, 900, () => usSectorRank(symbol));
+      return NextResponse.json({ symbol, data });
     }
     if (part === "news") {
       const data = await cached(`us:news:${symbol}`, 600, () => usNews(symbol, 10));
