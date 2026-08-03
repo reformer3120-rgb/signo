@@ -25,7 +25,8 @@ export const signBg = (n: number) =>
   n > 0 ? "bg-up/10 text-up" : n < 0 ? "bg-down/10 text-down" : "bg-muted/10 text-muted";
 
 /** 주가흐름 등급(A+~D) 배지 색 */
-export function gradeColor(g: string) {
+export function gradeColor(g?: string) {
+  if (!g) return "bg-muted/10 text-muted border-line";
   if (g.startsWith("A")) return "bg-up/15 text-up border-up/30";
   if (g === "B") return "bg-signal/15 text-signal border-signal/30";
   if (g === "C") return "bg-muted/10 text-muted border-line";
@@ -33,7 +34,7 @@ export function gradeColor(g: string) {
 }
 
 /** 이동평균 교차 신호 배지 색 */
-export function maColor(s: string) {
+export function maColor(s?: string) {
   if (s === "골든크로스") return "bg-up/20 text-up border-up/40";
   if (s === "정배열") return "bg-up/10 text-up border-up/25";
   if (s === "데드크로스") return "bg-down/20 text-down border-down/40";

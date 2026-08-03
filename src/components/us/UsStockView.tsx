@@ -337,7 +337,7 @@ function SectorCard({
                     {r.target.trendGrade}
                   </span>
                   <span className="tnum text-[11px] text-muted">{r.target.trendScore}점</span>
-                  {r.target.maSignal !== "-" && (
+                  {r.target.maSignal && r.target.maSignal !== "-" && (
                     <span
                       className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
                         r.target.maSignal,
@@ -402,9 +402,11 @@ function SectorCard({
                   <span className="tnum hidden shrink-0 text-[11px] text-muted sm:inline">
                     PER {s.per || "-"}
                   </span>
-                  <span className={`tnum w-16 shrink-0 text-right text-[11px] ${signColor(s.y1)}`}>
-                    {s.y1 > 0 ? "+" : ""}
-                    {s.y1}%
+                  <span
+                    className={`tnum w-16 shrink-0 text-right text-[11px] ${signColor(s.y1 ?? 0)}`}
+                  >
+                    {(s.y1 ?? 0) > 0 ? "+" : ""}
+                    {s.y1 ?? 0}%
                   </span>
                   <span className={`tnum w-9 shrink-0 text-right text-sm font-bold ${scoreColor(s.score)}`}>
                     {s.score}

@@ -32,14 +32,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ symbol, period, data });
     }
     if (part === "sector") {
-      const data = await cached(`us:sector:${symbol}`, 900, () => usSectorRank(symbol));
+      const data = await cached(`us:sector3:${symbol}`, 900, () => usSectorRank(symbol));
       return NextResponse.json({ symbol, data });
     }
     if (part === "news") {
       const data = await cached(`us:news:${symbol}`, 600, () => usNews(symbol, 10));
       return NextResponse.json({ symbol, data });
     }
-    const data = await cached(`us:detail:${symbol}`, 60, () => usDetail(symbol));
+    const data = await cached(`us:detail2:${symbol}`, 60, () => usDetail(symbol));
     return NextResponse.json({ symbol, data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
