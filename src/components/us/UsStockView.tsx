@@ -9,6 +9,8 @@ import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { num, pct, signColor } from "@/lib/format";
 import type { Candle } from "@/lib/types";
+import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
+import { koName } from "@/lib/usKo";
 import type { UsDetail, UsFinRow, UsNews, UsSearchItem, UsSectorRank } from "@/lib/us";
 
 const TABS = [
@@ -76,7 +78,9 @@ function SymbolSearch({ onSelect }: { onSelect: (symbol: string) => void }) {
                 className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-surface"
               >
                 <span className="tnum font-semibold">{it.symbol}</span>
-                <span className="min-w-0 flex-1 truncate text-left text-xs text-muted">{it.name}</span>
+                <span className="min-w-0 flex-1 truncate text-left text-xs text-muted">
+                  {koName(it.symbol) ?? it.name}
+                </span>
                 <span className="text-[11px] text-muted">{it.exchange}</span>
               </button>
             </li>
@@ -97,6 +101,7 @@ function Item({ label, value }: { label: string; value: string }) {
 }
 
 function DetailCard({ symbol }: { symbol: string }) {
+  const { money, big } = useCur();
   const { data } = useSWR<{ data: UsDetail }>(
     `/api/us-stock?part=detail&symbol=${symbol}`,
     fetcher,
@@ -120,11 +125,11 @@ function DetailCard({ symbol }: { symbol: string }) {
       }
     >
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
-        <Item label="시가총액" value={usd(d.marketCap)} />
+        <Item label="시가총액" value={big(d.marketCap)} />
         <Item label="PER" value={d.per ? `${d.per.toFixed(1)}배` : "-"} />
         <Item label="선행 PER" value={d.forwardPer ? `${d.forwardPer.toFixed(1)}배` : "-"} />
         <Item label="PBR" value={d.pbr ? `${d.pbr.toFixed(1)}배` : "-"} />
-        <Item label="EPS" value={d.eps ? `${d.eps.toFixed(2)}$` : "-"} />
+        <Item label="EPS" value={d.eps ? money(d.eps) : "-"} />
         <Item label="배당수익률" value={d.dividendYield ? `${d.dividendYield.toFixed(2)}%` : "-"} />
         <Item label="ROE" value={d.roe ? `${d.roe.toFixed(1)}%` : "-"} />
         <Item label="순이익률" value={d.profitMargin ? `${d.profitMargin.toFixed(1)}%` : "-"} />
@@ -134,7 +139,7 @@ function DetailCard({ symbol }: { symbol: string }) {
         <Item label="베타" value={d.beta ? d.beta.toFixed(2) : "-"} />
         <Item
           label="목표주가"
-          value={d.targetPrice ? `${num(d.targetPrice, 2)} (${d.upside > 0 ? "+" : ""}${d.upside}%)` : "-"}
+          value={d.targetPrice ? `${money(d.targetPrice)} (${d.upside > 0 ? "+" : ""}${d.upside}%)` : "-"}
         />
         <Item
           label="투자의견"
@@ -144,14 +149,15 @@ function DetailCard({ symbol }: { symbol: string }) {
               : "-"
           }
         />
-        <Item label="52주 최고" value={d.high52 ? num(d.high52, 2) : "-"} />
-        <Item label="52주 최저" value={d.low52 ? num(d.low52, 2) : "-"} />
+        <Item label="52주 최고" value={d.high52 ? money(d.high52) : "-"} />
+        <Item label="52주 최저" value={d.low52 ? money(d.low52) : "-"} />
       </div>
     </Card>
   );
 }
 
 function FinancialsCard({ symbol }: { symbol: string }) {
+  const { money, big } = useCur();
   const [period, setPeriod] = useState<"annual" | "quarterly">("annual");
   const { data } = useSWR<{ data: UsFinRow[] }>(
     `/api/us-stock?part=financials&symbol=${symbol}&period=${period}`,
@@ -171,13 +177,13 @@ function FinancialsCard({ symbol }: { symbol: string }) {
   );
 
   const LINES: [string, (r: UsFinRow) => string][] = [
-    ["매출액", (r) => usd(r.revenue)],
-    ["매출총이익", (r) => usd(r.grossProfit)],
-    ["영업이익", (r) => usd(r.operatingIncome)],
-    ["순이익", (r) => usd(r.netIncome)],
+    ["매출액", (r) => big(r.revenue)],
+    ["매출총이익", (r) => big(r.grossProfit)],
+    ["영업이익", (r) => big(r.operatingIncome)],
+    ["순이익", (r) => big(r.netIncome)],
     ["영업이익률", (r) => `${r.operatingMargin}%`],
     ["순이익률", (r) => `${r.netMargin}%`],
-    ["EPS", (r) => `${r.eps}$`],
+    ["EPS", (r) => money(r.eps)],
   ];
 
   return (
@@ -260,7 +266,8 @@ function SectorCard({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">
-                    <span className="tnum">{r.target.symbol}</span> · {r.target.name}
+                    {koName(r.target.symbol) ?? r.target.name}{" "}
+                    <span className="tnum text-xs font-normal text-muted">{r.target.symbol}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-muted">
                     {r.sector} 내 <b className="text-fg">{r.rank}위</b> / {r.total}종목
@@ -313,8 +320,7 @@ function SectorCard({
                   }`}
                 >
                   <span className="tnum w-6 shrink-0 text-xs text-muted">{s.rank}</span>
-                  <span className="tnum w-14 shrink-0 font-semibold">{s.symbol}</span>
-                  <span className="min-w-0 flex-1 truncate text-xs text-muted">{s.name}</span>
+                  <StockName symbol={s.symbol} fallback={s.name} className="min-w-0 flex-1" />
                   <span className="tnum hidden shrink-0 text-[11px] text-muted sm:inline">
                     PER {s.per || "-"}
                   </span>
@@ -372,6 +378,7 @@ function NewsCard({ symbol }: { symbol: string }) {
 export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) {
   const [symbol, setSymbol] = useState(initialSymbol ?? "AAPL");
   const [tab, setTab] = useState("1D");
+  const { money } = useCur();
   const [ind, setInd] = useState<Indicators>({});
 
   const { data: detail } = useSWR<{ data: UsDetail }>(
@@ -391,19 +398,20 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
 
   return (
     <>
-      <div className="sticky top-[3.4rem] z-20 w-fit">
+      <div className="sticky top-[3.4rem] z-20 flex w-fit flex-wrap items-center gap-2">
         <SymbolSearch onSelect={setSymbol} />
+        <CurrencyToggle />
       </div>
 
       <Card>
         {/* 티커·현재가 — 카드가 보이는 동안 고정 */}
         <div className="sticky top-[5.9rem] z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="tnum text-xl font-semibold">{symbol}</span>
+            <span className="text-xl font-semibold">{koName(symbol) ?? d?.name ?? symbol}</span>
+            <span className="tnum text-xs text-muted">{symbol}</span>
             {d && (
               <>
-                <span className="text-xs text-muted">{d.name}</span>
-                <span className="tnum text-xl font-bold">{num(d.price, 2)}</span>
+                <span className="tnum text-xl font-bold">{money(d.price)}</span>
                 <span className={`tnum text-sm font-semibold ${signColor(d.changePct)}`}>
                   {pct(d.changePct)}
                 </span>
@@ -412,10 +420,10 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
             {!!hi && (
               <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
                 <span>
-                  고 <b className="tnum text-up">{num(hi, 2)}</b>
+                  고 <b className="tnum text-up">{money(hi)}</b>
                 </span>
                 <span>
-                  저 <b className="tnum text-down">{num(lo, 2)}</b>
+                  저 <b className="tnum text-down">{money(lo)}</b>
                 </span>
               </div>
             )}

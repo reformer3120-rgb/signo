@@ -3,6 +3,8 @@ import { useState } from "react";
 import { UsSection } from "@/components/sections/UsSection";
 import { UsStockView } from "@/components/us/UsStockView";
 import { UsIndicatorSection } from "@/components/us/UsIndicatorSection";
+import { UsCurrencyProvider } from "@/components/us/UsCurrency";
+import { CloseReportButton } from "@/components/CloseReportButton";
 
 const VIEWS = [
   { key: "market", label: "시장" },
@@ -17,7 +19,7 @@ export function UsView() {
   const [picked, setPicked] = useState<string | undefined>();
 
   return (
-    <>
+    <UsCurrencyProvider>
       <div className="flex w-fit items-center gap-1 rounded-xl border border-line bg-surface p-1">
         {VIEWS.map((v) => (
           <button
@@ -31,6 +33,14 @@ export function UsView() {
           </button>
         ))}
       </div>
+      {view === "market" && (
+        <CloseReportButton
+          api="/api/us-report"
+          title="미국증시 마감 리포트"
+          desc="지수·섹터·특징주·시총상위·시장지표를 텍스트로 저장"
+          filePrefix="signo-미국마감리포트"
+        />
+      )}
       {view === "market" ? (
         <UsSection
           onPick={(s) => {
@@ -44,6 +54,6 @@ export function UsView() {
       ) : (
         <UsStockView initialSymbol={picked} />
       )}
-    </>
+    </UsCurrencyProvider>
   );
 }

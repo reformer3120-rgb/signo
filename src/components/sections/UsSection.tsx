@@ -3,15 +3,11 @@ import { useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
-import { compactWon, num, pct, signColor } from "@/lib/format";
+import { num, pct, signColor } from "@/lib/format";
+import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
+import { UsIndexChart } from "@/components/us/UsIndexChart";
+import { koName } from "@/lib/usKo";
 import type { UsQuote, UsSector } from "@/lib/us";
-
-/** 달러 시가총액 축약 (조/억 달러) */
-function capUsd(v: number) {
-  if (v >= 1e12) return `${(v / 1e12).toFixed(2)}조$`;
-  if (v >= 1e8) return `${(v / 1e8).toFixed(0)}억$`;
-  return compactWon(v);
-}
 
 const MOVERS = [
   { key: "gainers", label: "상승", on: "bg-up text-white" },
@@ -21,6 +17,7 @@ const MOVERS = [
 
 /** 지수 + 섹터 */
 function Overview() {
+  const { money } = useCur();
   const { data, isLoading } = useSWR<{ indices: UsQuote[]; sectors: UsSector[] }>(
     "/api/us?part=overview",
     fetcher,
@@ -51,6 +48,8 @@ function Overview() {
           </div>
         )}
       </Card>
+
+      <UsIndexChart indices={idx} />
 
       <Card title="섹터 강약" right={<span className="text-xs text-muted">SPDR 섹터 ETF</span>}>
         {isLoading && !sectors.length ? (
@@ -92,6 +91,7 @@ function Movers({ onPick }: { onPick?: (s: string) => void }) {
     fetcher,
     { refreshInterval: 60_000, keepPreviousData: true },
   );
+  const { money } = useCur();
   const rows = data?.data ?? [];
   const half = Math.ceil(rows.length / 2);
 
@@ -134,9 +134,8 @@ function Movers({ onPick }: { onPick?: (s: string) => void }) {
                       <span className="tnum w-5 shrink-0 text-xs text-muted">
                         {ci === 0 ? i + 1 : half + i + 1}
                       </span>
-                      <span className="tnum w-14 shrink-0 font-semibold">{s.symbol}</span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted">{s.name}</span>
-                      <span className="tnum shrink-0 text-sm text-muted">{num(s.price, 2)}</span>
+                      <StockName symbol={s.symbol} fallback={s.name} className="min-w-0 flex-1" />
+                      <span className="tnum shrink-0 text-sm text-muted">{money(s.price)}</span>
                       <span
                         className={`tnum w-16 shrink-0 text-right text-sm font-semibold ${signColor(s.changePct)}`}
                       >
@@ -161,10 +160,11 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
     fetcher,
     { refreshInterval: 60_000, keepPreviousData: true },
   );
+  const { money, big } = useCur();
   const rows = data?.data ?? [];
 
   return (
-    <Card title="시가총액 상위" right={<span className="text-xs text-muted">달러 기준</span>}>
+    <Card title="시가총액 상위" right={<CurrencyToggle />}>
       {isLoading && !rows.length ? (
         <div className="h-72 animate-pulse rounded-lg bg-line/30" />
       ) : (
@@ -190,16 +190,15 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
                     }`}
                   >
                     <td className="tnum py-2 pl-1 text-muted">{i + 1}</td>
-                    <td className="max-w-[12rem] truncate">
-                      <span className="tnum font-semibold">{s.symbol}</span>
-                      <span className="ml-1.5 text-xs text-muted">{s.name}</span>
+                    <td className="max-w-[13rem] truncate">
+                      <StockName symbol={s.symbol} fallback={s.name} />
                     </td>
-                    <td className="tnum text-right">{num(s.price, 2)}</td>
+                    <td className="tnum text-right">{money(s.price)}</td>
                     <td className={`tnum text-right font-medium ${signColor(s.changePct)}`}>
                       {pct(s.changePct)}
                     </td>
                     <td className="tnum pr-1 text-right text-muted whitespace-nowrap">
-                      {capUsd(s.marketCap)}
+                      {big(s.marketCap)}
                     </td>
                   </tr>
                 ))}
