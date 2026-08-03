@@ -1,0 +1,147 @@
+"use client";
+import { useState } from "react";
+import useSWR from "swr";
+import { fetcher } from "@/lib/swr";
+import { Card } from "@/components/Card";
+import type { EconEvent } from "@/lib/calendar";
+
+const WD = ["일", "월", "화", "수", "목", "금", "토"];
+
+function dayLabel(d: string) {
+  const [y, m, dd] = d.split("-").map(Number);
+  const wd = WD[new Date(Date.UTC(y, m - 1, dd)).getUTCDay()];
+  return `${m}월 ${dd}일 (${wd})`;
+}
+
+function todayKst() {
+  const p = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return p;
+}
+
+/** 중요도 별 */
+function Stars({ n }: { n: number }) {
+  return (
+    <span className={n >= 3 ? "text-up" : n === 2 ? "text-signal" : "text-muted"} title={`중요도 ${n}/3`}>
+      {"★".repeat(n)}
+      <span className="opacity-25">{"★".repeat(3 - n)}</span>
+    </span>
+  );
+}
+
+export function CalendarSection() {
+  const [minImp, setMinImp] = useState(1);
+  const { data, isLoading } = useSWR<{ data: EconEvent[] }>("/api/calendar", fetcher, {
+    refreshInterval: 600_000,
+  });
+  const all = data?.data ?? [];
+  const rows = all.filter((e) => e.importance >= minImp);
+  const today = todayKst();
+
+  // 날짜별 그룹
+  const groups: { date: string; items: EconEvent[] }[] = [];
+  for (const e of rows) {
+    const last = groups[groups.length - 1];
+    if (last && last.date === e.dateKst) last.items.push(e);
+    else groups.push({ date: e.dateKst, items: [e] });
+  }
+
+  return (
+    <Card
+      title="경제 캘린더"
+      right={
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+            {([
+              [1, "전체"],
+              [2, "★★ 이상"],
+              [3, "★★★"],
+            ] as const).map(([v, l]) => (
+              <button
+                key={v}
+                onClick={() => setMinImp(v)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  minImp === v ? "bg-brand text-white" : "text-muted hover:text-fg"
+                }`}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <span className="hidden sm:inline text-xs text-muted">한국시간 · finviz</span>
+        </div>
+      }
+    >
+      {isLoading && !all.length ? (
+        <div className="h-72 animate-pulse rounded-lg bg-line/30" />
+      ) : !groups.length ? (
+        <div className="grid h-24 place-items-center text-sm text-muted">일정 없음</div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {groups.map((g) => (
+            <div key={g.date}>
+              <div
+                className={`mb-1 text-xs font-semibold ${g.date === today ? "text-brand" : "text-muted"}`}
+              >
+                {dayLabel(g.date)}
+                {g.date === today && " · 오늘"}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <tbody>
+                    {g.items.map((e) => (
+                      <tr key={e.id} className="border-b border-line/40">
+                        <td className="tnum py-1.5 pr-2 text-muted w-12 whitespace-nowrap">
+                          {e.timeKst || "종일"}
+                        </td>
+                        <td className="pr-2 w-12 whitespace-nowrap text-xs">
+                          <Stars n={e.importance} />
+                        </td>
+                        <td className="pr-2 font-medium">
+                          {e.event}
+                          {e.reference && (
+                            <span className="ml-1 text-[11px] text-muted">({e.reference})</span>
+                          )}
+                        </td>
+                        <td className="tnum pr-2 text-right whitespace-nowrap w-20">
+                          {e.actual ? (
+                            <b
+                              className={
+                                e.forecast && e.actual !== e.forecast
+                                  ? e.higherIsPositive
+                                    ? "text-up"
+                                    : "text-down"
+                                  : ""
+                              }
+                            >
+                              {e.actual}
+                            </b>
+                          ) : (
+                            <span className="text-muted">-</span>
+                          )}
+                        </td>
+                        <td className="tnum pr-2 text-right text-muted whitespace-nowrap w-20">
+                          {e.forecast ?? "-"}
+                        </td>
+                        <td className="tnum text-right text-muted whitespace-nowrap w-20">
+                          {e.previous ?? "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          <div className="text-[11px] text-muted">
+            시각은 한국시간 기준 · 값은 실제 / 예상 / 이전 순 · 미국 주요 경제지표 (finviz)
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
