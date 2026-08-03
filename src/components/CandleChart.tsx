@@ -22,6 +22,12 @@ export interface Indicators {
 
 const t = (n: number) => n as UTCTimestamp;
 
+/** 차트 캔버스에 쓸 글꼴 — CSS 변수를 실제 글꼴 이름으로 풀어서 돌려준다 */
+function chartFont(): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue("--font-space-mono").trim();
+  return v ? `${v}, monospace` : "monospace";
+}
+
 /**
  * 사용자가 확대·이동해 둔 화면 범위를 기억한다.
  * 차트는 시세가 갱신될 때마다 새로 그려지고 화면을 옮기면 아예 사라지므로,
@@ -106,7 +112,10 @@ export function CandleChart({
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: text,
-        fontFamily: "var(--font-space-mono), monospace",
+        // 캔버스는 CSS 변수를 읽지 못한다. var(...) 를 그대로 넘기면 폰트 지정이
+        // 통째로 무시되고 비례폭 기본 글꼴로 그려져, H·C·L 라벨 상자 크기가
+        // 글자마다 달라졌다(H가 가장 넓음). 실제 글꼴 이름으로 풀어서 넘긴다.
+        fontFamily: chartFont(),
         attributionLogo: false,
       },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },

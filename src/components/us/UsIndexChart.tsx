@@ -113,7 +113,7 @@ export function UsIndexChart({ indices }: { indices: UsQuote[] }) {
           data={candles}
           height={280}
           indicators={ind}
-          session={tab === "min"}
+          session={tab === "min" || tab === "1D"}
           precision={2}
           viewKey={`usidx:${sym}:${tab === "min" ? minU : tab}`}
         />
