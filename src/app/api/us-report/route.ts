@@ -6,6 +6,7 @@ import {
   usMovers,
   usMarketCap,
   usMarketIndicators,
+  usHalfHourly,
   type UsIndicator,
   type UsQuote,
 } from "@/lib/us";
@@ -57,6 +58,14 @@ async function build() {
   ]);
   // 시장지표 화면과 같은 4개국 국채금리 (한국·일본·미국·유럽)
   const bondRows = await bonds().catch(() => []);
+  // 당일 30분 간격 장중 흐름 — 3대 지수와 SK하이닉스 ADR
+  const FLOW: [string, string][] = [
+    ["^DJI", "다우존스"],
+    ["^IXIC", "나스닥"],
+    ["^GSPC", "S&P 500"],
+    ["SKHY", "SK하이닉스 ADR"],
+  ];
+  const flows = await Promise.all(FLOW.map(([sym]) => usHalfHourly(sym)));
 
   const L: string[] = [];
   L.push("SIGNO 미국증시 마감 리포트");
@@ -67,6 +76,17 @@ async function build() {
     L.push("[ 지수 ]");
     for (const q of indices) L.push(`  ${q.name.padEnd(12)} ${f(q.price).padStart(12)}  ${sign(q.changePct)}%`);
     L.push("");
+  }
+
+  // ADR은 프리마켓(04:00~)에도 거래돼 지수와 시간축이 어긋난다 → 정규장만
+  const flowLines = FLOW.map(([, label], i) => {
+    const pts = flows[i].filter((p) => p.time >= "09:30" && p.time <= "16:00");
+    if (!pts.length) return null;
+    return `  ${label}: ${pts.map((p) => `${p.time} ${f(p.close)}`).join(" → ")}`;
+  }).filter((x): x is string => x !== null);
+  if (flowLines.length) {
+    L.push("[ 장중 흐름 (30분 간격) ]");
+    L.push(...flowLines, "");
   }
 
   if (sectors.length) {
@@ -139,7 +159,7 @@ async function build() {
 
 export async function GET() {
   try {
-    const data = await cached(`us-report2:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
+    const data = await cached(`us-report4:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

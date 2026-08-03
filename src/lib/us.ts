@@ -256,6 +256,37 @@ export interface UsDetail {
   y1: number;
 }
 
+/** 당일 30분 간격 종가 (뉴욕 현지 시각 HH:MM) — 마감 리포트 장중 흐름용 */
+export async function usHalfHourly(symbol: string): Promise<{ time: string; close: number }[]> {
+  try {
+    const r = await yahooFinance.chart(symbol, {
+      period1: new Date(Date.now() - 5 * 86400_000),
+      interval: "30m",
+    });
+    const bars = (r.quotes ?? []).filter((q) => q.close != null);
+    if (!bars.length) return [];
+    const NY = "America/New_York";
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: NY,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const hm = new Intl.DateTimeFormat("en-GB", {
+      timeZone: NY,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const lastDay = day.format(new Date(bars[bars.length - 1].date));
+    return bars
+      .filter((b) => day.format(new Date(b.date)) === lastDay)
+      .map((b) => ({ time: hm.format(new Date(b.date)), close: Number(b.close) }));
+  } catch {
+    return [];
+  }
+}
+
 /** 일봉 종가 2년치 — 기간수익률·이동평균 교차 계산용 */
 async function dailyCloses(symbol: string): Promise<number[]> {
   try {

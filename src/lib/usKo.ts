@@ -70,6 +70,7 @@ const NAMES: Record<string, string> = {
   DASH: "도어대시", TTD: "트레이드데스크", APP: "앱러빈", HPE: "HPE", WDC: "웨스턴디지털",
   STX: "씨게이트", ON: "온세미컨덕터", MCHP: "마이크로칩", NXPI: "NXP", TER: "테라다인",
   SWKS: "스카이웍스", BX: "블랙스톤", CB: "처브", CI: "시그나",
+  SKHY: "SK하이닉스 ADR", TSM: "TSMC", ASML: "ASML",
   // 소재
   LIN: "린데", SHW: "셔윈윌리엄스", APD: "에어프로덕츠", ECL: "에코랩", FCX: "프리포트맥모란",
   NEM: "뉴몬트", DOW: "다우", NUE: "뉴코어", PPG: "PPG", VMC: "벌컨머티리얼즈",
