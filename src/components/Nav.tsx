@@ -6,6 +6,7 @@ const TABS = [
   { href: "/", label: "대시보드" },
   { href: "/market", label: "시장지표" },
   { href: "/stock", label: "종목" },
+  { href: "/us", label: "미국증시" },
   { href: "/calendar", label: "캘린더" },
 ];
 

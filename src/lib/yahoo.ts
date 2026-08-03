@@ -2,7 +2,7 @@
 import YahooFinance from "yahoo-finance2";
 import type { FxRate, Quote } from "./types";
 
-const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+export const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
 interface YQ {
   symbol?: string;
