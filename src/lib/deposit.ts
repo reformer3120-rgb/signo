@@ -23,25 +23,31 @@ export async function marketDeposit(): Promise<DepositTrend[]> {
     cache: "no-store",
   });
   const html = new TextDecoder("euc-kr").decode(await res.arrayBuffer());
-  const cells = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
-    .map((m) => m[1].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim())
-    .filter(Boolean);
-
   const out: DepositTrend[] = [];
-  for (let i = 0; i + 10 < cells.length; i++) {
-    // 날짜 셀(YY.MM.DD)로 행 시작을 찾는다
-    if (!/^\d{2}\.\d{2}\.\d{2}$/.test(cells[i])) continue;
-    const row = cells.slice(i + 1, i + 11);
-    if (row.length < 10 || !row.every((c) => /[\d,]/.test(c))) continue;
+
+  for (const m of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
+    const tr = m[1];
+    if (!/\d{2}\.\d{2}\.\d{2}/.test(tr)) continue;
+    // 표에는 부호가 없고 증감 방향이 CSS 클래스(rate_up / rate_down)로만 표시된다.
+    const cells = [...tr.matchAll(/<td[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/td>/g)].map((c) => ({
+      down: c[1].includes("rate_down"),
+      text: c[2].replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim(),
+    }));
+    if (cells.length < 11) continue;
+    const date = cells[0].text;
+    if (!/^\d{2}\.\d{2}\.\d{2}$/.test(date)) continue;
+    const row = cells.slice(1, 11);
     out.push({
-      date: cells[i],
-      items: LABELS.map((label, k) => ({
-        label,
-        value: n(row[k * 2]),
-        change: n(row[k * 2 + 1]),
-      })),
+      date,
+      items: LABELS.map((label, k) => {
+        const chg = row[k * 2 + 1];
+        return {
+          label,
+          value: n(row[k * 2].text),
+          change: chg.down ? -n(chg.text) : n(chg.text),
+        };
+      }),
     });
-    i += 10;
     if (out.length >= 20) break;
   }
   return out;

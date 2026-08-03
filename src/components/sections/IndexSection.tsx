@@ -15,6 +15,7 @@ interface Flow {
   nxt: { up: number; flat: number; down: number; traded: number; value: number } | null;
   spot: { personal: number; foreign: number; institutional: number; program: number };
   futures: { personal: number; foreign: number; institutional: number } | null;
+  futQuote: { name: string; price: number; changePct: number } | null;
 }
 
 const CHART_TABS = [
@@ -51,6 +52,7 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
   const candles = chart?.data ?? [];
   const s = flow?.spot;
   const f = flow?.futures;
+  const fq = flow?.futQuote;
 
   return (
     <div className="min-w-0 rounded-lg border border-line/60 p-3">
@@ -144,7 +146,20 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
           )}
         </div>
         <div>
-          <div className="text-[11px] text-muted mb-1">선물 수급 (계약)</div>
+          <div className="flex items-baseline gap-1.5 mb-1">
+            <span className="text-[11px] text-muted">선물 수급 (계약)</span>
+            {/* 지수선물 근월물 시세 — 코스피200 / 코스닥150 */}
+            {fq && (
+              <span className="ml-auto flex items-baseline gap-1 text-[11px]">
+                <span className="text-muted">{fq.name.replace(/\s*\d{6}$/, "")}</span>
+                <b className="tnum text-fg">{num(fq.price, 2)}</b>
+                <span className={`tnum font-medium ${signColor(fq.changePct)}`}>
+                  {fq.changePct > 0 ? "+" : ""}
+                  {fq.changePct.toFixed(2)}%
+                </span>
+              </span>
+            )}
+          </div>
           {f ? (
             <div className="grid grid-cols-3 gap-1">
               <Chip label="개인" text={num(f.personal)} cls={signColor(f.personal)} />
@@ -153,7 +168,7 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
             </div>
           ) : (
             <div className="grid h-9 place-items-center rounded bg-canvas/40 text-[11px] text-muted/60">
-              선물 데이터 없음
+              투자자별 수급은 코스피200 선물만 제공
             </div>
           )}
         </div>

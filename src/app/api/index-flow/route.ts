@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
 import { indexTrend, stockList, type Market } from "@/lib/naverApi";
 import { breadth } from "@/lib/naver";
-import { hasKIS, programTrade, nxtBreadth, currentSession } from "@/lib/kis";
+import { hasKIS, programTrade, nxtBreadth, currentSession, indexFutures } from "@/lib/kis";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -28,7 +28,7 @@ async function flow(market: Market) {
       nxt = null;
     }
   }
-  // 선물 수급: 코스피200 선물(FUT)만 (계약 단위). 코스닥은 심볼 없음.
+  // 선물 투자자 수급(계약 단위)은 네이버가 코스피200 선물(FUT)만 제공
   let futures = null;
   if (market === "KOSPI") {
     try {
@@ -37,6 +37,11 @@ async function flow(market: Market) {
     } catch {
       futures = null;
     }
+  }
+  // 지수선물 시세 — 코스피200(101) / 코스닥150(106) 근월물
+  let futQuote = null;
+  if (hasKIS()) {
+    futQuote = await indexFutures(market === "KOSPI" ? "101" : "106").catch(() => null);
   }
   return {
     date: spot.date,
@@ -49,15 +54,16 @@ async function flow(market: Market) {
       program,
     },
     futures,
+    futQuote,
   };
 }
 
 export async function GET() {
   try {
     const ses = currentSession();
-    const kospi = await cached(`index-flow3:${ses}:KOSPI`, 60, () => flow("KOSPI"));
+    const kospi = await cached(`index-flow4:${ses}:KOSPI`, 60, () => flow("KOSPI"));
     await new Promise((r) => setTimeout(r, 1300));
-    const kosdaq = await cached(`index-flow3:${ses}:KOSDAQ`, 60, () => flow("KOSDAQ"));
+    const kosdaq = await cached(`index-flow4:${ses}:KOSDAQ`, 60, () => flow("KOSDAQ"));
     return NextResponse.json({ KOSPI: kospi, KOSDAQ: kosdaq });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
