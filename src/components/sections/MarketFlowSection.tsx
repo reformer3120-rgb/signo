@@ -34,15 +34,21 @@ export function MarketFlowSection() {
   const { data, isLoading } = useSWR<{
     data: FiRow[];
     needKey?: boolean;
-    mode?: "KRX+NXT" | "NXT";
+    mode?: "KRX+NXT" | "NXT" | "PENDING";
     session?: string;
   }>(`/api/market-flow?market=${market}`, fetcher, { refreshInterval: 120_000 });
   const rows = (data?.data ?? []).slice(0, 15);
+  // 순매수(가집계) 이전: 거래대금 상위로 대체 표시
+  const byValue = data?.mode === "NXT" || data?.mode === "PENDING";
   const nxtOnly = data?.mode === "NXT";
 
   return (
     <Card
-      title={nxtOnly ? "시장 수급 · NXT 거래 상위" : "시장 수급 · 외국인·기관 순매수 상위"}
+      title={
+        byValue
+          ? `시장 수급 · ${nxtOnly ? "NXT" : "통합"} 거래대금 상위`
+          : "시장 수급 · 외국인·기관 순매수 상위"
+      }
       right={
         <div className="flex items-center gap-2">
           {data?.session && (
@@ -80,8 +86,10 @@ export function MarketFlowSection() {
                 <th className="text-left font-medium py-2 pl-1">종목</th>
                 <th className="text-right font-medium px-2">현재가</th>
                 <th className="text-right font-medium px-2">등락률</th>
-                {nxtOnly ? (
-                  <th className="text-right font-medium px-2 whitespace-nowrap">NXT 거래대금</th>
+                {byValue ? (
+                  <th className="text-right font-medium px-2 whitespace-nowrap">
+                    {nxtOnly ? "NXT" : "통합"} 거래대금
+                  </th>
                 ) : (
                   <>
                     <th className="text-right font-medium px-2 whitespace-nowrap">외국인 순매수</th>
@@ -89,7 +97,7 @@ export function MarketFlowSection() {
                   </>
                 )}
                 <th className="text-right font-medium px-2 whitespace-nowrap">거래량</th>
-                {!nxtOnly && (
+                {!byValue && (
                   <th className="text-right font-medium px-2 whitespace-nowrap">NXT비중</th>
                 )}
               </tr>
@@ -100,7 +108,7 @@ export function MarketFlowSection() {
                   <td className="font-medium py-1.5 pl-1">{r.name}</td>
                   <td className="text-right tnum px-2">{num(r.price)}</td>
                   <td className={`text-right tnum px-2 ${signColor(r.changePct)}`}>{pct(r.changePct)}</td>
-                  {nxtOnly ? (
+                  {byValue ? (
                     <td className="text-right tnum px-2 text-signal font-medium whitespace-nowrap">
                       {compactWon(r.nxtValue ?? 0)}
                     </td>
@@ -113,7 +121,7 @@ export function MarketFlowSection() {
                   <td className="text-right tnum px-2 text-muted">
                     {num(r.unVol > 0 ? r.unVol : r.krxVol)}
                   </td>
-                  {!nxtOnly && (
+                  {!byValue && (
                     <td className="text-right tnum px-2">
                       {r.nxtShare >= 0 ? (
                         <span className={r.nxtShare >= 40 ? "text-signal font-semibold" : "text-muted"}>
@@ -130,8 +138,10 @@ export function MarketFlowSection() {
           </table>
           <div className="mt-2 text-xs text-muted">
             {nxtOnly
-              ? "KRX 정규장 순매수 데이터가 없는 시간대 — NXT 체결 기준 거래대금 상위 · KIS"
-              : "순매수 대금 기준 · KRX+NXT 합산 · 거래량은 통합 기준 · KIS"}
+              ? "NXT만 거래되는 시간대 — NXT 체결 기준 거래대금 상위 · KIS"
+              : byValue
+                ? "외국인·기관 순매수는 장 마감 후 가집계로 제공됩니다. 그전까지는 KRX+NXT 통합 거래대금 상위를 표시하며, 집계가 들어오면 자동으로 순매수 순위로 전환됩니다 · KIS"
+                : "순매수 대금 기준 · KRX+NXT 합산 · 거래량은 통합 기준 · KIS"}
           </div>
         </div>
       )}

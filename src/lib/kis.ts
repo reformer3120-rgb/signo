@@ -347,13 +347,14 @@ export async function nxtActive(
   codes: string[],
   names: Map<string, string>,
   top = 15,
+  exchange: "NX" | "UN" = "NX",
 ): Promise<FiRow[]> {
   const rows: FiRow[] = [];
   for (let i = 0; i < codes.length; i += 30) {
     const batch = codes.slice(i, i + 30);
     const params: KisParams = {};
     batch.forEach((c, k) => {
-      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "NX";
+      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = exchange;
       params[`FID_INPUT_ISCD_${k + 1}`] = c;
     });
     try {
@@ -381,7 +382,7 @@ export async function nxtActive(
           netValue: 0,
           krxVol: 0,
           unVol: vol,
-          nxtShare: 100,
+          nxtShare: exchange === "NX" ? 100 : -1,
           nxtValue: n(r.acml_tr_pbmn),
         });
       }
