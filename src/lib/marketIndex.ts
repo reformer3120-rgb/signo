@@ -2,6 +2,7 @@
 // /api/market 과 마감리포트가 공유.
 import { spark } from "./yahoo";
 import { daily } from "./naver";
+import { hasKIS, indexFutures } from "./kis";
 
 export interface MarketItem {
   label: string;
@@ -93,7 +94,7 @@ export async function marketIndicators(): Promise<MarketIndicators> {
     Promise.all(COMM.map(async ([label, sym]) => ({ label, ...(await spark(sym)) }))),
     Promise.all(CRYPTO.map(async ([label, sym]) => ({ label, ...(await spark(sym, usdkrw)) }))),
   ]);
-  // 선물: 코스피200(네이버 FUT) + 글로벌 지수선물(야후)
+  // 선물: 코스피200(네이버 FUT) + 코스닥150(KIS) + 글로벌 지수선물(야후)
   let futures: MarketItem[] = [];
   try {
     const d = await daily("FUT", 35);
@@ -109,6 +110,18 @@ export async function marketIndicators(): Promise<MarketIndicators> {
       });
   } catch {
     /* 코스피200 선물 실패 시 생략 */
+  }
+  // 코스닥150 선물 — 네이버에 심볼이 없어 KIS 근월물 조회 사용
+  if (hasKIS()) {
+    const kq = await indexFutures("106").catch(() => null);
+    if (kq) {
+      futures.push({
+        label: kq.name ? `코스닥150 선물 ${kq.name.replace(/^\S+\s*/, "")}` : "코스닥150 선물",
+        price: kq.price,
+        changePct: kq.changePct,
+        spark: kq.prevClose > 0 ? [kq.prevClose, kq.price] : [],
+      });
+    }
   }
   const globalFut = await Promise.all(
     FUT_GLOBAL.map(async ([label, sym]) => {

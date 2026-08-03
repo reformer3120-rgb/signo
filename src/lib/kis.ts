@@ -273,6 +273,45 @@ export async function stockPrice(code: string, exchange: Exchange = "J") {
 export const unifiedQuote = (code: string) =>
   cached(`un:${code}`, 45, () => stockPrice(code, "UN"));
 
+// ---- 지수선물 시세 ----
+// 종목코드 = 상품코드(3) + "00000" → 근월물 자동 지정
+// 101=코스피200 선물, 105=미니 코스피200, 106=코스닥150 선물
+export interface FuturesQuote {
+  name: string; // "코스닥150F 202609"
+  price: number;
+  changePct: number;
+  prevClose: number;
+}
+
+export async function indexFutures(product: "101" | "105" | "106"): Promise<FuturesQuote | null> {
+  try {
+    const j = await kisGet(
+      "/uapi/domestic-futureoption/v1/quotations/inquire-price",
+      "FHMIF10000000",
+      { FID_COND_MRKT_DIV_CODE: "F", FID_INPUT_ISCD: `${product}00000` },
+    );
+    const o1 = (j.output1 ?? {}) as Record<string, string>;
+    const o2 = (j.output2 ?? {}) as Record<string, string>;
+    const price = n(o1.futs_prpr ?? o2.futs_prpr);
+    if (price <= 0) return null;
+    const prevClose = n(o1.futs_prdy_clpr ?? o2.futs_prdy_clpr);
+    const ctrt = Number(o1.futs_prdy_ctrt ?? o1.prdy_ctrt ?? o2.prdy_ctrt);
+    return {
+      name: (o1.hts_kor_isnm ?? o2.hts_kor_isnm ?? "").trim(),
+      price,
+      changePct:
+        prevClose > 0
+          ? +(((price - prevClose) / prevClose) * 100).toFixed(2)
+          : Number.isFinite(ctrt)
+            ? ctrt
+            : 0,
+      prevClose,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ---- 거래 세션 판별 (KST) ----
 // NXT는 08:00~20:00, KRX 정규장은 09:00~15:30.
 export type Session = "PRE" | "REGULAR" | "AFTER" | "CLOSED";
