@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { UsSessionBadge } from "@/components/SessionBadge";
+import { SectorPeek } from "@/components/SectorPeek";
 import { UsFuturesStrip } from "@/components/FuturesStrip";
 import { usSessionNow } from "@/lib/session";
 import { num, pct, signColor } from "@/lib/format";
@@ -20,7 +21,7 @@ const MOVERS = [
 ] as const;
 
 /** 지수 + 섹터 */
-function Overview() {
+function Overview({ onPick }: { onPick?: (s: string) => void }) {
   const { money } = useCur();
   const { data, isLoading } = useSWR<{ indices: UsQuote[]; sectors: UsSector[] }>(
     "/api/us?part=overview",
@@ -88,7 +89,15 @@ function Overview() {
         ) : (
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {sectors.map((s) => (
-              <div key={s.symbol} className="flex items-center gap-1.5 text-sm">
+              // 마우스를 올리면 대표 구성종목이 펼쳐지고, 고르면 그 종목으로 이동
+              <SectorPeek
+                key={s.symbol}
+                market="us"
+                code={s.symbol}
+                title={s.name}
+                onPick={(sym) => onPick?.(sym)}
+              >
+              <div className="flex items-center gap-1.5 text-sm">
                 <span className="w-20 shrink-0 truncate">{s.name}</span>
                 <div className="relative h-2 flex-1 rounded-full bg-line/30">
                   <div
@@ -105,6 +114,7 @@ function Overview() {
                   {pct(s.changePct)}
                 </span>
               </div>
+              </SectorPeek>
             ))}
           </div>
         )}
@@ -270,7 +280,7 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
 export function UsSection({ onPick }: { onPick?: (s: string) => void }) {
   return (
     <>
-      <Overview />
+      <Overview onPick={onPick} />
       <Movers onPick={onPick} />
       <MarketCap onPick={onPick} />
     </>

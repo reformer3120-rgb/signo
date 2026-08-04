@@ -804,3 +804,38 @@ export async function usMarketIndicators(): Promise<UsMarketIndicators> {
     europe: pick(G_EUROPE),
   };
 }
+
+
+/** 섹터 ETF → 대표 구성종목 (섹터 강약에서 펼쳐볼 때) */
+const ETF_SECTOR: Record<string, string> = {
+  XLK: "Technology",
+  XLC: "Communication Services",
+  XLY: "Consumer Cyclical",
+  XLP: "Consumer Defensive",
+  XLF: "Financial Services",
+  XLV: "Healthcare",
+  XLI: "Industrials",
+  XLE: "Energy",
+  XLU: "Utilities",
+  XLRE: "Real Estate",
+  XLB: "Basic Materials",
+};
+
+export async function usSectorStocks(
+  etf: string,
+  limit = 8,
+): Promise<{ code: string; name: string; changeRate: number; cap: number }[]> {
+  const peers = SECTOR_PEERS[ETF_SECTOR[etf.toUpperCase()] ?? ""] ?? [];
+  if (!peers.length) return [];
+  const rows = await quoteMany(peers.slice(0, 12));
+  return rows
+    .map((x) => ({
+      code: String(x.symbol ?? ""),
+      name: koName(String(x.symbol ?? "")) ?? String(x.shortName ?? x.symbol ?? ""),
+      changeRate: Number(x.regularMarketChangePercent) || 0,
+      cap: Number(x.marketCap) || 0,
+    }))
+    .filter((r) => r.code)
+    .sort((a, b) => b.cap - a.cap)
+    .slice(0, limit);
+}

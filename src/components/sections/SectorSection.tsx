@@ -2,14 +2,24 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/Card";
+import { SectorPeek } from "@/components/SectorPeek";
 import { pct, signColor } from "@/lib/format";
 import type { Sector } from "@/lib/naverApi";
 
-function SectorBar({ s, max }: { s: Sector; max: number }) {
+function SectorBar({
+  s,
+  max,
+  onPick,
+}: {
+  s: Sector;
+  max: number;
+  onPick: (code: string, name: string) => void;
+}) {
   const up = s.changeRate >= 0;
   const w = max ? (Math.abs(s.changeRate) / max) * 100 : 0;
-  return (
+  const bar = (
     <div className="flex items-center gap-2 text-sm">
       <span className="w-24 truncate shrink-0">{s.name}</span>
       <div className="flex-1 h-2 rounded-full bg-line/40 overflow-hidden">
@@ -20,9 +30,18 @@ function SectorBar({ s, max }: { s: Sector; max: number }) {
       </span>
     </div>
   );
+  // 마우스를 올리면 구성종목이 펼쳐지고, 고르면 그 종목으로 이동
+  return (
+    <SectorPeek market="kr" code={s.code} title={s.name} onPick={onPick}>
+      {bar}
+    </SectorPeek>
+  );
 }
 
 export function SectorSection() {
+  const router = useRouter();
+  const pick = (code: string, name: string) =>
+    router.push(`/stock?code=${code}&name=${encodeURIComponent(name)}`);
   const { data, isLoading } = useSWR<{ data: Sector[] }>("/api/sectors", fetcher, {
     refreshInterval: 60_000,
   });
@@ -46,7 +65,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-up mb-2">강한 섹터</div>
             <div className="flex flex-col gap-2">
               {strong.map((s) => (
-                <SectorBar key={s.name} s={s} max={max} />
+                <SectorBar key={s.name} s={s} max={max} onPick={pick} />
               ))}
             </div>
           </div>
@@ -54,7 +73,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-down mb-2">약한 섹터</div>
             <div className="flex flex-col gap-2">
               {weak.map((s) => (
-                <SectorBar key={s.name} s={s} max={max} />
+                <SectorBar key={s.name} s={s} max={max} onPick={pick} />
               ))}
             </div>
           </div>

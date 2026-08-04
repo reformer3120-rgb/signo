@@ -790,6 +790,8 @@ export async function search(query: string): Promise<SearchItem[]> {
 }
 
 export interface Sector {
+  /** 네이버 업종 코드 — 구성종목 조회에 쓴다 */
+  code: string;
   name: string;
   changeRate: number;
   rise: number;
@@ -799,6 +801,7 @@ export interface Sector {
 }
 
 interface RawGroup {
+  no?: number;
   name: string;
   changeRate: string;
   riseCount: number;
@@ -816,6 +819,7 @@ export async function sectors(): Promise<Sector[]> {
     `https://m.stock.naver.com/api/stocks/industry?market=KOSPI&page=1&pageSize=100`,
   );
   return ((d.groups ?? []) as RawGroup[]).map((g) => ({
+    code: String(g.no ?? ""),
     name: g.name,
     changeRate: Number(g.changeRate) || 0,
     rise: g.riseCount || 0,
@@ -823,4 +827,24 @@ export async function sectors(): Promise<Sector[]> {
     steady: g.steadyCount || 0,
     count: g.totalCount || 0,
   }));
+}
+
+
+/** 업종 구성종목 — 시총 상위 순. 섹터 강약에서 관련 종목을 펼쳐볼 때 쓴다. */
+export async function sectorStocks(code: string, limit = 8): Promise<
+  { code: string; name: string; changeRate: number; cap: number }[]
+> {
+  const d = await getJson(
+    `https://m.stock.naver.com/api/stocks/industry/${code}?page=1&pageSize=100`,
+  );
+  const rows = ((d.stocks ?? []) as Record<string, string>[]).map((x) => ({
+    code: String(x.itemCode ?? ""),
+    name: String(x.stockName ?? ""),
+    changeRate: Number(String(x.fluctuationsRatio ?? "").replace(/,/g, "")) || 0,
+    cap: n(x.marketValueRaw ?? x.marketValue),
+  }));
+  return rows
+    .filter((r) => r.code)
+    .sort((a, b) => b.cap - a.cap)
+    .slice(0, limit);
 }
