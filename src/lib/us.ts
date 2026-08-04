@@ -14,15 +14,87 @@ import {
   type MaSignal,
 } from "./score";
 
+/**
+ * 미국장 세션 구분 (한국시간 기준)
+ *   주간거래  10:00~18:00 — 국내 증권사 야간거래. 야후는 이 시간대 시세를 주지 않는다
+ *   프리마켓  18:00~23:30
+ *   정규장    23:30~06:00
+ *   애프터    06:00~10:00 (야후 기준. 국내 증권사는 07:00까지가 보통)
+ */
+export type UsSession = "프리마켓" | "정규장" | "애프터" | "장마감";
+
 export interface UsQuote {
   symbol: string;
   name: string;
+  /** 정규장 가격 — 장이 끝났으면 마감가 */
   price: number;
   change: number;
   changePct: number;
   volume: number;
   marketCap: number;
   spark?: number[];
+  /** 지금이 어느 세션인지 */
+  session: UsSession;
+  /** 시간외 가격 (프리마켓·애프터). 정규장 중이거나 체결이 없으면 없음 */
+  extPrice?: number;
+  extChangePct?: number;
+  /** 그 시간외 가격이 어느 세션 것인지 */
+  extLabel?: "프리마켓" | "애프터";
+}
+
+/**
+ * 야후 marketState 를 세션으로 옮긴다.
+ * PREPRE/POSTPOST 는 해당 시간외 거래가 끝난 뒤라 '장마감'으로 보되,
+ * 마지막 시간외 체결가는 그대로 살려 어느 세션 값인지 함께 표시한다.
+ */
+function sessionOf(
+  x: Record<string, unknown>,
+  /**
+   * 등락률 단위 보정. quote() 는 % 로 주는데 quoteSummary(price) 는 소수로 준다.
+   * 같은 값이 두 배 다르게 나오지 않도록 호출부에서 배율을 알려준다.
+   */
+  pctScale = 1,
+): {
+  session: UsSession;
+  extPrice?: number;
+  extChangePct?: number;
+  extLabel?: "프리마켓" | "애프터";
+} {
+  const st = String(x.marketState ?? "");
+  const pre = Number(x.preMarketPrice) || 0;
+  const post = Number(x.postMarketPrice) || 0;
+  const pct = (v: unknown) => (Number(v) || 0) * pctScale;
+  if (st === "REGULAR") return { session: "정규장" };
+  if (st === "PRE" && pre)
+    return {
+      session: "프리마켓",
+      extPrice: pre,
+      extChangePct: pct(x.preMarketChangePercent),
+      extLabel: "프리마켓",
+    };
+  if (st === "POST" && post)
+    return {
+      session: "애프터",
+      extPrice: post,
+      extChangePct: pct(x.postMarketChangePercent),
+      extLabel: "애프터",
+    };
+  // 시간외까지 끝난 뒤 — 마지막 시간외 체결가를 참고용으로 남긴다
+  if (post)
+    return {
+      session: "장마감",
+      extPrice: post,
+      extChangePct: pct(x.postMarketChangePercent),
+      extLabel: "애프터",
+    };
+  if (pre)
+    return {
+      session: "장마감",
+      extPrice: pre,
+      extChangePct: pct(x.preMarketChangePercent),
+      extLabel: "프리마켓",
+    };
+  return { session: "장마감" };
 }
 
 const q = (x: Record<string, unknown>): UsQuote => ({
@@ -33,6 +105,7 @@ const q = (x: Record<string, unknown>): UsQuote => ({
   changePct: Number(x.regularMarketChangePercent) || 0,
   volume: Number(x.regularMarketVolume) || 0,
   marketCap: Number(x.marketCap) || 0,
+  ...sessionOf(x),
 });
 
 /** 주요 지수 (S&P500 · 나스닥 · 다우 · 러셀2000 · VIX) */
@@ -248,6 +321,11 @@ export interface UsDetail {
   revenueGrowth: number; // %
   debtToEquity: number;
   heldByInstitutions: number; // %
+  /** 세션·시간외 시세 */
+  session: UsSession;
+  extPrice?: number;
+  extChangePct?: number;
+  extLabel?: "프리마켓" | "애프터";
   /** 기간별 수익률 % — 한국 종목상세와 동일 항목 */
   d1: number;
   w1: number;
@@ -343,6 +421,7 @@ export async function usDetail(symbol: string): Promise<UsDetail> {
     revenueGrowth: pctOf(fd.revenueGrowth),
     debtToEquity: Number(fd.debtToEquity) || 0,
     heldByInstitutions: pctOf(ks.heldPercentInstitutions),
+    ...sessionOf(p, 100),
     d1: ret.d1,
     w1: ret.w1,
     m1: ret.m1,

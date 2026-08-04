@@ -11,7 +11,7 @@ import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { gradeColor, maColor, num, pct, signColor } from "@/lib/format";
 import type { Candle } from "@/lib/types";
-import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
+import { useCur, CurrencyToggle, StockName, ExtQuote } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
 import { WatchButton } from "@/components/WatchButton";
 import type { UsDetail, UsFinRow, UsNews, UsSearchItem, UsSectorRank } from "@/lib/us";
@@ -508,6 +508,8 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
                 <span className={`tnum text-sm font-semibold ${signColor(d.changePct)}`}>
                   {pct(d.changePct)}
                 </span>
+                {/* 장이 끝나면 위는 마감가, 옆에 프리마켓·애프터 시세 */}
+                <ExtQuote label={d.extLabel} price={d.extPrice} changePct={d.extChangePct} />
               </>
             )}
             {!!hi && (

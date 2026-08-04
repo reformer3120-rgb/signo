@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { num, pct, signColor } from "@/lib/format";
-import { useCur, CurrencyToggle, StockName } from "@/components/us/UsCurrency";
+import { useCur, CurrencyToggle, StockName, ExtQuote } from "@/components/us/UsCurrency";
 import { Sparkline } from "@/components/Sparkline";
 import { UsIndexChart } from "@/components/us/UsIndexChart";
 import { koName } from "@/lib/usKo";
@@ -26,11 +26,38 @@ function Overview() {
   );
   const idx = data?.indices ?? [];
   const sectors = data?.sectors ?? [];
+  // 지수는 시간외 시세가 없어 세션 판별이 안 된다 → 개별 종목(시총상위)에서 가져온다
+  const { data: capRows } = useSWR<{ data: UsQuote[] }>("/api/us?part=marketcap", fetcher, {
+    refreshInterval: 60_000,
+  });
+  const session = capRows?.data?.[0]?.session;
   const max = Math.max(1, ...sectors.map((s) => Math.abs(s.changePct)));
 
   return (
     <>
-      <Card title="미국 지수" right={<CurrencyToggle />}>
+      <Card
+        title="미국 지수"
+        right={
+          <div className="flex items-center gap-2">
+            {/* 지금이 어느 세션인지 — 가격이 마감가인지 시간외인지 한눈에 */}
+            {session && (
+              <span
+                className={`rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${
+                  session === "정규장"
+                    ? "border-up/40 bg-up/10 text-up"
+                    : session === "장마감"
+                      ? "border-line bg-canvas/60 text-muted"
+                      : "border-signal/40 bg-signal/10 text-signal"
+                }`}
+                title="한국시간 기준 · 프리마켓 18:00~23:30 · 정규장 23:30~06:00 · 애프터 06:00~"
+              >
+                {session}
+              </span>
+            )}
+            <CurrencyToggle />
+          </div>
+        }
+      >
         {isLoading && !idx.length ? (
           <div className="h-24 animate-pulse rounded-lg bg-line/30" />
         ) : (
@@ -202,7 +229,15 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
                     <td className="max-w-[13rem] truncate">
                       <StockName symbol={s.symbol} fallback={s.name} />
                     </td>
-                    <td className="tnum text-right">{money(s.price)}</td>
+                    <td className="tnum text-right whitespace-nowrap">
+                      {money(s.price)}
+                      <ExtQuote
+                        label={s.extLabel}
+                        price={s.extPrice}
+                        changePct={s.extChangePct}
+                        className="ml-1.5"
+                      />
+                    </td>
                     <td className={`tnum text-right font-medium ${signColor(s.changePct)}`}>
                       {pct(s.changePct)}
                     </td>

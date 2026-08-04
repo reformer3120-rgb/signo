@@ -89,6 +89,39 @@ export function CurrencyToggle() {
   );
 }
 
+/**
+ * 시간외 시세 배지 — 마감가 옆에 "프리마켓 303.55 +0.04%" 처럼 붙는다.
+ * 정규장 중에는 표시하지 않는다 (현재가가 곧 정규장 가격이므로 중복).
+ */
+export function ExtQuote({
+  label,
+  price,
+  changePct,
+  className = "",
+}: {
+  label?: "프리마켓" | "애프터";
+  price?: number;
+  changePct?: number;
+  className?: string;
+}) {
+  const { money } = useCur();
+  if (!label || !price) return null;
+  const up = (changePct ?? 0) > 0;
+  const flat = (changePct ?? 0) === 0;
+  return (
+    <span className={`inline-flex items-baseline gap-1 whitespace-nowrap ${className}`}>
+      <span className="rounded border border-line bg-canvas/60 px-1 py-0.5 text-[10px] font-semibold text-muted">
+        {label}
+      </span>
+      <span className="tnum text-xs font-semibold">{money(price)}</span>
+      <span className={`tnum text-[11px] ${flat ? "text-muted" : up ? "text-up" : "text-down"}`}>
+        {up ? "+" : ""}
+        {(changePct ?? 0).toFixed(2)}%
+      </span>
+    </span>
+  );
+}
+
 /** 종목명 — 한글명(있으면) + 티커를 작게 */
 export function StockName({
   symbol,
