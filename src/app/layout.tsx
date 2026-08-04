@@ -59,8 +59,15 @@ export default function RootLayout({
           <SignoHeader />
           <Nav />
           {children}
-          <footer className="py-4 text-center text-xs text-muted">
-            SIGNO · KRX 마켓 대시보드 · 데이터: Yahoo · 네이버 · KIS
+          <footer className="mt-2 flex flex-col gap-2 py-4">
+            {/* 책임 한계 고지 — 모든 화면 하단에 표시 */}
+            <p className="rounded-lg border border-line bg-surface/60 px-4 py-3 text-center text-xs leading-relaxed text-muted">
+              본 사이트에서 제공하는 지표는 투자 참고용이며, 투자의 최종 책임은 투자자 본인에게
+              있습니다.
+            </p>
+            <p className="text-center text-xs text-muted">
+              SIGNO · KRX 마켓 대시보드 · 데이터: Yahoo · 네이버 · KIS
+            </p>
           </footer>
         </div>
       </body>

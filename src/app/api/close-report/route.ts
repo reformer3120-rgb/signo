@@ -262,6 +262,7 @@ async function build() {
 
   L.push("-".repeat(46));
   L.push("SIGNO · 데이터: 네이버 · KIS");
+  L.push("본 리포트의 지표는 투자 참고용이며, 투자의 최종 책임은 투자자 본인에게 있습니다.");
   return {
     text: L.join("\n"),
     date: t.date,
@@ -276,7 +277,7 @@ export async function GET() {
     // 마감 후에는 당일 확정본이므로 오래 캐시, 장중에는 짧게
     const closed = t.minutes >= 15 * 60 + 40;
     const data = await cached(
-      `close-report4:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report5:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );

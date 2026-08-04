@@ -154,12 +154,13 @@ async function build() {
 
   L.push("-".repeat(50));
   L.push("SIGNO · 데이터: 야후 파이낸스 · 국채금리 네이버");
+  L.push("본 리포트의 지표는 투자 참고용이며, 투자의 최종 책임은 투자자 본인에게 있습니다.");
   return { text: L.join("\n"), date: t.date, time: t.time };
 }
 
 export async function GET() {
   try {
-    const data = await cached(`us-report4:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
+    const data = await cached(`us-report5:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
