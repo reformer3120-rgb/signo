@@ -8,6 +8,9 @@ Next.js 16 (App Router) · React 19 · Tailwind 4 · SWR · Vercel.
 **작업을 이어받는다면 [HANDOFF.md](HANDOFF.md) 를 먼저 읽으세요** — 구조, 데이터
 출처, 겪은 함정, KIS TR 코드가 정리되어 있습니다.
 
+**이 구조를 다른 앱에 참고하려면 [PATTERNS.md](PATTERNS.md)** — UI 배치와 데이터
+흐름을 구간별로 나눠 실제 코드와 함께 설명한 문서입니다.
+
 ## 실행
 
 ```bash
