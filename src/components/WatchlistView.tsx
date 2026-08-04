@@ -74,7 +74,7 @@ export function WatchlistView() {
   return (
     <Card
       title="관심종목"
-      right={<span className="text-xs text-muted">{items.length}종목 · 이 브라우저에 저장</span>}
+      right={<span className="text-xs text-muted">{items.length}종목 · 자동 저장</span>}
     >
       {!items.length ? (
         <div className="grid h-28 place-items-center px-4 text-center text-sm text-muted">
