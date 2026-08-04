@@ -1,6 +1,7 @@
 // 미국 증시 데이터 (야후 파이낸스). 서버 전용.
 import { yahooFinance } from "./yahoo";
 import { koName, koSearch } from "./usKo";
+import { daytimeQuote, daytimeQuotes } from "./usDaytime";
 // 채점 규칙은 한국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
 import {
   dimScaler,
@@ -21,7 +22,33 @@ import {
  *   정규장    23:30~06:00
  *   애프터    06:00~10:00 (야후 기준. 국내 증권사는 07:00까지가 보통)
  */
-export type UsSession = "프리마켓" | "정규장" | "애프터" | "장마감";
+export type UsSession = "주간거래" | "프리마켓" | "정규장" | "애프터" | "장마감";
+
+/**
+ * 지금이 어느 세션인지 — 뉴욕 현지 시각으로 판정한다.
+ * 한국시간으로 못 박으면 미국 서머타임 전환 때 한 시간씩 어긋나므로.
+ *   04:00~09:30 ET 프리마켓 (한국 18:00~23:30)
+ *   09:30~16:00 ET 정규장   (한국 23:30~06:00)
+ *   16:00~20:00 ET 애프터   (한국 06:00~10:00)
+ *   20:00~04:00 ET 주간거래 (한국 10:00~18:00, 국내 증권사 야간 세션)
+ */
+export function usSessionNow(at = new Date()): UsSession {
+  const p = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(at);
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  const wd = g("weekday");
+  const hm = `${g("hour") === "24" ? "00" : g("hour")}:${g("minute")}`;
+  if (wd === "Sat" || wd === "Sun") return "장마감";
+  if (hm >= "04:00" && hm < "09:30") return "프리마켓";
+  if (hm >= "09:30" && hm < "16:00") return "정규장";
+  if (hm >= "16:00" && hm < "20:00") return "애프터";
+  return "주간거래";
+}
 
 export interface UsQuote {
   symbol: string;
@@ -33,13 +60,15 @@ export interface UsQuote {
   volume: number;
   marketCap: number;
   spark?: number[];
+  /** 야후 거래소 코드 (주간거래 거래소를 고를 때 쓴다) */
+  exchange?: string;
   /** 지금이 어느 세션인지 */
   session: UsSession;
   /** 시간외 가격 (프리마켓·애프터). 정규장 중이거나 체결이 없으면 없음 */
   extPrice?: number;
   extChangePct?: number;
   /** 그 시간외 가격이 어느 세션 것인지 */
-  extLabel?: "프리마켓" | "애프터";
+  extLabel?: "프리마켓" | "애프터" | "주간거래";
 }
 
 /**
@@ -58,21 +87,24 @@ function sessionOf(
   session: UsSession;
   extPrice?: number;
   extChangePct?: number;
-  extLabel?: "프리마켓" | "애프터";
+  extLabel?: "프리마켓" | "애프터" | "주간거래";
 } {
+  const now = usSessionNow();
   const st = String(x.marketState ?? "");
   const pre = Number(x.preMarketPrice) || 0;
   const post = Number(x.postMarketPrice) || 0;
   const pct = (v: unknown) => (Number(v) || 0) * pctScale;
-  if (st === "REGULAR") return { session: "정규장" };
-  if (st === "PRE" && pre)
+  // 주간거래 값은 야후에 없다 → 세션만 알리고 가격은 호출부에서 KIS로 채운다
+  if (now === "주간거래") return { session: "주간거래" };
+  if (st === "REGULAR" || now === "정규장") return { session: "정규장" };
+  if ((st === "PRE" || now === "프리마켓") && pre)
     return {
       session: "프리마켓",
       extPrice: pre,
       extChangePct: pct(x.preMarketChangePercent),
       extLabel: "프리마켓",
     };
-  if (st === "POST" && post)
+  if ((st === "POST" || now === "애프터") && post)
     return {
       session: "애프터",
       extPrice: post,
@@ -105,6 +137,7 @@ const q = (x: Record<string, unknown>): UsQuote => ({
   changePct: Number(x.regularMarketChangePercent) || 0,
   volume: Number(x.regularMarketVolume) || 0,
   marketCap: Number(x.marketCap) || 0,
+  exchange: String(x.exchange ?? ""),
   ...sessionOf(x),
 });
 
@@ -207,7 +240,17 @@ export async function usMovers(kind: UsMoverKind, count = 20): Promise<UsQuote[]
   } else {
     rows.sort((a, b) => b.changePct - a.changePct);
   }
-  return rows.slice(0, count);
+  return fillDaytime(rows.slice(0, count));
+}
+
+/** 주간거래 시간대면 KIS 시세를 채워 넣는다 (야후에는 없는 값) */
+async function fillDaytime(rows: UsQuote[]): Promise<UsQuote[]> {
+  if (usSessionNow() !== "주간거래" || !rows.length) return rows;
+  const map = await daytimeQuotes(rows.map((r) => ({ symbol: r.symbol, exchange: r.exchange })));
+  return rows.map((r) => {
+    const d = map.get(r.symbol);
+    return d ? { ...r, extPrice: d.price, extChangePct: d.changePct, extLabel: "주간거래" } : r;
+  });
 }
 
 /** 대형주 유니버스 — 특징주·시총상위 산출 기준 (S&P500 상위 종목군) */
@@ -242,11 +285,13 @@ export const LARGE_CAP_UNIVERSE = [
 export async function usMarketCap(limit = 20): Promise<UsQuote[]> {
   const rows = await quoteMany(LARGE_CAP_UNIVERSE);
   const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
-  return list
-    .map(q)
-    .filter((x) => x.marketCap > 0)
-    .sort((a, b) => b.marketCap - a.marketCap)
-    .slice(0, limit);
+  return fillDaytime(
+    list
+      .map(q)
+      .filter((x) => x.marketCap > 0)
+      .sort((a, b) => b.marketCap - a.marketCap)
+      .slice(0, limit),
+  );
 }
 
 // ---- 미국 개별 종목 ----
@@ -325,7 +370,7 @@ export interface UsDetail {
   session: UsSession;
   extPrice?: number;
   extChangePct?: number;
-  extLabel?: "프리마켓" | "애프터";
+  extLabel?: "프리마켓" | "애프터" | "주간거래";
   /** 기간별 수익률 % — 한국 종목상세와 동일 항목 */
   d1: number;
   w1: number;
@@ -388,6 +433,14 @@ export async function usDetail(symbol: string): Promise<UsDetail> {
     }),
     dailyCloses(symbol),
   ]);
+  // 주간거래 시간대에는 야후에 시세가 없어 KIS 에서 받아온다
+  const day =
+    usSessionNow() === "주간거래"
+      ? await daytimeQuote(
+          symbol,
+          String(((d.price ?? {}) as Record<string, unknown>).exchange ?? ""),
+        )
+      : null;
   const ret = periodReturns(closes);
   const p = (d.price ?? {}) as Record<string, unknown>;
   const sd = (d.summaryDetail ?? {}) as Record<string, unknown>;
@@ -422,6 +475,7 @@ export async function usDetail(symbol: string): Promise<UsDetail> {
     debtToEquity: Number(fd.debtToEquity) || 0,
     heldByInstitutions: pctOf(ks.heldPercentInstitutions),
     ...sessionOf(p, 100),
+    ...(day ? { extPrice: day.price, extChangePct: day.changePct, extLabel: "주간거래" as const } : {}),
     d1: ret.d1,
     w1: ret.w1,
     m1: ret.m1,

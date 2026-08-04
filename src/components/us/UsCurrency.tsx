@@ -99,7 +99,7 @@ export function ExtQuote({
   changePct,
   className = "",
 }: {
-  label?: "프리마켓" | "애프터";
+  label?: "프리마켓" | "애프터" | "주간거래";
   price?: number;
   changePct?: number;
   className?: string;
