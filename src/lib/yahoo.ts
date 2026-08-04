@@ -14,7 +14,10 @@ export const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] 
  * 그래서 받은 결과에서 빠진 종목을 찾아 다시 묻는다.
  *   1차 40개씩 묶어 조회 → 빠진 것만 10개씩 재조회 → 그래도 없으면 한 종목씩
  */
-export async function quoteAll(symbols: string[]): Promise<Record<string, unknown>[]> {
+export async function quoteAll(
+  symbols: string[],
+  opts: { withMarketCap?: boolean } = {},
+): Promise<Record<string, unknown>[]> {
   const want = [...new Set(symbols.filter(Boolean))];
   const got = new Map<string, Record<string, unknown>>();
 
@@ -40,7 +43,42 @@ export async function quoteAll(symbols: string[]): Promise<Record<string, unknow
   // 마지막으로 한 종목씩 — 정말 없는 종목까지 계속 묻지 않도록 상한을 둔다
   for (const s of missing.slice(0, 25)) await ask([s]);
 
+  if (opts.withMarketCap) await repairMarketCap(got);
   return want.map((s) => got.get(s)).filter((x): x is Record<string, unknown> => !!x);
+}
+
+/**
+ * 시가총액이 비어 온 종목을 메운다.
+ *
+ * 야후는 배포 서버(데이터센터 IP)에서 일부 종목의 시가총액과 발행주식수를
+ * 통째로 빼고 준다. 주가·PER 은 정상으로 오는데 시총만 없다. 실제로 화이자·
+ * 일라이릴리·머크가 이래서 시총 상위와 섹터 평가에서 사라졌었다.
+ * 상세조회로 한 번 더 물어보고, 그래도 없으면 주식수 × 주가로 직접 계산한다.
+ */
+async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
+  const broken = [...got.entries()]
+    .filter(([, x]) => !(Number(x.marketCap) > 0) && Number(x.regularMarketPrice) > 0)
+    .slice(0, 20); // 상한 — 지수처럼 원래 시총이 없는 것까지 계속 묻지 않도록
+  if (!broken.length) return;
+  await Promise.all(
+    broken.map(async ([sym, x]) => {
+      try {
+        const d = await yahooFinance.quoteSummary(sym, {
+          modules: ["price", "summaryDetail", "defaultKeyStatistics"],
+        });
+        const p = (d.price ?? {}) as Record<string, unknown>;
+        const sd = (d.summaryDetail ?? {}) as Record<string, unknown>;
+        const ks = (d.defaultKeyStatistics ?? {}) as Record<string, unknown>;
+        const price = Number(x.regularMarketPrice) || Number(p.regularMarketPrice) || 0;
+        const shares = Number(ks.sharesOutstanding) || Number(ks.floatShares) || 0;
+        const cap =
+          Number(p.marketCap) || Number(sd.marketCap) || (shares && price ? shares * price : 0);
+        if (cap > 0) got.set(sym, { ...x, marketCap: cap });
+      } catch {
+        /* 못 메우면 그대로 둔다 */
+      }
+    }),
+  );
 }
 
 interface YQ {

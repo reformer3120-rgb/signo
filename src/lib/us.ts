@@ -191,7 +191,7 @@ export async function usSectors(): Promise<UsSector[]> {
 export type UsMoverKind = "gainers" | "losers" | "actives";
 
 /** 심볼이 많을 때 나눠서 조회 */
-const quoteMany = quoteAll;
+const quoteMany = (symbols: string[]) => quoteAll(symbols, { withMarketCap: true });
 
 /**
  * 특징주 — 대형주 유니버스(시총 상위 종목군) 안에서만 산출.
@@ -423,7 +423,11 @@ export async function usDetail(symbol: string): Promise<UsDetail> {
     industry: String(ap.industry ?? ""),
     price,
     changePct: pctOf(p.regularMarketChangePercent),
-    marketCap: Number(sd.marketCap ?? p.marketCap) || 0,
+    // 야후가 시총을 빼고 줄 때가 있어 주식수 × 주가로 메운다 (repairMarketCap 참고)
+    marketCap:
+      Number(sd.marketCap ?? p.marketCap) ||
+      (Number(ks.sharesOutstanding) || Number(ks.floatShares) || 0) * price ||
+      0,
     per: Number(sd.trailingPE) || 0,
     forwardPer: Number(ks.forwardPE) || 0,
     pbr: Number(ks.priceToBook) || 0,
@@ -608,7 +612,7 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
   const base = SECTOR_PEERS[sector] ?? SECTOR_PEERS.Technology;
   const codes = base.includes(symbol) ? base : [...base, symbol];
 
-  const list = await quoteAll(codes);
+  const list = await quoteAll(codes, { withMarketCap: true });
   const quoted = list
     .filter((x) => Number(x.marketCap) > 0)
     .map((x) => ({
