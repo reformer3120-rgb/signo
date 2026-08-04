@@ -757,10 +757,11 @@ const G_FX: [string, string, string][] = [
   ["CNY=X", "USD/CNY", ""],
   ["KRW=X", "USD/KRW", ""],
 ];
+// 미국 지수 카드와 같은 순서 (다우 · 나스닥 · S&P500 · 러셀)
 const G_FUT: [string, string, string][] = [
-  ["ES=F", "S&P500 선물", ""],
-  ["NQ=F", "나스닥100 선물", ""],
   ["YM=F", "다우 선물", ""],
+  ["NQ=F", "나스닥100 선물", ""],
+  ["ES=F", "S&P500 선물", ""],
   ["RTY=F", "러셀2000 선물", ""],
 ];
 // 유럽 주요 지수 (헝가리 BUX는 부다페스트 거래소 코드 ^BUX.BD)
