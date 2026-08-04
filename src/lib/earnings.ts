@@ -1,6 +1,6 @@
 // 주요 기업 실적발표 일정 (야후). 서버 전용.
 // 전 종목이 아니라 "시장을 움직이는" 종목만 — 시가총액 최상위와 섹터 대표주.
-import { yahooFinance } from "./yahoo";
+import { quoteAll } from "./yahoo";
 import type { EconEvent, EconCountry } from "./calendar";
 
 /**
@@ -138,17 +138,7 @@ function usSlot(d: Date): string {
  */
 export async function earningsCalendar(days = 7): Promise<EconEvent[]> {
   const defs = [...KR.map((x) => ["KR", ...x] as const), ...US.map((x) => ["US", ...x] as const)];
-  const rows: Record<string, unknown>[] = [];
-  // 야후 시세 조회는 한 번에 보낼 수 있는 종목 수에 한계가 있어 나눠 보낸다
-  for (let i = 0; i < defs.length; i += 50) {
-    const chunk = defs.slice(i, i + 50).map(([, sym]) => sym);
-    try {
-      const r = await yahooFinance.quote(chunk);
-      rows.push(...((Array.isArray(r) ? r : [r]) as Record<string, unknown>[]));
-    } catch {
-      /* 일부 묶음이 실패해도 나머지는 살린다 */
-    }
-  }
+  const rows = await quoteAll(defs.map(([, sym]) => sym));
   const bySymbol = new Map(rows.map((r) => [String(r.symbol), r]));
 
   const now = Date.now();

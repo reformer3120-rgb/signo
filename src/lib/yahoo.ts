@@ -4,6 +4,45 @@ import type { FxRate, Quote } from "./types";
 
 export const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
+/**
+ * 여러 종목 시세를 빠짐없이 받아온다.
+ *
+ * 야후는 한 번에 여러 종목을 물으면 일부를 말없이 빼고 준다. 서버(배포 환경)에서
+ * 특히 심해서, 시총 상위에 일라이릴리·머크·화이자가 통째로 빠지고 섹터 평가에서
+ * 검색한 종목이 사라지는 일이 있었다. 로컬에서는 잘 나와 눈치채기 어렵다.
+ *
+ * 그래서 받은 결과에서 빠진 종목을 찾아 다시 묻는다.
+ *   1차 40개씩 묶어 조회 → 빠진 것만 10개씩 재조회 → 그래도 없으면 한 종목씩
+ */
+export async function quoteAll(symbols: string[]): Promise<Record<string, unknown>[]> {
+  const want = [...new Set(symbols.filter(Boolean))];
+  const got = new Map<string, Record<string, unknown>>();
+
+  const ask = async (list: string[]) => {
+    if (!list.length) return;
+    try {
+      const r = await yahooFinance.quote(list);
+      for (const x of (Array.isArray(r) ? r : [r]) as Record<string, unknown>[]) {
+        if (x?.symbol) got.set(String(x.symbol), x);
+      }
+    } catch {
+      /* 묶음이 통째로 실패해도 아래 재시도에서 건진다 */
+    }
+  };
+
+  for (let i = 0; i < want.length; i += 40) await ask(want.slice(i, i + 40));
+
+  let missing = want.filter((s) => !got.has(s));
+  if (missing.length) {
+    for (let i = 0; i < missing.length; i += 10) await ask(missing.slice(i, i + 10));
+    missing = want.filter((s) => !got.has(s));
+  }
+  // 마지막으로 한 종목씩 — 정말 없는 종목까지 계속 묻지 않도록 상한을 둔다
+  for (const s of missing.slice(0, 25)) await ask([s]);
+
+  return want.map((s) => got.get(s)).filter((x): x is Record<string, unknown> => !!x);
+}
+
 interface YQ {
   symbol?: string;
   regularMarketPrice?: number;
@@ -13,8 +52,7 @@ interface YQ {
 }
 
 export async function quotes(symbols: string[]): Promise<YQ[]> {
-  const r = await yahooFinance.quote(symbols);
-  return (Array.isArray(r) ? r : [r]) as YQ[];
+  return (await quoteAll(symbols)) as YQ[];
 }
 
 /** 코스피/코스닥 지수 */

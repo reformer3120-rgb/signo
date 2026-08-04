@@ -1,5 +1,5 @@
 // 미국 증시 데이터 (야후 파이낸스). 서버 전용.
-import { yahooFinance } from "./yahoo";
+import { yahooFinance, quoteAll } from "./yahoo";
 import { koName, koSearch } from "./usKo";
 import { daytimeQuote, daytimeQuotes } from "./usDaytime";
 import { usSessionNow, type UsSession } from "./session";
@@ -128,8 +128,7 @@ const INDEX_KO: Record<string, string> = {
 };
 
 export async function usIndices(): Promise<UsQuote[]> {
-  const rows = await yahooFinance.quote(INDEX_SYMBOLS);
-  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const list = await quoteAll(INDEX_SYMBOLS);
   // 카드 안에 흐름을 보여줄 30일 라인 데이터
   const sparks = await Promise.all(
     INDEX_SYMBOLS.map(async (s) => {
@@ -178,8 +177,7 @@ export interface UsSector {
 }
 
 export async function usSectors(): Promise<UsSector[]> {
-  const rows = await yahooFinance.quote(SECTOR_ETF.map(([s]) => s));
-  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const list = await quoteAll(SECTOR_ETF.map(([s]) => s));
   return SECTOR_ETF.map(([sym, ko]) => {
     const hit = list.find((x) => x.symbol === sym);
     return {
@@ -193,14 +191,7 @@ export async function usSectors(): Promise<UsSector[]> {
 export type UsMoverKind = "gainers" | "losers" | "actives";
 
 /** 심볼이 많을 때 나눠서 조회 */
-async function quoteMany(symbols: string[]): Promise<Record<string, unknown>[]> {
-  const out: Record<string, unknown>[] = [];
-  for (let i = 0; i < symbols.length; i += 120) {
-    const r = await yahooFinance.quote(symbols.slice(i, i + 120));
-    out.push(...((Array.isArray(r) ? r : [r]) as Record<string, unknown>[]));
-  }
-  return out;
-}
+const quoteMany = quoteAll;
 
 /**
  * 특징주 — 대형주 유니버스(시총 상위 종목군) 안에서만 산출.
@@ -288,7 +279,7 @@ export async function usSearch(query: string): Promise<UsSearchItem[]> {
   // 한글로 검색했으면 사전 결과만 (야후를 부르면 엉뚱한 국내 상장물이 섞인다)
   if (hangul) {
     if (!hits.length) return [];
-    const rows = await yahooFinance.quote(hits).catch(() => []);
+    const rows = await quoteAll(hits).catch(() => []);
     const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
     const meta = new Map(list.map((x) => [String(x.symbol), x]));
     return hits.map((sym) => {
@@ -617,8 +608,7 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
   const base = SECTOR_PEERS[sector] ?? SECTOR_PEERS.Technology;
   const codes = base.includes(symbol) ? base : [...base, symbol];
 
-  const rows = await yahooFinance.quote(codes);
-  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const list = await quoteAll(codes);
   const quoted = list
     .filter((x) => Number(x.marketCap) > 0)
     .map((x) => ({
@@ -781,8 +771,7 @@ const G_CRYPTO: [string, string, string][] = [
 
 export async function usMarketIndicators(): Promise<UsMarketIndicators> {
   const all = [G_YIELDS, G_DOLLAR, G_COMM, G_FX, G_FUT, G_CRYPTO, G_EUROPE].flat();
-  const rows = await yahooFinance.quote(all.map(([s]) => s));
-  const list = (Array.isArray(rows) ? rows : [rows]) as Record<string, unknown>[];
+  const list = await quoteAll(all.map(([s]) => s));
   const pick = (defs: [string, string, string][]): UsIndicator[] => {
     const out: UsIndicator[] = [];
     for (const [symbol, label, unit] of defs) {
