@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { KrSessionBadge } from "@/components/SessionBadge";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -95,6 +96,8 @@ export function StockSection({
           >
             {exch === "UN" ? "통합" : exch}
           </span>
+          {/* KRX가 닫힌 시간대면 지금 시세가 NXT 기준임을 알린다 */}
+          <KrSessionBadge />
           {stat && (
             <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
               <span>

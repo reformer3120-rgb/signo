@@ -2,6 +2,10 @@
 import { yahooFinance } from "./yahoo";
 import { koName, koSearch } from "./usKo";
 import { daytimeQuote, daytimeQuotes } from "./usDaytime";
+import { usSessionNow, type UsSession } from "./session";
+
+export { usSessionNow };
+export type { UsSession };
 // 채점 규칙은 한국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
 import {
   dimScaler,
@@ -22,34 +26,6 @@ import {
  *   정규장    23:30~06:00
  *   애프터    06:00~10:00 (야후 기준. 국내 증권사는 07:00까지가 보통)
  */
-export type UsSession = "주간거래" | "프리마켓" | "정규장" | "애프터" | "장마감";
-
-/**
- * 지금이 어느 세션인지 — 뉴욕 현지 시각으로 판정한다.
- * 한국시간으로 못 박으면 미국 서머타임 전환 때 한 시간씩 어긋나므로.
- *   04:00~09:30 ET 프리마켓 (한국 18:00~23:30)
- *   09:30~16:00 ET 정규장   (한국 23:30~06:00)
- *   16:00~20:00 ET 애프터   (한국 06:00~10:00)
- *   20:00~04:00 ET 주간거래 (한국 10:00~18:00, 국내 증권사 야간 세션)
- */
-export function usSessionNow(at = new Date()): UsSession {
-  const p = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(at);
-  const g = (t: string) => p.find((x) => x.type === t)?.value ?? "";
-  const wd = g("weekday");
-  const hm = `${g("hour") === "24" ? "00" : g("hour")}:${g("minute")}`;
-  if (wd === "Sat" || wd === "Sun") return "장마감";
-  if (hm >= "04:00" && hm < "09:30") return "프리마켓";
-  if (hm >= "09:30" && hm < "16:00") return "정규장";
-  if (hm >= "16:00" && hm < "20:00") return "애프터";
-  return "주간거래";
-}
-
 export interface UsQuote {
   symbol: string;
   name: string;

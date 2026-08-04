@@ -1,9 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { KrSessionBadge } from "@/components/SessionBadge";
+import { KrFuturesStrip } from "@/components/FuturesStrip";
+import { krSessionNow } from "@/lib/session";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -188,13 +191,30 @@ export function IndexSection() {
   const { data: flows } = useSWR<{ KOSPI: Flow; KOSDAQ: Flow }>("/api/index-flow", fetcher, {
     refreshInterval: 60_000,
   });
+  const [closed, setClosed] = useState(false);
+  useEffect(() => {
+    const tick = () => setClosed(krSessionNow() === "장마감");
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <Card title="지수 · 수급" right={<span className="text-xs text-muted">코스피 · 코스닥</span>}>
+    <Card
+      title="지수 · 수급"
+      right={
+        <div className="flex items-center gap-2">
+          <KrSessionBadge />
+          <span className="text-xs text-muted">코스피 · 코스닥</span>
+        </div>
+      }
+    >
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <IndexPane market="KOSPI" label="코스피" flow={flows?.KOSPI} />
         <IndexPane market="KOSDAQ" label="코스닥" flow={flows?.KOSDAQ} />
       </div>
+      {/* 장이 끝나면 현물은 멈추므로 계속 움직이는 지수선물을 보여준다 */}
+      {closed && <KrFuturesStrip />}
     </Card>
   );
 }
