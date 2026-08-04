@@ -1,50 +1,66 @@
-# SIGNO — 실시간 AI 주식 시그널 · KRX 마켓 대시보드
+# SIGNO — 한국·미국 증시 대시보드
 
-Next.js 16 · React 19 · Tailwind 4 · SWR 기반 KRX 마켓 대시보드.
+지수·수급·섹터·종목을 한 화면에서 보는 시장 대시보드.
+Next.js 16 (App Router) · React 19 · Tailwind 4 · SWR · Vercel.
+
+운영 https://signo-chi.vercel.app
+
+**작업을 이어받는다면 [HANDOFF.md](HANDOFF.md) 를 먼저 읽으세요** — 구조, 데이터
+출처, 겪은 함정, KIS TR 코드가 정리되어 있습니다.
 
 ## 실행
 
 ```bash
-npm run dev      # http://localhost:3000
-npm run build    # 프로덕션 빌드 (Vercel)
+npm install && npm run dev
 ```
 
-## 스택 / 데이터
+키가 없어도 야후·네이버로 대부분 동작합니다. `.env.example` 을 `.env.local` 로
+복사해 키를 채우면 KIS 기능(프로그램매매·지수선물·NXT·실시간 수급·미국 주간거래)과
+Redis 캐시가 켜집니다.
 
-| 계층 | 기술 |
+```bash
+npm run build    # 타입 체크 포함 — push 전에 통과시킬 것
+```
+
+## 화면
+
+| 경로 | 내용 |
 |---|---|
-| 프론트 | Next.js 16 (App Router, Turbopack), React 19, Tailwind 4, SWR |
-| 백엔드 | Next.js API Routes (`src/app/api/*`) |
-| 데이터 | **폴백 모드**: Yahoo Finance(지수·환율·원자재·가상자산·미국채), 네이버 금융(종목 시세·분봉) |
-| 예정 | KIS API(프로그램매매·선물옵션·실시간·투자자수급), Claude Sonnet(AI 브리핑), Upstash Redis(캐시) |
+| `/` | 한국 대시보드 — 지수·수급, 증시 주변자금, 시장수급, 섹터 강약, 특징주, 시총상위 |
+| `/market` | 한국 시장지표 — 아시아 증시·지수선물·환율·원자재·가상자산·국채금리 |
+| `/stock` | 한국 종목 — 차트, 투자자수급, 종목상세, 재무제표, 섹터 종합평가 |
+| `/us` `/us/market` `/us/stock` | 미국증시 (위와 같은 구성) |
+| `/watchlist` | 관심종목 |
+| `/calendar` | 경제 캘린더 + 주요 기업 실적발표 |
 
-> 현재 API 키 없이 **Yahoo/네이버 폴백**으로 동작. `.env.example` 참고해 키를 채우면 KIS/Claude/Redis가 자동 활성화됩니다(`src/lib/kis.ts`, `cache.ts`).
+대시보드에서 **장 마감 리포트**를 텍스트로 내려받을 수 있습니다 (한국·미국 각각).
+
+## 데이터
+
+| 출처 | 쓰는 곳 | 키 |
+|---|---|---|
+| 네이버 금융 | 국내 시세·수급·업종·국채금리·증시자금 | 불필요 |
+| 야후 파이낸스 | 미국·글로벌 전반, 실적발표일 | 불필요 |
+| 한국투자증권 (KIS) | 프로그램매매·지수선물·NXT·장중 추정수급·미국 주간거래 | 필요 |
+| finviz · ForexFactory | 경제지표 캘린더 (미국 / 일본·유럽) | 불필요 |
 
 ## 구조
 
 ```
 src/
-  app/
-    layout.tsx          # 폰트(Pretendard/Space Grotesk/Space Mono), 다크모드 부트스트랩
-    page.tsx            # 대시보드 조립
-    globals.css         # 시그노 디자인 토큰 → Tailwind @theme
-    api/                # indices, fx, macro, ohlcv, quote
-  components/
-    SignoHeader, ThemeToggle, Card, MetricTile, CandleChart
-    sections/           # IndexSection, FxSection, MacroSection, StockSection
-  lib/
-    yahoo, naver, kis(스텁), cache, format, types, tickers, swr
-public/
-  brand/                # signo-icon.png, signo-logo.png
-  fonts/                # PretendardVariable.woff2
+  app/        화면 + api/ (29개 라우트, lib 을 캐시로 감싸 호출만 함)
+  components/ sections/(화면 블록) stock/(종목 카드) us/(미국 전용)
+  lib/        데이터 수집·가공 — naverApi · us · kis · score · session …
 ```
 
-## 디자인 토큰 (Signo v0.2)
+핵심 공용 모듈 — 채점 규칙 `lib/score.ts`, 세션 판정 `lib/session.ts`,
+캐시 `lib/cache.ts` (배포마다 키가 갈립니다).
 
-브랜드 인디고 `#3844BE`, **상승=빨강 `#E23D3D` / 하락=파랑 `#2E77C9`**(한국 관례).
-`globals.css`의 `@theme`에서 관리, 라이트/다크 표면색 전환.
+## 디자인
 
-## 남은 섹션 (10-섹션 리포트)
+브랜드 인디고 `#3844BE`, **상승 빨강 `#E23D3D` / 하락 파랑 `#2E77C9`** (한국 관례).
+`globals.css` 의 `@theme` 에서 관리하며 라이트/다크가 전환됩니다.
 
-수급 정리·프로그램매매·주변자금·장중흐름·섹터·장내특이점·특징주·다음거래일 전망·시총상위·AI 브리핑.
-대부분 KIS API + Claude 연동으로 구현 예정.
+---
+
+본 사이트에서 제공하는 지표는 투자 참고용이며, 투자의 최종 책임은 투자자 본인에게 있습니다.
