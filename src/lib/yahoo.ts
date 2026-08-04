@@ -1,6 +1,7 @@
 // Yahoo Finance — 지수/환율/원자재/가상자산/미국 국채. 서버 전용.
 import YahooFinance from "yahoo-finance2";
 import type { FxRate, Quote } from "./types";
+import { redis } from "./cache";
 
 export const yahooFinance = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
@@ -50,18 +51,48 @@ export async function quoteAll(
 /**
  * 시가총액이 비어 온 종목을 메운다.
  *
- * 야후는 배포 서버(데이터센터 IP)에서 일부 종목의 시가총액과 발행주식수를
- * 통째로 빼고 준다. 주가·PER 은 정상으로 오는데 시총만 없다. 실제로 화이자·
- * 일라이릴리·머크가 이래서 시총 상위와 섹터 평가에서 사라졌었다.
- * 상세조회로 한 번 더 물어보고, 그래도 없으면 주식수 × 주가로 직접 계산한다.
+ * 야후는 배포 서버(데이터센터 IP)에서 상당수 종목의 시가총액과 발행주식수를
+ * 통째로 빼고 준다. 주가·PER 은 정상으로 오는데 시총만 없다. 240종목 중
+ * 190종목이 이랬고, 그 탓에 화이자·일라이릴리·머크가 시총 상위와 섹터 평가에서
+ * 사라졌었다. 로컬에서는 정상으로 와서 재현되지 않는다.
+ *
+ * 시총 = 주식수 × 주가 이고 주식수는 거의 안 바뀐다. 그래서 주식수만 따로
+ * 오래 보관해 두고 시총은 매번 현재가로 다시 계산한다. 한 번에 다 받으면
+ * 느리므로 호출마다 조금씩 채운다 — 몇 번 새로고침하면 전부 메워진다.
  */
+const SHARES_TTL = 7 * 24 * 3600; // 주식수 보관 기간
+const REPAIR_PER_CALL = 40; // 한 번에 새로 받아올 종목 수
+
 async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
-  const broken = [...got.entries()]
-    .filter(([, x]) => !(Number(x.marketCap) > 0) && Number(x.regularMarketPrice) > 0)
-    .slice(0, 20); // 상한 — 지수처럼 원래 시총이 없는 것까지 계속 묻지 않도록
+  const broken = [...got.entries()].filter(
+    ([, x]) => !(Number(x.marketCap) > 0) && Number(x.regularMarketPrice) > 0,
+  );
   if (!broken.length) return;
+
+  const setCap = (sym: string, x: Record<string, unknown>, shares: number) => {
+    const price = Number(x.regularMarketPrice) || 0;
+    if (shares > 0 && price > 0) got.set(sym, { ...x, marketCap: shares * price });
+  };
+
+  // 1) 보관해 둔 주식수로 먼저 메운다
+  let todo = broken;
+  if (redis) {
+    const hit = await redis
+      .mget<(number | null)[]>(...broken.map(([s]) => `shares:${s}`))
+      .catch(() => null);
+    if (hit) {
+      todo = [];
+      broken.forEach((entry, i) => {
+        const n = Number(hit[i]);
+        if (n > 0) setCap(entry[0], entry[1], n);
+        else todo.push(entry);
+      });
+    }
+  }
+
+  // 2) 남은 것은 상세조회로 주식수를 받아 보관한다 (호출마다 일부씩)
   await Promise.all(
-    broken.map(async ([sym, x]) => {
+    todo.slice(0, REPAIR_PER_CALL).map(async ([sym, x]) => {
       try {
         const d = await yahooFinance.quoteSummary(sym, {
           modules: ["price", "summaryDetail", "defaultKeyStatistics"],
@@ -70,10 +101,15 @@ async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
         const sd = (d.summaryDetail ?? {}) as Record<string, unknown>;
         const ks = (d.defaultKeyStatistics ?? {}) as Record<string, unknown>;
         const price = Number(x.regularMarketPrice) || Number(p.regularMarketPrice) || 0;
-        const shares = Number(ks.sharesOutstanding) || Number(ks.floatShares) || 0;
-        const cap =
-          Number(p.marketCap) || Number(sd.marketCap) || (shares && price ? shares * price : 0);
-        if (cap > 0) got.set(sym, { ...x, marketCap: cap });
+        const shares =
+          Number(ks.sharesOutstanding) ||
+          Number(ks.floatShares) ||
+          // 상세조회에 시총이 있으면 거꾸로 주식수를 얻는다
+          (price ? (Number(p.marketCap) || Number(sd.marketCap) || 0) / price : 0);
+        if (shares > 0) {
+          setCap(sym, x, shares);
+          if (redis) await redis.set(`shares:${sym}`, shares, { ex: SHARES_TTL }).catch(() => {});
+        }
       } catch {
         /* 못 메우면 그대로 둔다 */
       }
