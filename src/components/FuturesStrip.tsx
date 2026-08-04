@@ -21,15 +21,14 @@ function Strip({ items, note }: { items: Item[]; note: string }) {
         <span className="text-[11px] font-semibold">지수선물</span>
         <span className="text-[10px] text-muted">{note}</span>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1 sm:grid-cols-4">
+      {/* 이름과 수치를 붙여 한 덩어리로 읽히게 하고, 항목 사이는 넉넉히 띄운다 */}
+      <div className="flex flex-wrap gap-x-6 gap-y-1.5">
         {items.map((x) => (
-          <div key={x.label} className="flex min-w-0 items-baseline justify-between gap-2">
-            <span className="truncate text-[11px] text-muted">{x.label}</span>
-            <span className="tnum shrink-0 text-xs font-semibold">
-              {num(x.price, 2)}
-              <span className={`ml-1 text-[11px] font-medium ${signColor(x.changePct)}`}>
-                {pct(x.changePct)}
-              </span>
+          <div key={x.label} className="flex min-w-0 items-baseline gap-1.5">
+            <span className="shrink-0 text-[11px] text-muted">{x.label}</span>
+            <span className="tnum text-xs font-semibold">{num(x.price, 2)}</span>
+            <span className={`tnum text-[11px] font-medium ${signColor(x.changePct)}`}>
+              {pct(x.changePct)}
             </span>
           </div>
         ))}
