@@ -61,7 +61,8 @@ export async function quoteAll(
  * 느리므로 호출마다 조금씩 채운다 — 몇 번 새로고침하면 전부 메워진다.
  */
 const SHARES_TTL = 7 * 24 * 3600; // 주식수 보관 기간
-const REPAIR_PER_CALL = 40; // 한 번에 새로 받아올 종목 수
+const REPAIR_PER_CALL = 24; // 한 번에 새로 받아올 종목 수
+const REPAIR_CONCURRENCY = 4; // 동시 조회 수 — 많이 보내면 야후가 막는다
 
 async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
   const broken = [...got.entries()].filter(
@@ -74,25 +75,36 @@ async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
     if (shares > 0 && price > 0) got.set(sym, { ...x, marketCap: shares * price });
   };
 
-  // 1) 보관해 둔 주식수로 먼저 메운다
-  let todo = broken;
+  // 1) 보관해 둔 주식수로 먼저 메운다 (키가 많으면 나눠서 조회)
+  const todo: typeof broken = [];
   if (redis) {
-    const hit = await redis
-      .mget<(number | null)[]>(...broken.map(([s]) => `shares:${s}`))
-      .catch(() => null);
-    if (hit) {
-      todo = [];
-      broken.forEach((entry, i) => {
-        const n = Number(hit[i]);
-        if (n > 0) setCap(entry[0], entry[1], n);
-        else todo.push(entry);
+    const cachedShares = new Map<string, number>();
+    for (let i = 0; i < broken.length; i += 50) {
+      const part = broken.slice(i, i + 50);
+      const hit = await redis
+        .mget<(number | null)[]>(...part.map(([s]) => `shares:${s}`))
+        .catch(() => null);
+      if (!hit) continue;
+      part.forEach(([sym], k) => {
+        const n = Number(hit[k]);
+        if (n > 0) cachedShares.set(sym, n);
       });
     }
+    for (const entry of broken) {
+      const n = cachedShares.get(entry[0]);
+      if (n) setCap(entry[0], entry[1], n);
+      else todo.push(entry);
+    }
+  } else {
+    todo.push(...broken);
   }
 
-  // 2) 남은 것은 상세조회로 주식수를 받아 보관한다 (호출마다 일부씩)
-  await Promise.all(
-    todo.slice(0, REPAIR_PER_CALL).map(async ([sym, x]) => {
+  // 2) 남은 것은 상세조회로 주식수를 받아 보관한다.
+  //    한꺼번에 많이 보내면 야후가 막아 하나도 못 건지므로 조금씩 나눠 보낸다.
+  const fresh = todo.slice(0, REPAIR_PER_CALL);
+  for (let i = 0; i < fresh.length; i += REPAIR_CONCURRENCY) {
+    await Promise.all(
+      fresh.slice(i, i + REPAIR_CONCURRENCY).map(async ([sym, x]) => {
       try {
         const d = await yahooFinance.quoteSummary(sym, {
           modules: ["price", "summaryDetail", "defaultKeyStatistics"],
@@ -111,10 +123,11 @@ async function repairMarketCap(got: Map<string, Record<string, unknown>>) {
           if (redis) await redis.set(`shares:${sym}`, shares, { ex: SHARES_TTL }).catch(() => {});
         }
       } catch {
-        /* 못 메우면 그대로 둔다 */
+        /* 못 메우면 그대로 둔다 — 다음 호출에서 다시 시도된다 */
       }
-    }),
-  );
+      }),
+    );
+  }
 }
 
 interface YQ {
