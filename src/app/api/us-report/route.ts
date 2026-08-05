@@ -12,6 +12,7 @@ import {
 } from "@/lib/us";
 import { koName } from "@/lib/usKo";
 import { bonds } from "@/lib/naverApi";
+import { marketIndicators } from "@/lib/marketIndex";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -58,6 +59,8 @@ async function build() {
   ]);
   // 시장지표 화면과 같은 4개국 국채금리 (한국·일본·미국·유럽)
   const bondRows = await bonds().catch(() => []);
+  // 한국 시장지표 화면에만 있는 묶음(아시아 증시·원화 환율)도 담는다
+  const km = await marketIndicators().catch(() => null);
   // 당일 30분 간격 장중 흐름 — 3대 지수와 SK하이닉스 ADR
   const FLOW: [string, string][] = [
     ["^DJI", "다우존스"],
@@ -132,12 +135,29 @@ async function build() {
     };
     // 화면과 같은 순서: 증시 → 지수 → 지수선물 → 환율 → 원자재 → 가상자산
     L.push("[ 시장지표 ]");
+    if (km?.asia?.length)
+      grp(
+        "아시아 증시",
+        km.asia.map((a) => ({ symbol: a.label, label: a.label, price: a.price, changePct: a.changePct })),
+      );
     grp("유럽 증시", ind.europe);
     grp("달러인덱스 · 변동성", ind.dollar);
     grp("지수선물", ind.futures);
     grp("환율", ind.fx, 4);
     grp("원자재", ind.commodities);
     grp("가상자산", ind.crypto);
+    if (km) {
+      grp(
+        "환율 (원화 기준)",
+        km.fx.map((x) => ({ symbol: x.label, label: x.label, price: x.price, changePct: x.changePct })),
+      );
+      grp(
+        "한국 지수선물",
+        km.futures
+          .filter((x) => /코스피200|코스닥150/.test(x.label))
+          .map((x) => ({ symbol: x.label, label: x.label, price: x.price, changePct: x.changePct })),
+      );
+    }
     L.push("");
   }
 
@@ -160,7 +180,7 @@ async function build() {
 
 export async function GET() {
   try {
-    const data = await cached(`us-report5:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
+    const data = await cached(`us-report6:${nyNow().date}:${Math.floor(Date.now() / 300_000)}`, 300, build);
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });

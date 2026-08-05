@@ -11,6 +11,7 @@ import {
 } from "@/lib/naverApi";
 import { breadth } from "@/lib/naver";
 import { marketIndicators } from "@/lib/marketIndex";
+import { usMarketIndicators, type UsIndicator } from "@/lib/us";
 import { indexChart } from "@/lib/yahoo";
 import { minute } from "@/lib/naver";
 import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
@@ -103,6 +104,8 @@ async function build() {
   ]);
   // 대시보드의 증시 주변자금 카드와 같은 데이터
   const deposits = await marketDeposit().catch(() => []);
+  // 미국 시장지표 화면에만 있는 묶음(유럽 증시·달러인덱스·달러 기준 원자재/환율)도 담는다
+  const ui = await usMarketIndicators().catch(() => null);
   // 대시보드 지수·수급 카드의 선물 투자자 수급 (코스피200 선물, 계약 단위)
   const futFlow = await indexTrend("FUT").catch(() => null);
 
@@ -240,12 +243,26 @@ async function build() {
       for (const it of items)
         L.push(`    ${it.label.padEnd(18)} ${f(it.price, digits).padStart(14)}  ${sign(it.changePct)}%`);
     };
+    // 미국 시장지표 화면에만 있는 항목을 합친다 (같은 항목이 두 번 나오지 않게)
+    const pick = (items: UsIndicator[] | undefined, labels: string[]) =>
+      (items ?? []).filter((x) => labels.includes(x.label));
+    // 리포트는 값만 쓰므로 스파크라인은 빈 배열로 맞춰 준다
+    const plain = (items: UsIndicator[]) =>
+      items.map((x) => ({ label: x.label, price: x.price, changePct: x.changePct, spark: [] }));
+
     L.push("[ 시장지표 ]");
     grp("아시아 증시", mi.asia);
-    grp("지수선물", mi.futures);
+    if (ui?.europe?.length) grp("유럽 증시", plain(ui.europe));
+    if (ui?.dollar?.length) grp("달러인덱스 · 변동성", plain(ui.dollar));
+    // 지수선물에 러셀2000(미국 화면에만 있음)을 더한다
+    grp("지수선물", [...mi.futures, ...plain(pick(ui?.futures, ["러셀2000 선물"]))]);
     grp("환율", mi.fx);
-    grp("원자재", mi.commodities);
+    // 달러 기준 환율은 원화 기준에 없는 교차환율이라 따로 담는다
+    if (ui?.fx?.length) grp("환율 (달러 기준)", plain(ui.fx), 4);
+    // 원자재에 구리(미국 화면에만 있음)를 더한다
+    grp("원자재", [...mi.commodities, ...plain(pick(ui?.commodities, ["구리"]))]);
     grp("가상자산 (원화)", mi.crypto, 0);
+    if (ui?.crypto?.length) grp("가상자산 (달러)", plain(ui.crypto), 4);
     L.push("");
   }
 
@@ -277,7 +294,7 @@ export async function GET() {
     // 마감 후에는 당일 확정본이므로 오래 캐시, 장중에는 짧게
     const closed = t.minutes >= 15 * 60 + 40;
     const data = await cached(
-      `close-report5:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report7:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );
