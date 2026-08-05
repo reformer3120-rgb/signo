@@ -4,8 +4,15 @@ import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { useSticky } from "@/lib/useSticky";
 import { compactWon, num, pct, signColor } from "@/lib/format";
 import type { FiRow } from "@/lib/kis";
+
+const BY_LABEL: Record<string, string> = {
+  net: "외국인·기관",
+  foreign: "외국인",
+  inst: "기관",
+};
 
 const MARKETS = [
   { key: "ALL", label: "전체" },
@@ -33,12 +40,14 @@ const SESSION_LABEL: Record<string, string> = {
 export function MarketFlowSection() {
   const [market, setMarket] = useState<"ALL" | "KOSPI" | "KOSDAQ">("ALL");
   const [dir, setDir] = useState<"buy" | "sell">("buy");
+  // 어느 주체 기준으로 순위를 볼지 — 종합(외국인+기관) / 외국인 / 기관
+  const [by, setBy] = useSticky<"net" | "foreign" | "inst">("kr.flow.by", "net");
   const { data, isLoading } = useSWR<{
     data: FiRow[];
     needKey?: boolean;
     mode?: "KRX+NXT" | "NXT" | "PENDING";
     session?: string;
-  }>(`/api/market-flow?market=${market}&dir=${dir}`, fetcher, {
+  }>(`/api/market-flow?market=${market}&dir=${dir}&by=${by}`, fetcher, {
     refreshInterval: 120_000,
     keepPreviousData: true,
   });
@@ -53,7 +62,7 @@ export function MarketFlowSection() {
         <span className="flex items-center gap-2">
           {byValue
             ? `시장 수급 · ${nxtOnly ? "NXT" : "통합"} 거래대금 상위`
-            : `시장 수급 · 외국인·기관 ${dir === "sell" ? "순매도" : "순매수"} 상위`}
+            : `시장 수급 · ${BY_LABEL[by]} ${dir === "sell" ? "순매도" : "순매수"} 상위`}
           {/* 현재 거래 세션(정규장 / NXT 프리·애프터마켓) */}
           {data?.session && (
             <span
@@ -72,6 +81,28 @@ export function MarketFlowSection() {
       }
       right={
         <div className="flex items-center gap-2">
+          {/* 순위를 매길 주체 — 데이터는 같고 정렬 기준만 달라진다 */}
+          {!byValue && (
+            <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+              {(
+                [
+                  ["net", "종합"],
+                  ["foreign", "외국인"],
+                  ["inst", "기관"],
+                ] as const
+              ).map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => setBy(k)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    by === k ? "bg-brand text-white" : "text-muted hover:text-fg"
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
           {!byValue && (
             <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
               {([
@@ -190,7 +221,7 @@ export function MarketFlowSection() {
               ? "NXT만 거래되는 시간대 — NXT 체결 기준 거래대금 상위 · KIS"
               : byValue
                 ? "외국인·기관 순매수는 장 마감 후 가집계로 제공됩니다. 그전까지는 KRX+NXT 통합 거래대금 상위를 표시하며, 집계가 들어오면 자동으로 순매수 순위로 전환됩니다 · KIS"
-                : `${dir === "sell" ? "순매도" : "순매수"} 대금 기준 · KRX+NXT 합산 · 거래량은 통합 기준 · KIS`}
+                : `${BY_LABEL[by]} ${dir === "sell" ? "순매도" : "순매수"} 대금 순 · KRX 가집계 · 거래량은 KRX+NXT 통합 기준 · KIS`}
           </div>
         </div>
       )}

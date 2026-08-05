@@ -1,7 +1,9 @@
 "use client";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
+import { useEffect, useState } from "react";
 import { num, pct, signColor } from "@/lib/format";
+import { krSessionNow } from "@/lib/session";
 
 interface Item {
   label: string;
@@ -37,13 +39,39 @@ function Strip({ items, note }: { items: Item[]; note: string }) {
   );
 }
 
-/** 국내 지수선물 (코스피200 · 코스닥150) */
+/**
+ * 국내 지수선물 (코스피200 · 코스닥150).
+ * 세션에 따라 이 값이 무엇인지 함께 적는다 — 마감 뒤에는 정규장 종가라서,
+ * 실시간처럼 보이면 오해를 부른다.
+ */
 export function KrFuturesStrip() {
   const { data } = useSWR<{ futures: Item[] }>("/api/market", fetcher, {
     refreshInterval: 120_000,
   });
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    const tick = () => {
+      const s = krSessionNow();
+      setNote(
+        s === "정규장"
+          ? "정규장 실시간"
+          : s === "장마감"
+            ? "정규장 종가 · 야간 흐름은 아래 미국 지수선물 참고"
+            : `${s} · 정규장 종가`,
+      );
+    };
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, []);
   const items = (data?.futures ?? []).filter((x) => /코스피200|코스닥150/.test(x.label));
-  return <Strip items={items} note="장 마감 후에도 거래됩니다" />;
+  return (
+    <>
+      <Strip items={items} note={note} />
+      {/* 국내 장이 닫힌 동안 방향을 읽을 수 있는 건 밤새 도는 미국 지수선물뿐이다 */}
+      {note.startsWith("장마감") && <UsFuturesStrip />}
+    </>
+  );
 }
 
 /** 미국 지수선물 (S&P500 · 나스닥100 · 다우 · 러셀2000) */

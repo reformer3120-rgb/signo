@@ -6,7 +6,6 @@ import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { KrSessionBadge } from "@/components/SessionBadge";
 import { KrFuturesStrip } from "@/components/FuturesStrip";
-import { krSessionNow } from "@/lib/session";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -56,7 +55,6 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
   const candles = chart?.data ?? [];
   const s = flow?.spot;
   const f = flow?.futures;
-  const fq = flow?.futQuote;
 
   return (
     <div className="min-w-0 rounded-lg border border-line/60 p-3">
@@ -156,20 +154,8 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
           )}
         </div>
         <div>
-          <div className="flex items-baseline gap-1.5 mb-1">
-            <span className="text-[11px] text-muted">선물 수급 (계약)</span>
-            {/* 지수선물 근월물 시세 — 코스피200 / 코스닥150 */}
-            {fq && (
-              <span className="ml-auto flex items-baseline gap-1 text-[11px]">
-                <span className="text-muted">{fq.name.replace(/\s*\d{6}$/, "")}</span>
-                <b className="tnum text-fg">{num(fq.price, 2)}</b>
-                <span className={`tnum font-medium ${signColor(fq.changePct)}`}>
-                  {fq.changePct > 0 ? "+" : ""}
-                  {fq.changePct.toFixed(2)}%
-                </span>
-              </span>
-            )}
-          </div>
+          {/* 지수선물 시세는 카드 아래 전용 박스에서 한 번만 보여준다 */}
+          <div className="mb-1 text-[11px] text-muted">선물 수급 (계약)</div>
           {f ? (
             <div className="grid grid-cols-3 gap-1">
               <Chip label="개인" text={num(f.personal)} cls={signColor(f.personal)} />
@@ -191,13 +177,6 @@ export function IndexSection() {
   const { data: flows } = useSWR<{ KOSPI: Flow; KOSDAQ: Flow }>("/api/index-flow", fetcher, {
     refreshInterval: 60_000,
   });
-  const [closed, setClosed] = useState(false);
-  useEffect(() => {
-    const tick = () => setClosed(krSessionNow() === "장마감");
-    tick();
-    const id = setInterval(tick, 30_000);
-    return () => clearInterval(id);
-  }, []);
 
   return (
     <Card
@@ -213,8 +192,8 @@ export function IndexSection() {
         <IndexPane market="KOSPI" label="코스피" flow={flows?.KOSPI} />
         <IndexPane market="KOSDAQ" label="코스닥" flow={flows?.KOSDAQ} />
       </div>
-      {/* 장이 끝나면 현물은 멈추므로 계속 움직이는 지수선물을 보여준다 */}
-      {closed && <KrFuturesStrip />}
+      {/* 지수선물은 장전·장중·장 마감 어느 때나 보여준다 (마감 뒤에는 야간 흐름) */}
+      <KrFuturesStrip />
     </Card>
   );
 }
