@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSticky } from "@/lib/useSticky";
 import { usePublishHeight } from "@/lib/useStickyOffset";
 import useSWR from "swr";
@@ -464,11 +464,24 @@ function NewsCard({ symbol }: { symbol: string }) {
 }
 
 export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) {
-  const [symbol, setSymbol] = useState(initialSymbol ?? "AAPL");
+  // 마지막으로 본 종목을 기억한다 — 다른 화면에 갔다 돌아와도 그대로.
+  // 주소로 종목을 지정해 들어온 경우에는 그쪽이 우선.
+  const [lastSym, setLastSym] = useSticky("us.stock.last", "AAPL");
+  const [pickedSym, setPickedSym] = useState<string | null>(initialSymbol ?? null);
+  const symbol = pickedSym ?? lastSym;
+  const setSymbol = (v: string) => {
+    setPickedSym(v);
+    setLastSym(v);
+  };
   const [tab, setTab] = useSticky("us.stock.tab", "1D");
   const [minU, setMinU] = useSticky("us.stock.min", "5m");
   const { money } = useCur();
   const [ind, setInd] = useState<Indicators>({});
+  useEffect(() => {
+    if (initialSymbol) setLastSym(initialSymbol);
+    // 진입 시 한 번만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSymbol]);
   const barRef = useRef<HTMLDivElement>(null);
   // 카드 안 시세줄이 이 바 바로 아래에 붙도록 높이를 알린다
   usePublishHeight(barRef, "--stockbar-h", 6);
