@@ -135,6 +135,7 @@ export function StockName({
   const ko = koName(symbol);
   return (
     <span className={`inline-flex min-w-0 items-baseline gap-1.5 ${className}`}>
+      {/* 색은 바깥에서 className 으로 준다 (등락에 따라 이름을 물들이는 화면이 있다) */}
       <span className="truncate font-medium">{ko ?? fallback ?? symbol}</span>
       <span className="tnum shrink-0 text-[11px] text-muted">{symbol}</span>
     </span>

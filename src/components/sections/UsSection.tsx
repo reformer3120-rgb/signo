@@ -231,7 +231,12 @@ function MarketCap({ onPick }: { onPick?: (s: string) => void }) {
                   >
                     <td className="tnum py-2 pl-1 text-muted">{i + 1}</td>
                     <td className="max-w-[13rem] truncate">
-                      <StockName symbol={s.symbol} fallback={s.name} />
+                      {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
+                      <StockName
+                        symbol={s.symbol}
+                        fallback={s.name}
+                        className={signColor(s.changePct)}
+                      />
                     </td>
                     <td className="tnum text-right whitespace-nowrap">
                       {money(s.price)}

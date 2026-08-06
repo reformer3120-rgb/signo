@@ -39,10 +39,11 @@ function CapTable({ market, label, limit }: { market: string; label: string; lim
               {rows.map((s, i) => (
                 <tr key={s.code} className="border-b border-line/40 hover:bg-surface/70 transition-colors">
                   <td className="py-2 pl-1 tnum text-muted">{i + 1}</td>
-                  <td className="font-medium max-w-[9rem] truncate">
+                  <td className="max-w-[9rem] truncate font-medium">
+                    {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
                     <Link
                       href={`/stock?code=${s.code}&name=${encodeURIComponent(s.name)}`}
-                      className="block truncate hover:text-brand hover:underline"
+                      className={`block truncate hover:underline ${signColor(s.changePct)}`}
                     >
                       {s.name}
                     </Link>

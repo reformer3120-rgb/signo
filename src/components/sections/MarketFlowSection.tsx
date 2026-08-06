@@ -161,12 +161,17 @@ export function MarketFlowSection() {
                   </th>
                 ) : (
                   <>
-                    <th className="text-right font-medium px-2 whitespace-nowrap">
-                      외국인 {dir === "sell" ? "순매도" : "순매수"}
-                    </th>
-                    <th className="text-right font-medium px-2 whitespace-nowrap">
-                      기관 {dir === "sell" ? "순매도" : "순매수"}
-                    </th>
+                    {/* 고른 주체의 열만 — 종합일 때만 둘 다 */}
+                    {by !== "inst" && (
+                      <th className="text-right font-medium px-2 whitespace-nowrap">
+                        외국인 {dir === "sell" ? "순매도" : "순매수"}
+                      </th>
+                    )}
+                    {by !== "foreign" && (
+                      <th className="text-right font-medium px-2 whitespace-nowrap">
+                        기관 {dir === "sell" ? "순매도" : "순매수"}
+                      </th>
+                    )}
                   </>
                 )}
                 <th className="text-right font-medium px-2 whitespace-nowrap">거래량</th>
@@ -178,10 +183,11 @@ export function MarketFlowSection() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.code} className="border-b border-line/40 hover:bg-surface/70">
-                  <td className="font-medium py-1.5 pl-1">
+                  <td className="py-1.5 pl-1 font-medium">
+                    {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
                     <Link
                       href={`/stock?code=${r.code}&name=${encodeURIComponent(r.name)}`}
-                      className="hover:text-brand hover:underline"
+                      className={`hover:underline ${signColor(r.changePct)}`}
                     >
                       {r.name}
                     </Link>
@@ -194,8 +200,8 @@ export function MarketFlowSection() {
                     </td>
                   ) : (
                     <>
-                      <Flow v={r.foreignValue} />
-                      <Flow v={r.instValue} />
+                      {by !== "inst" && <Flow v={r.foreignValue} />}
+                      {by !== "foreign" && <Flow v={r.instValue} />}
                     </>
                   )}
                   <td className="text-right tnum px-2 text-muted">
