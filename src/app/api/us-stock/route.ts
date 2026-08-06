@@ -32,7 +32,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ symbol, period, data });
     }
     if (part === "sector") {
-      const data = await cached(`us:sector3:${symbol}`, 900, () => usSectorRank(symbol));
+      const data = await cached(`us:sector4:${symbol}`, 900, () => usSectorRank(symbol));
       return NextResponse.json({ symbol, data });
     }
     if (part === "news") {
