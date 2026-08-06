@@ -2,6 +2,7 @@
 import { useEffect, useRef } from "react";
 import {
   createChart,
+  createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
@@ -217,6 +218,43 @@ export function CandleChart({
     const panes = chart.panes();
     panes[0]?.setStretchFactor(showRsi || showMacd ? 3 : 1);
     for (let i = 1; i < panes.length; i++) panes[i]?.setStretchFactor(1);
+
+    // 차트에 담긴 구간의 최고점·최저점을 그 캔들 위·아래에 표시한다.
+    // 지금 가격이 고점에서 얼마나 밀렸는지, 저점에서 얼마나 올랐는지를
+    // 눈으로 바로 재도록 등락률을 함께 적는다.
+    if (last && data.length > 1) {
+      let hi = data[0];
+      let lo = data[0];
+      for (const c of data) {
+        if (c.high > hi.high) hi = c;
+        if (c.low < lo.low) lo = c;
+      }
+      const cur = last.close;
+      const fromHigh = hi.high > 0 ? (cur / hi.high - 1) * 100 : 0; // 고점 대비 (음수)
+      const fromLow = lo.low > 0 ? (cur / lo.low - 1) * 100 : 0; // 저점 대비 (양수)
+      const price = (v: number) => v.toLocaleString("ko-KR", {
+        minimumFractionDigits: precision,
+        maximumFractionDigits: precision,
+      });
+      const rate = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+      createSeriesMarkers(candle, [
+        {
+          time: t(hi.time),
+          position: "aboveBar",
+          shape: "arrowDown",
+          // 고점 대비는 내려온 폭이라 하락색, 저점 대비는 올라온 폭이라 상승색
+          color: DOWN,
+          text: `고 ${price(hi.high)} ${rate(fromHigh)}`,
+        },
+        {
+          time: t(lo.time),
+          position: "belowBar",
+          shape: "arrowUp",
+          color: UP,
+          text: `저 ${price(lo.low)} ${rate(fromLow)}`,
+        },
+      ]);
+    }
 
     // 맞춰 둔 화면 범위가 있으면 그대로 되살리고, 없을 때만 전체 보기
     const ts = chart.timeScale();
