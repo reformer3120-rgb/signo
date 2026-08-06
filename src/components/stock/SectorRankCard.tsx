@@ -72,11 +72,21 @@ export function SectorRankCard({
           {r.target && (
             <div className="mb-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3">
               <div className="flex items-center gap-4">
-                <div className="text-center shrink-0">
-                  <div className={`tnum text-3xl font-bold ${scoreColor(r.target.score)}`}>
-                    {r.target.score}
+                {/* 절대점수 — 비교군을 바꿔도 변하지 않는 값. 기준선이 모이기 전에는 비교군 점수 */}
+                <div className="shrink-0 text-center">
+                  <div
+                    className={`tnum text-3xl font-bold ${scoreColor(r.target.absScore ?? r.target.score)}`}
+                  >
+                    {r.target.absScore ?? r.target.score}
                   </div>
-                  <div className="text-[11px] text-muted">점 / 100</div>
+                  <div className="text-[11px] text-muted">
+                    {r.target.absScore != null ? "점 / 시장 기준" : "점 / 비교군 기준"}
+                  </div>
+                  {r.target.absScore != null && (
+                    <div className="tnum mt-0.5 text-[10px] text-muted/70">
+                      비교군 {r.target.score}점
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold truncate">{r.target.name}</div>
@@ -217,7 +227,18 @@ export function SectorRankCard({
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
             점수 = 재무건전성(ROE·부채·이익률) 25 + 밸류(PER·PBR·EPS) 23 + 성장성 15 +
             시가총액 14 + 주가흐름(기간수익률·골든크로스) 10 + 외국인보유비중 10 + 배당 3
-            (비교군 내 상대평가, 100점)
+            <br />
+            큰 점수는 <b>시장 전체(시총 상위 100종목) 분포 기준</b>이라 비교군을 바꿔도
+            변하지 않습니다. 아래 세부 점수와 순위는 비교군 내 상대평가입니다.
+            {r.baseline && !r.baseline.ready && (
+              <>
+                {" "}
+                <span className="text-signal">
+                  (시장 기준 자료 수집 중 {r.baseline.samples}/{r.baseline.need} — 그때까지는
+                  비교군 기준 점수를 보여줍니다)
+                </span>
+              </>
+            )}
           </div>
         </>
       )}

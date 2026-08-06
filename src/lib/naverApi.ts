@@ -2,6 +2,15 @@
 // 시총상위 · 상승/하락률 상위(특징주) · 국내 지수 시세.
 import { daily } from "./naver";
 import { themesOf, themeByNo } from "./theme";
+import {
+  baselineScaler,
+  marketBaseline,
+  missingFrom,
+  saveMetrics,
+  MIN_SAMPLES,
+  type Baseline,
+  type StockMetrics,
+} from "./baseline";
 // 채점 규칙은 미국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
 import {
   dimScaler,
@@ -477,6 +486,8 @@ export interface ScoredStock {
   trendScore: number; // 최근 주가흐름 성적 (0~100)
   trendGrade: string; // A+ ~ D
   score: number;
+  /** 시장 전체 기준 절대점수 — 비교군을 바꿔도 변하지 않는다. 기준선이 덜 모이면 없음 */
+  absScore?: number;
   parts: {
     재무: number;
     성장: number;
@@ -500,6 +511,8 @@ export interface SectorRank {
   rank: number; // 검색종목 순위
   ranked: ScoredStock[]; // 상위 10
   target?: ScoredStock;
+  /** 절대점수 기준선 상태 */
+  baseline?: { ready: boolean; samples: number; need: number };
 }
 
 
@@ -702,6 +715,60 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const trend = enriched.map((e, i) =>
     trendScore({ w1: w1N[i], m1: m1N[i], m3: m3N[i], m6: m6N[i], y1: y1N[i] }, e.cross.score),
   );
+  // 절대점수용 주가흐름 — 비교군 정규화 대신 수익률 자체를 0~1로 환산해 쓴다
+  const pctTo01 = (v: number) => Math.min(1, Math.max(0, (v + 30) / 80)); // -30%~+50% 를 0~1로
+  const rawTrend = enriched.map((e) =>
+    trendScore(
+      {
+        w1: pctTo01(e.w1),
+        m1: pctTo01(e.m1),
+        m3: pctTo01(e.m3 || e.threeMo),
+        m6: pctTo01(e.m6),
+        y1: pctTo01(e.y1),
+      },
+      e.cross.score,
+    ),
+  );
+
+  // ---- 절대점수 ----
+  // 비교군과 무관하게 고정된 점수. 시장 전체 분포를 잣대로 쓴다.
+  const metricsOf = (e: E, i: number): StockMetrics => ({
+    roe: e.roe,
+    debt: e.debt,
+    opMargin: e.opMargin,
+    growth: e.growth,
+    per: e.per > 0 ? e.per : NaN,
+    pbr: e.pbr > 0 ? e.pbr : NaN,
+    eps: e.eps > 0 ? e.eps : NaN,
+    div: e.div,
+    cap: Math.log10(Math.max(e.cap, 1)),
+    foreign: e.foreignRate > 0 ? e.foreignRate : NaN,
+    // 주가흐름은 원자료가 아니라 이미 합쳐진 성적이라 그대로 보관한다
+    trend: rawTrend[i],
+  });
+  // 이번에 조회한 종목들의 지표는 기준선 재료로 모아 둔다
+  await Promise.all(enriched.map((e, i) => saveMetrics(e.code, metricsOf(e, i))));
+  const mkt = await marketBaseline(await baselineUniverse().catch(() => [])).catch(
+    () => ({ bounds: {}, samples: 0 }) as Baseline,
+  );
+  const absReady = mkt.samples >= MIN_SAMPLES;
+  const absScore = (e: E, i: number): number | undefined => {
+    if (!absReady) return undefined;
+    const m = metricsOf(e, i);
+    const S = (d: keyof StockMetrics) => {
+      const f = baselineScaler(mkt, d);
+      return f ? f(m[d]) : 0.5;
+    };
+    return totalScore({
+      재무: finScore(S("roe"), S("debt"), S("opMargin")),
+      밸류: valueScore(S("per"), S("pbr"), S("eps")),
+      성장: S("growth"),
+      시총: S("cap"),
+      모멘텀: S("trend"),
+      기관: S("foreign"),
+      배당: S("div"),
+    });
+  };
 
   const scored: ScoredStock[] = enriched.map((e, i) => {
     const 재무 = finScore(roeN[i], debtN[i], opN[i]);
@@ -737,6 +804,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
       score,
+      absScore: absScore(e, i),
       parts: {
         재무: Math.round(재무 * 100),
         성장: Math.round(성장 * 100),
@@ -754,6 +822,9 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const top10 = scored.slice(0, 10);
   // 검색한 종목이 상위 10위 밖이어도 목록 끝에 붙여 항상 보이게
   const ranked = target && !top10.some((s) => s.code === code) ? [...top10, target] : top10;
+  // 기준선이 아직 덜 모였으면 이번 호출에서 조금 더 채운다 (다음 호출부터 반영)
+  if (!absReady) void fillBaseline().catch(() => {});
+
   return {
     industryName: groupName,
     groupKey,
@@ -762,7 +833,61 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     rank: target?.rank ?? 0,
     ranked,
     target,
+    baseline: { ready: absReady, samples: mkt.samples, need: MIN_SAMPLES },
   };
+}
+
+/** 절대점수 기준선을 만들 시장 대표 종목 — 코스피·코스닥 시총 상위 */
+let BASELINE_UNIVERSE: string[] = [];
+
+async function baselineUniverse(): Promise<string[]> {
+  if (BASELINE_UNIVERSE.length) return BASELINE_UNIVERSE;
+  const [kp, kq] = await Promise.all([
+    stockList("marketValue", "KOSPI", 70).catch(() => []),
+    stockList("marketValue", "KOSDAQ", 30).catch(() => []),
+  ]);
+  BASELINE_UNIVERSE = [...kp, ...kq].map((s) => s.code);
+  return BASELINE_UNIVERSE;
+}
+
+/** 기준선 재료를 조금씩 채운다 — 한 번에 다 받으면 응답이 너무 느려진다 */
+async function fillBaseline(perCall = 6) {
+  const universe = await baselineUniverse();
+  const todo = await missingFrom(universe, perCall);
+  for (const code of todo) {
+    try {
+      const [dd, finA, bars] = await Promise.all([
+        stockDetail(code).catch(() => null),
+        financials(code, "annual").catch(() => null),
+        daily(code, 270).catch(() => []),
+      ]);
+      const fm = finA ? finMetrics(finA) : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
+      const closes = bars.map((b) => b.close).filter((c) => c > 0);
+      const r = periodReturns(closes);
+      const pct01 = (v: number) => Math.min(1, Math.max(0, (v + 30) / 80));
+      await saveMetrics(code, {
+        ...fm,
+        per: dd?.per && dd.per > 0 ? dd.per : NaN,
+        pbr: dd?.pbr && dd.pbr > 0 ? dd.pbr : NaN,
+        eps: dd?.eps && dd.eps > 0 ? dd.eps : NaN,
+        div: dd?.dividendYield ?? 0,
+        cap: Math.log10(Math.max((dd?.marketCap ?? 0) * 1e8, 1)),
+        foreign: numSuffix(dd?.foreignRate),
+        trend: trendScore(
+          {
+            w1: pct01(r.w1),
+            m1: pct01(r.m1),
+            m3: pct01(r.m3),
+            m6: pct01(r.m6),
+            y1: pct01(r.y1),
+          },
+          maCross(closes).score,
+        ),
+      });
+    } catch {
+      /* 한 종목 실패는 넘어간다 */
+    }
+  }
 }
 
 export interface SearchItem {
