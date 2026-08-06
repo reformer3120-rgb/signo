@@ -150,26 +150,28 @@ export function MarketFlowSection() {
       ) : (
         <div className="overflow-x-auto">
           {/*
-            탭을 바꾸면 열 개수가 달라지는데, 폭이 자동이면 남는 공간을 다시 나눠
-            가지면서 현재가·등락률 자리가 매번 움직인다. 폭을 못 박고 남는 공간은
-            맨 끝 빈 칸이 흡수하게 해서 자리를 고정한다.
+            탭을 바꾸면 순매수 열이 둘에서 하나로 준다. 폭이 자동이면 남는 공간을
+            다시 나눠 가지면서 현재가·등락률 자리가 매번 움직였다.
+            폭을 비율로 못 박되, 한 주체만 볼 때는 그 열이 두 열 몫(26%)을 가져가
+            합계가 늘 100%가 되게 한다 → 표는 꽉 차고 다른 열은 제자리에 있다.
           */}
           <table className="w-full table-fixed text-sm">
             <colgroup>
-              <col className="w-44" />
-              <col className="w-24" />
-              <col className="w-20" />
+              <col style={{ width: byValue ? "30%" : "26%" }} />
+              <col style={{ width: byValue ? "15%" : "13%" }} />
+              <col style={{ width: byValue ? "13%" : "11%" }} />
               {byValue ? (
-                <col className="w-32" />
-              ) : (
+                <col style={{ width: "22%" }} />
+              ) : by === "net" ? (
                 <>
-                  {by !== "inst" && <col className="w-28" />}
-                  {by !== "foreign" && <col className="w-28" />}
+                  <col style={{ width: "13%" }} />
+                  <col style={{ width: "13%" }} />
                 </>
+              ) : (
+                <col style={{ width: "26%" }} />
               )}
-              <col className="w-28" />
-              {!byValue && <col className="w-20" />}
-              <col />
+              <col style={{ width: byValue ? "20%" : "13%" }} />
+              {!byValue && <col style={{ width: "11%" }} />}
             </colgroup>
             <thead>
               <tr className="text-xs text-muted border-b border-line">
@@ -199,8 +201,6 @@ export function MarketFlowSection() {
                 {!byValue && (
                   <th className="text-right font-medium px-2 whitespace-nowrap">NXT비중</th>
                 )}
-                {/* 남는 가로 공간을 흡수해 앞의 열들이 밀리지 않게 한다 */}
-                <th />
               </tr>
             </thead>
             <tbody>
@@ -242,7 +242,6 @@ export function MarketFlowSection() {
                       )}
                     </td>
                   )}
-                  <td />
                 </tr>
               ))}
             </tbody>
