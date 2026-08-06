@@ -219,42 +219,53 @@ export function CandleChart({
     panes[0]?.setStretchFactor(showRsi || showMacd ? 3 : 1);
     for (let i = 1; i < panes.length; i++) panes[i]?.setStretchFactor(1);
 
-    // 차트에 담긴 구간의 최고점·최저점을 그 캔들 위·아래에 표시한다.
-    // 지금 가격이 고점에서 얼마나 밀렸는지, 저점에서 얼마나 올랐는지를
-    // 눈으로 바로 재도록 등락률을 함께 적는다.
-    if (last && data.length > 1) {
-      let hi = data[0];
-      let lo = data[0];
-      for (const c of data) {
-        if (c.high > hi.high) hi = c;
-        if (c.low < lo.low) lo = c;
-      }
-      const cur = last.close;
-      const fromHigh = hi.high > 0 ? (cur / hi.high - 1) * 100 : 0; // 고점 대비 (음수)
-      const fromLow = lo.low > 0 ? (cur / lo.low - 1) * 100 : 0; // 저점 대비 (양수)
-      const price = (v: number) => v.toLocaleString("ko-KR", {
+    // 화면에 보이는 구간의 최고점·최저점을 그 캔들 위·아래에 표시한다.
+    // 전체 구간이 아니라 '보이는 만큼'을 기준으로 삼는 이유는, 확대해서 최근
+    // 흐름만 보고 있는데 1년 전 저점을 가리키면 지금 판단에 쓸 수 없기 때문이다.
+    // 확대·이동할 때마다 다시 계산한다.
+    const markers = createSeriesMarkers(candle, []);
+    const priceText = (v: number) =>
+      v.toLocaleString("ko-KR", {
         minimumFractionDigits: precision,
         maximumFractionDigits: precision,
       });
-      const rate = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
-      createSeriesMarkers(candle, [
+    const rateText = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
+
+    const updateMarkers = () => {
+      if (!last || data.length < 2) return;
+      const r = chart.timeScale().getVisibleLogicalRange();
+      // 화면 범위를 봉 번호로 바꾼다 (범위를 못 얻으면 전체)
+      const from = Math.max(0, Math.floor(r?.from ?? 0));
+      const to = Math.min(data.length - 1, Math.ceil(r?.to ?? data.length - 1));
+      if (to <= from) return;
+      let hi = data[from];
+      let lo = data[from];
+      for (let i = from; i <= to; i++) {
+        if (data[i].high > hi.high) hi = data[i];
+        if (data[i].low < lo.low) lo = data[i];
+      }
+      // 기준은 언제나 현재가 — 화면 밖이라도 '지금 얼마인가'가 알고 싶은 값이다
+      const cur = last.close;
+      const fromHigh = hi.high > 0 ? (cur / hi.high - 1) * 100 : 0; // 고점 대비 (내려온 폭)
+      const fromLow = lo.low > 0 ? (cur / lo.low - 1) * 100 : 0; // 저점 대비 (올라온 폭)
+      markers.setMarkers([
         {
           time: t(hi.time),
           position: "aboveBar",
           shape: "arrowDown",
           // 고점 대비는 내려온 폭이라 하락색, 저점 대비는 올라온 폭이라 상승색
           color: DOWN,
-          text: `고 ${price(hi.high)} ${rate(fromHigh)}`,
+          text: `고 ${priceText(hi.high)} ${rateText(fromHigh)}`,
         },
         {
           time: t(lo.time),
           position: "belowBar",
           shape: "arrowUp",
           color: UP,
-          text: `저 ${price(lo.low)} ${rate(fromLow)}`,
+          text: `저 ${priceText(lo.low)} ${rateText(fromLow)}`,
         },
       ]);
-    }
+    };
 
     // 맞춰 둔 화면 범위가 있으면 그대로 되살리고, 없을 때만 전체 보기
     const ts = chart.timeScale();
@@ -272,10 +283,12 @@ export function CandleChart({
     let armed = false;
     const arm = setTimeout(() => (armed = true), 300);
     const onRange = (r: { from: number; to: number } | null) => {
+      updateMarkers(); // 보이는 구간이 바뀌면 고저도 다시 잡는다
       if (!armed || !viewKey || !r) return;
       saveView(viewKey, { from: r.from, to: r.to, len: data.length });
     };
     ts.subscribeVisibleLogicalRangeChange(onRange);
+    updateMarkers();
 
     return () => {
       clearTimeout(arm);
