@@ -997,7 +997,11 @@ export async function sectors(): Promise<Sector[]> {
   const d = await getJson(
     `https://m.stock.naver.com/api/stocks/industry?market=KOSPI&page=1&pageSize=100`,
   );
-  return ((d.groups ?? []) as RawGroup[]).map((g) => ({
+  return ((d.groups ?? []) as RawGroup[])
+    // '기타'는 업종이 아니라 분류되지 않은 것들(ETF 포함 1500여 종목)의 묶음이라
+    // 강약 순위에 끼면 뜻이 없다
+    .filter((g) => g.name !== "기타")
+    .map((g) => ({
     code: String(g.no ?? ""),
     name: g.name,
     changeRate: Number(g.changeRate) || 0,
@@ -1013,17 +1017,32 @@ export async function sectors(): Promise<Sector[]> {
 export async function sectorStocks(code: string, limit = 8): Promise<
   { code: string; name: string; changeRate: number; cap: number }[]
 > {
-  const d = await getJson(
-    `https://m.stock.naver.com/api/stocks/industry/${code}?page=1&pageSize=100`,
+  // 업종 구성종목은 100건씩 끊어 오고 시총순이 아니다. 1페이지만 읽으면
+  // 삼성전자·SK하이닉스 같은 대형주가 뒤 페이지로 밀려 통째로 빠진다.
+  const url = (page: number) =>
+    `https://m.stock.naver.com/api/stocks/industry/${code}?page=${page}&pageSize=100`;
+  const first = await getJson(url(1));
+  const pages = Math.min(Math.ceil((Number(first.totalCount) || 0) / 100), 5);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(pages - 1, 0) }, (_, i) =>
+      getJson(url(i + 2)).catch(() => ({ stocks: [] })),
+    ),
   );
-  const rows = ((d.stocks ?? []) as Record<string, string>[]).map((x) => ({
+  const raw = [first, ...rest].flatMap((p) => (p.stocks ?? []) as Record<string, string>[]);
+  const rows = raw.map((x) => ({
     code: String(x.itemCode ?? ""),
     name: String(x.stockName ?? ""),
     changeRate: Number(String(x.fluctuationsRatio ?? "").replace(/,/g, "")) || 0,
     cap: n(x.marketValueRaw ?? x.marketValue),
   }));
+  // ETF·ETN 은 업종 구성종목에 섞여 있는데 그 업종을 대표하지 않는다
   return rows
-    .filter((r) => r.code)
+    .filter((r) => r.code && !KW.test(r.name) && !ETF_BRAND.test(r.name))
     .sort((a, b) => b.cap - a.cap)
     .slice(0, limit);
 }
+
+// 특징주와 같은 기준 — ETF 브랜드로 시작하거나 파생 키워드가 든 이름 제외
+const ETF_BRAND =
+  /^(KODEX|TIGER|KBSTAR|KOSEF|ARIRANG|HANARO|RISE|SOL|ACE|PLUS|KINDEX|TIMEFOLIO|TREX|FOCUS|KIWOOM|WOORI|1Q|HK|BNK|WON|히어로즈|마이티|파워)\s/i;
+const KW = /레버리지|인버스|2X|3X|곱버스|ETN|ETF|선물|국고채|커버드콜|합성|리츠|액티브|금리/i;

@@ -4,6 +4,7 @@ import {
   indices,
   indexTrend,
   sectors,
+  sectorStocks,
   stockList,
   bonds,
   highLow,
@@ -230,10 +231,34 @@ async function build() {
   }
 
   if (sec.length) {
+    // 화면(섹터 강약 카드)과 같은 8개씩
     const sorted = [...sec].sort((a, b) => b.changeRate - a.changeRate);
+    const strong = sorted.slice(0, 8);
+    const weak = sorted.slice(-8).reverse();
+    // 어느 종목이 그 섹터를 끌었는지 — 시총 상위 5종목을 함께 담는다
+    const members = new Map<string, string>();
+    await Promise.all(
+      [...strong, ...weak].map(async (x) => {
+        if (!x.code) return;
+        const rows = await sectorStocks(x.code, 5).catch(() => []);
+        if (rows.length)
+          members.set(
+            x.code,
+            rows.map((r) => `${r.name} ${sign(r.changeRate)}%`).join(", "),
+          );
+      }),
+    );
+    const block = (title: string, rows: typeof strong) => {
+      L.push(`  ${title}`);
+      for (const x of rows) {
+        L.push(`    ${x.name} ${sign(x.changeRate)}%  (상승 ${x.rise} / 하락 ${x.fall} / ${x.count}종목)`);
+        const m = members.get(x.code);
+        if (m) L.push(`      주요종목: ${m}`);
+      }
+    };
     L.push("[ 섹터 강약 ]");
-    L.push(`  강세: ${sorted.slice(0, 5).map((s) => `${s.name} ${sign(s.changeRate)}%`).join(", ")}`);
-    L.push(`  약세: ${sorted.slice(-5).reverse().map((s) => `${s.name} ${sign(s.changeRate)}%`).join(", ")}`);
+    block("강세", strong);
+    block("약세", weak);
     L.push("");
   }
 
@@ -297,7 +322,7 @@ export async function GET() {
     // 수급이 자리를 잡는 18시 이후부터 확정본으로 오래 캐시한다.
     const closed = t.minutes >= 18 * 60;
     const data = await cached(
-      `close-report8:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report10:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );

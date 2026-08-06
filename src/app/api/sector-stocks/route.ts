@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     const data =
       market === "us"
         ? await cached(`sec:us:${code}`, 120, () => usSectorStocks(code))
-        : await cached(`sec:kr:${code}`, 120, () => sectorStocks(code.replace(/\D/g, "")));
+        : await cached(`sec2:kr:${code}`, 120, () => sectorStocks(code.replace(/\D/g, "")));
     return NextResponse.json({ data });
   } catch (e) {
     return NextResponse.json({ error: String(e), data: [] }, { status: 502 });
