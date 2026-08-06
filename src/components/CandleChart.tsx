@@ -8,6 +8,7 @@ import {
   LineSeries,
   ColorType,
   CrosshairMode,
+  PriceScaleMode,
   LineStyle,
   type IChartApi,
   type UTCTimestamp,
@@ -121,7 +122,14 @@ export function CandleChart({
       },
       grid: { vertLines: { color: grid }, horzLines: { color: grid } },
       // 가격축 하단을 거래량 오버레이 몫으로 항상 비워둬 확대/축소·타임프레임 전환 시에도 캔들-거래량 겹침 방지
-      rightPriceScale: { borderColor: "transparent", scaleMargins: { top: 0.08, bottom: 0.24 } },
+      // 가격축은 로그 눈금. 같은 등락률이 같은 높이로 보여서 장기 구간의
+      // 오름폭·내림폭을 눈으로 견줄 수 있다.
+      // 거래량은 별도 축(vol)이고 RSI·MACD 는 다른 패널이라 영향받지 않는다.
+      rightPriceScale: {
+        borderColor: "transparent",
+        mode: PriceScaleMode.Logarithmic,
+        scaleMargins: { top: 0.08, bottom: 0.24 },
+      },
       timeScale: { borderColor: "transparent", timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
