@@ -834,8 +834,14 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   };
 }
 
-/** 절대점수 기준선을 만들 시장 대표 종목 — 코스피·코스닥 시총 상위 */
+/**
+ * 두 가지 범위를 쓴다.
+ *   기준선 표본 — 점수의 잣대를 만드는 종목. 시장을 대표해야 하므로 시총 상위 100.
+ *   등급 대상   — 등급을 매겨 둘 종목. 목록 화면에 뜨는 중소형주까지 넓게 300.
+ * 표본을 넓히면 잣대가 소형주 쪽으로 쏠리므로 둘을 나눠 둔다.
+ */
 let BASELINE_UNIVERSE: string[] = [];
+let GRADE_UNIVERSE: string[] = [];
 
 export async function baselineUniverse(): Promise<string[]> {
   if (BASELINE_UNIVERSE.length) return BASELINE_UNIVERSE;
@@ -847,11 +853,45 @@ export async function baselineUniverse(): Promise<string[]> {
   return BASELINE_UNIVERSE;
 }
 
-/** 기준선 재료를 조금씩 채운다 — 한 번에 다 받으면 응답이 너무 느려진다 */
+export async function gradeUniverse(): Promise<string[]> {
+  if (GRADE_UNIVERSE.length) return GRADE_UNIVERSE;
+  const [kp, kq] = await Promise.all([
+    stockList("marketValue", "KOSPI", 180).catch(() => []),
+    stockList("marketValue", "KOSDAQ", 120).catch(() => []),
+  ]);
+  GRADE_UNIVERSE = [...kp, ...kq].map((s) => s.code);
+  return GRADE_UNIVERSE;
+}
+
+/**
+ * 하루 한 번 미리 지표를 모아 둔다 (크론).
+ * 평가는 직전 종가 기준이라 하루 한 번만 만들면 그날 내내 그대로 쓸 수 있다.
+ * 주어진 시간 안에서 할 수 있는 만큼만 하고, 못 채운 종목은 다음 실행에서 이어간다.
+ */
+export async function collectMetrics(budgetMs = 50_000): Promise<{ 채움: number; 남음: number }> {
+  const started = Date.now();
+  const universe = await gradeUniverse();
+  let done = 0;
+  while (Date.now() - started < budgetMs) {
+    const todo = await missingFrom(universe, 8);
+    if (!todo.length) break;
+    await Promise.all(todo.map((c) => fillOne(c)));
+    done += todo.length;
+  }
+  const left = (await missingFrom(universe, 1)).length;
+  return { 채움: done, 남음: left };
+}
+
+/** 크론이 아직 안 돌았을 때를 위한 최소한의 보충 — 기준선 표본만 조금씩 */
 async function fillBaseline(perCall = 6) {
   const universe = await baselineUniverse();
   const todo = await missingFrom(universe, perCall);
-  for (const code of todo) {
+  await Promise.all(todo.map((c) => fillOne(c)));
+}
+
+/** 종목 하나의 지표를 받아 보관한다 */
+async function fillOne(code: string) {
+  {
     try {
       const [dd, finA, bars] = await Promise.all([
         stockDetail(code).catch(() => null),
