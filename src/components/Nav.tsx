@@ -16,13 +16,13 @@ const MARKETS = [
 const SUB: Record<string, { href: string; label: string }[]> = {
   kr: [
     { href: "/", label: "대시보드" },
-    { href: "/market", label: "시장지표" },
     { href: "/stock", label: "종목" },
+    { href: "/market", label: "시장지표" },
   ],
   us: [
     { href: "/us", label: "대시보드" },
-    { href: "/us/market", label: "시장지표" },
     { href: "/us/stock", label: "종목" },
+    { href: "/us/market", label: "시장지표" },
   ],
 };
 
