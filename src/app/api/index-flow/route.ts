@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
 import { indexTrend, stockList, type Market } from "@/lib/naverApi";
+import { futuresInvestorFlow } from "@/lib/flow";
 import { breadth } from "@/lib/naver";
 import { hasKIS, programTrade, nxtBreadth, currentSession, indexFutures } from "@/lib/kis";
 
@@ -28,16 +29,9 @@ async function flow(market: Market) {
       nxt = null;
     }
   }
-  // 선물 투자자 수급(계약 단위)은 네이버가 코스피200 선물(FUT)만 제공
-  let futures = null;
-  if (market === "KOSPI") {
-    try {
-      const f = await indexTrend("FUT");
-      futures = { personal: f.personal, foreign: f.foreign, institutional: f.institutional };
-    } catch {
-      futures = null;
-    }
-  }
+  // 선물 투자자 수급(계약 단위)은 네이버가 코스피200 선물(FUT)만 제공.
+  // 마감 리포트와 같은 값을 보도록 공용 함수를 쓴다.
+  const futures = market === "KOSPI" ? await futuresInvestorFlow() : null;
   // 지수선물 시세 — 코스피200(101) / 코스닥150(106) 근월물
   let futQuote = null;
   if (hasKIS()) {

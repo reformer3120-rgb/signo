@@ -16,6 +16,7 @@ import { indexChart } from "@/lib/yahoo";
 import { minute } from "@/lib/naver";
 import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
 import { marketDeposit } from "@/lib/deposit";
+import { futuresInvestorFlow } from "@/lib/flow";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -106,8 +107,8 @@ async function build() {
   const deposits = await marketDeposit().catch(() => []);
   // 미국 시장지표 화면에만 있는 묶음(유럽 증시·달러인덱스·달러 기준 원자재/환율)도 담는다
   const ui = await usMarketIndicators().catch(() => null);
-  // 대시보드 지수·수급 카드의 선물 투자자 수급 (코스피200 선물, 계약 단위)
-  const futFlow = await indexTrend("FUT").catch(() => null);
+  // 대시보드 지수·수급 카드와 같은 값 (공용 함수 — 따로 받으면 값이 어긋난다)
+  const futFlow = await futuresInvestorFlow().catch(() => null);
 
   const L: string[] = [];
   L.push(`SIGNO 장 마감 리포트`);
@@ -291,10 +292,12 @@ async function build() {
 export async function GET() {
   try {
     const t = seoulParts();
-    // 마감 후에는 당일 확정본이므로 오래 캐시, 장중에는 짧게
-    const closed = t.minutes >= 15 * 60 + 40;
+    // 마감 직후에는 투자자별 수급이 아직 가집계라 값이 바뀐다.
+    // 그때 굳혀 버리면 화면은 확정치로 바뀌는데 리포트만 옛 값에 머문다.
+    // 수급이 자리를 잡는 18시 이후부터 확정본으로 오래 캐시한다.
+    const closed = t.minutes >= 18 * 60;
     const data = await cached(
-      `close-report7:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
+      `close-report8:${t.date}:${closed ? "final" : Math.floor(t.minutes / 5)}`,
       closed ? 21_600 : 300,
       build,
     );
