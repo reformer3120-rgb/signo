@@ -49,8 +49,8 @@ export function SectorSection() {
   const { strong, weak, max } = useMemo(() => {
     const secs = [...(data?.data ?? [])].sort((a, b) => b.changeRate - a.changeRate);
     return {
-      strong: secs.slice(0, 6),
-      weak: secs.slice(-6).reverse(),
+      strong: secs.slice(0, 8),
+      weak: secs.slice(-8).reverse(),
       max: Math.max(1, ...secs.map((s) => Math.abs(s.changeRate))),
     };
   }, [data]);
