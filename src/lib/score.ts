@@ -147,3 +147,51 @@ export function gradeOf(s: number): string {
   if (s >= 40) return "C";
   return "D";
 }
+
+/**
+ * 종합점수 → 등급 (S+ 최상 ~ E- 최하)
+ *
+ * 구간은 실제 점수 분포에 맞춰 잡았다. 시총 상위 종목을 표본으로 재보니
+ * 32~84 사이에 몰려 있고 중앙값이 50대 중반이었다. 그래서 값이 촘촘한
+ * 28~87 구간은 5점 폭으로 잘게 나눠 등급이 실제로 구분되게 하고,
+ * 양 끝은 넓게 두었다 — 그 바깥은 아주 드물게만 닿는 자리다.
+ *
+ *   S+ 88↑   아주 드문 최상위        A  63~67   대형 우량주가 닿는 곳
+ *   S  80~87 (SK하이닉스 84)         B  48~52   (현대차·HMM 51)
+ *   C  33~37 (SK이노베이션 36)       E  12↓    사실상 바닥
+ */
+const GRADE_CUTS: [number, string][] = [
+  [88, "S+"],
+  [80, "S"],
+  [74, "S-"],
+  [68, "A+"],
+  [63, "A"],
+  [58, "A-"],
+  [53, "B+"],
+  [48, "B"],
+  [43, "B-"],
+  [38, "C+"],
+  [33, "C"],
+  [28, "C-"],
+  [23, "D+"],
+  [18, "D"],
+  [13, "D-"],
+  [8, "E+"],
+  [4, "E"],
+  [0, "E-"],
+];
+
+export function scoreGrade(score: number): string {
+  for (const [cut, g] of GRADE_CUTS) if (score >= cut) return g;
+  return "E-";
+}
+
+/** 등급 배지 색 — S·A 계열은 상승색, B는 중립, C 이하는 하락색 */
+export function scoreGradeTone(grade: string): string {
+  const head = grade[0];
+  if (head === "S") return "border-up/50 bg-up/20 text-up";
+  if (head === "A") return "border-up/35 bg-up/10 text-up";
+  if (head === "B") return "border-signal/40 bg-signal/10 text-signal";
+  if (head === "C") return "border-line bg-canvas/60 text-muted";
+  return "border-down/40 bg-down/10 text-down";
+}

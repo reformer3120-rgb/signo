@@ -9,7 +9,8 @@ import { Card } from "@/components/Card";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
-import { gradeColor, maColor, num, pct, signColor } from "@/lib/format";
+import { maColor, num, pct, signColor } from "@/lib/format";
+import { scoreGrade, scoreGradeTone } from "@/lib/score";
 import type { Candle } from "@/lib/types";
 import { useCur, CurrencyToggle, StockName, ExtQuote } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
@@ -286,11 +287,16 @@ function SectorCard({
           {r.target && (
             <div className="mb-4 rounded-xl border border-brand/30 bg-brand/5 px-4 py-3">
               <div className="flex items-center gap-4">
+                {/* 등급이 주 표시, 점수는 아래에 */}
                 <div className="shrink-0 text-center">
-                  <div className={`tnum text-3xl font-bold ${scoreColor(r.target.score)}`}>
-                    {r.target.score}
+                  <div
+                    className={`rounded-xl border px-3 py-1 text-3xl font-bold ${scoreGradeTone(
+                      scoreGrade(r.target.score),
+                    )}`}
+                  >
+                    {scoreGrade(r.target.score)}
                   </div>
-                  <div className="text-[11px] text-muted">점 / 100</div>
+                  <div className="tnum mt-1 text-[11px] text-muted">{r.target.score}점</div>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold">
@@ -329,14 +335,8 @@ function SectorCard({
               <div className="mt-3 rounded-lg bg-canvas/60 px-3 py-2">
                 <div className="mb-1.5 flex items-center gap-2">
                   <span className="text-[11px] font-semibold">최근 주가흐름 성적표</span>
-                  <span
-                    className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold ${gradeColor(
-                      r.target.trendGrade,
-                    )}`}
-                  >
-                    {r.target.trendGrade}
-                  </span>
-                  <span className="tnum text-[11px] text-muted">{r.target.trendScore}점</span>
+                  {/* 등급 없이 점수만 — 종합평가 등급과 헷갈리지 않게 */}
+                  <span className="tnum text-[11px] font-semibold">{r.target.trendScore}점</span>
                   {r.target.maSignal && r.target.maSignal !== "-" && (
                     <span
                       className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
@@ -408,8 +408,15 @@ function SectorCard({
                     {(s.y1 ?? 0) > 0 ? "+" : ""}
                     {s.y1 ?? 0}%
                   </span>
-                  <span className={`tnum w-9 shrink-0 text-right text-sm font-bold ${scoreColor(s.score)}`}>
-                    {s.score}
+                  <span className="flex shrink-0 items-baseline justify-end gap-1.5">
+                    <span className="tnum w-8 text-right text-sm font-bold">{s.score}</span>
+                    <span
+                      className={`w-8 rounded border px-1 py-0.5 text-center text-[10px] font-bold ${scoreGradeTone(
+                        scoreGrade(s.score),
+                      )}`}
+                    >
+                      {scoreGrade(s.score)}
+                    </span>
                   </span>
                 </li>
               );
