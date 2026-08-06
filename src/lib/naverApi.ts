@@ -849,7 +849,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
 /**
  * 두 가지 범위를 쓴다.
  *   기준선 표본 — 점수의 잣대를 만드는 종목. 시장을 대표해야 하므로 시총 상위 100.
- *   등급 대상   — 등급을 매겨 둘 종목. 목록 화면에 뜨는 중소형주까지 넓게 300.
+ *   등급 대상   — 등급을 매겨 둘 종목. 목록 화면에 뜨는 중소형주까지 넓게 600.
  * 표본을 넓히면 잣대가 소형주 쪽으로 쏠리므로 둘을 나눠 둔다.
  */
 let BASELINE_UNIVERSE: string[] = [];
@@ -868,8 +868,8 @@ export async function baselineUniverse(): Promise<string[]> {
 export async function gradeUniverse(): Promise<string[]> {
   if (GRADE_UNIVERSE.length) return GRADE_UNIVERSE;
   const [kp, kq] = await Promise.all([
-    stockList("marketValue", "KOSPI", 180).catch(() => []),
-    stockList("marketValue", "KOSDAQ", 120).catch(() => []),
+    stockList("marketValue", "KOSPI", 350).catch(() => []),
+    stockList("marketValue", "KOSDAQ", 250).catch(() => []),
   ]);
   GRADE_UNIVERSE = [...kp, ...kq].map((s) => s.code);
   return GRADE_UNIVERSE;

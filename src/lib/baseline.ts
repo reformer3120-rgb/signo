@@ -56,7 +56,10 @@ export interface Baseline {
   samples: number;
 }
 
-const METRIC_TTL = 3 * 24 * 3600; // 종목별 지표 보관 기간
+// 종목별 지표 보관 기간.
+// 크론 한 번(50초)에 200종목쯤 채운다. 600종목을 이 기간 안에 돌려가며 채우도록
+// 넉넉히 잡았다 — 짧으면 만료가 채우는 속도를 앞질러 빈 종목이 계속 남는다.
+const METRIC_TTL = 5 * 24 * 3600;
 const KEY = (code: string) => `mx:${code}`;
 /** 기준선으로 인정할 최소 표본 — 이보다 적으면 잣대로 쓰지 않는다 */
 export const MIN_SAMPLES = 25;

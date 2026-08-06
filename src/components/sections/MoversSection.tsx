@@ -73,9 +73,11 @@ export function MoversSection() {
                           className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 transition-colors hover:border-brand/40 hover:bg-brand/5"
                         >
                           <span className="tnum text-xs text-muted w-5 shrink-0">{rank}</span>
-                          <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
-                          {/* 종합평가 등급 */}
-                          <GradeBadge score={grades[s.code]} />
+                          {/* 등급은 종목명 바로 옆에 — 이름과 한 덩어리로 읽히게 */}
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                            <span className="truncate font-medium">{s.name}</span>
+                            <GradeBadge score={grades[s.code]} />
+                          </span>
                           <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
                           <span
                             className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}
