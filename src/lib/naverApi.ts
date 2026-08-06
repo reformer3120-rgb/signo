@@ -1,6 +1,7 @@
 // 네이버 모바일 stock JSON API (로그인 불필요). 서버 전용.
 // 시총상위 · 상승/하락률 상위(특징주) · 국내 지수 시세.
 import { daily } from "./naver";
+import { krSessionNow } from "./session";
 import { themesOf, themeByNo } from "./theme";
 import {
   baselineScaler,
@@ -486,8 +487,6 @@ export interface ScoredStock {
   trendScore: number; // 최근 주가흐름 성적 (0~100)
   trendGrade: string; // A+ ~ D
   score: number;
-  /** 시장 전체 기준 절대점수 — 비교군을 바꿔도 변하지 않는다. 기준선이 덜 모이면 없음 */
-  absScore?: number;
   parts: {
     재무: number;
     성장: number;
@@ -666,20 +665,28 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       const fm = finA
         ? finMetrics(finA)
         : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
-      const closes = bars.map((b) => b.close).filter((c) => c > 0);
+      // 평가는 '직전 정규장 종가' 기준으로 고정한다.
+      // 장중 현재가를 쓰면 같은 종목의 점수가 하루 종일 출렁인다.
+      const all = bars.map((b) => b.close).filter((c) => c > 0);
+      const closes = krSessionNow() === "정규장" ? all.slice(0, -1) : all;
       const sr = periodReturns(closes);
+      const ref = closes[closes.length - 1] ?? 0; // 기준 종가
+      const cur = dd?.price ?? ref; // 상세가 주는 값(현재가)
+      const adj = cur > 0 && ref > 0 ? ref / cur : 1; // 가격 지표를 기준 종가로 환산
       // 테마 그룹은 시총/3개월수익률이 비어 있으므로 상세·일봉에서 보완
-      const cap = m.cap || (dd?.marketCap ?? 0) * 1e8;
+      const cap = (m.cap || (dd?.marketCap ?? 0) * 1e8) * adj;
       const threeMo = m.threeMo || sr.m3;
       const cross = maCross(closes);
       return {
         ...m,
         cap,
         threeMo,
-        per: dd?.per ?? 0,
-        pbr: dd?.pbr ?? 0,
+        // PER·PBR·시총은 가격에 비례하므로 기준 종가로 환산한다.
+        // 배당수익률은 가격에 반비례한다.
+        per: (dd?.per ?? 0) * adj,
+        pbr: (dd?.pbr ?? 0) * adj,
         eps: dd?.eps ?? 0,
-        div: dd?.dividendYield ?? 0,
+        div: adj > 0 ? (dd?.dividendYield ?? 0) / adj : (dd?.dividendYield ?? 0),
         upside: dd?.upside ?? 0,
         foreignRate: numSuffix(dd?.foreignRate),
         cross,
@@ -752,32 +759,21 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     () => ({ bounds: {}, samples: 0 }) as Baseline,
   );
   const absReady = mkt.samples >= MIN_SAMPLES;
-  const absScore = (e: E, i: number): number | undefined => {
-    if (!absReady) return undefined;
+  const scored: ScoredStock[] = enriched.map((e, i) => {
+    // 기준선이 모였으면 시장 전체 기준으로, 아직이면 비교군 기준으로 매긴다.
+    // 큰 점수·세부 점수·목록 점수가 모두 같은 잣대를 쓰도록 여기서 한 번에 정한다.
     const m = metricsOf(e, i);
-    const S = (d: keyof StockMetrics) => {
+    const A = (d: keyof StockMetrics) => {
       const f = baselineScaler(mkt, d);
       return f ? f(m[d]) : 0.5;
     };
-    return totalScore({
-      재무: finScore(S("roe"), S("debt"), S("opMargin")),
-      밸류: valueScore(S("per"), S("pbr"), S("eps")),
-      성장: S("growth"),
-      시총: S("cap"),
-      모멘텀: S("trend"),
-      기관: S("foreign"),
-      배당: S("div"),
-    });
-  };
-
-  const scored: ScoredStock[] = enriched.map((e, i) => {
-    const 재무 = finScore(roeN[i], debtN[i], opN[i]);
-    const 성장 = growthN[i];
-    const 밸류 = valueScore(perN[i], pbrN[i], epsN[i]);
-    const 모멘텀 = trend[i]; // 주가흐름 성적표(수익률+골든크로스)를 모멘텀 점수로 사용
-    const 배당 = divN[i];
-    const 외국인 = frgnN[i];
-    const 시총 = capN[i];
+    const 재무 = absReady ? finScore(A("roe"), A("debt"), A("opMargin")) : finScore(roeN[i], debtN[i], opN[i]);
+    const 성장 = absReady ? A("growth") : growthN[i];
+    const 밸류 = absReady ? valueScore(A("per"), A("pbr"), A("eps")) : valueScore(perN[i], pbrN[i], epsN[i]);
+    const 모멘텀 = absReady ? A("trend") : trend[i];
+    const 배당 = absReady ? A("div") : divN[i];
+    const 외국인 = absReady ? A("foreign") : frgnN[i];
+    const 시총 = absReady ? A("cap") : capN[i];
     const score = totalScore({ 재무, 밸류, 성장, 시총, 모멘텀, 기관: 외국인, 배당 });
     return {
       code: e.code,
@@ -804,7 +800,6 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
       score,
-      absScore: absScore(e, i),
       parts: {
         재무: Math.round(재무 * 100),
         성장: Math.round(성장 * 100),
@@ -834,6 +829,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
     rank: target?.rank ?? 0,
     ranked,
     target,
+    /** 점수 잣대 — ready면 시장 전체 기준(절대), 아니면 비교군 기준 */
     baseline: { ready: absReady, samples: mkt.samples, need: MIN_SAMPLES },
   };
 }
