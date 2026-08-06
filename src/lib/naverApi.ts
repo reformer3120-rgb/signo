@@ -837,7 +837,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
 /** 절대점수 기준선을 만들 시장 대표 종목 — 코스피·코스닥 시총 상위 */
 let BASELINE_UNIVERSE: string[] = [];
 
-async function baselineUniverse(): Promise<string[]> {
+export async function baselineUniverse(): Promise<string[]> {
   if (BASELINE_UNIVERSE.length) return BASELINE_UNIVERSE;
   const [kp, kq] = await Promise.all([
     stockList("marketValue", "KOSPI", 70).catch(() => []),

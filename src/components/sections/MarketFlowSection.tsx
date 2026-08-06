@@ -4,6 +4,7 @@ import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { GradeBadge, useGrades } from "@/components/GradeBadge";
 import { useSticky } from "@/lib/useSticky";
 import { compactWon, num, pct, signColor } from "@/lib/format";
 import type { FiRow } from "@/lib/kis";
@@ -52,6 +53,8 @@ export function MarketFlowSection() {
     keepPreviousData: true,
   });
   const rows = (data?.data ?? []).slice(0, 15);
+  // 종목명 옆에 종합평가 등급 — 이미 모아 둔 지표로 계산만 한다
+  const grades = useGrades(rows.map((r) => r.code));
   // 순매수(가집계) 이전: 거래대금 상위로 대체 표시
   const byValue = data?.mode === "NXT" || data?.mode === "PENDING";
   const nxtOnly = data?.mode === "NXT";
@@ -207,14 +210,17 @@ export function MarketFlowSection() {
               {rows.map((r) => (
                 <tr key={r.code} className="border-b border-line/40 hover:bg-surface/70">
                   <td className="max-w-0 py-1.5 pl-1 font-medium">
-                    {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
-                    <Link
-                      href={`/stock?code=${r.code}&name=${encodeURIComponent(r.name)}`}
-                      className={`block truncate hover:underline ${signColor(r.changePct)}`}
-                      title={r.name}
-                    >
-                      {r.name}
-                    </Link>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
+                      <Link
+                        href={`/stock?code=${r.code}&name=${encodeURIComponent(r.name)}`}
+                        className={`min-w-0 truncate hover:underline ${signColor(r.changePct)}`}
+                        title={r.name}
+                      >
+                        {r.name}
+                      </Link>
+                      <GradeBadge score={grades[r.code]} />
+                    </div>
                   </td>
                   <td className="text-right tnum px-2">{num(r.price)}</td>
                   <td className={`text-right tnum px-2 ${signColor(r.changePct)}`}>{pct(r.changePct)}</td>

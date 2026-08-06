@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { GradeBadge, useGrades } from "@/components/GradeBadge";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -25,6 +26,8 @@ export function MoversSection() {
     { refreshInterval: 60_000 },
   );
   const rows = (data?.data ?? []).slice(0, 12);
+  // 종목명 옆에 종합평가 등급 — 이미 모아 둔 지표로 계산만 한다
+  const grades = useGrades(rows.map((r) => r.code));
 
   return (
     <Card
@@ -70,7 +73,9 @@ export function MoversSection() {
                           className="flex items-center gap-2 rounded-lg border border-line/60 px-3 py-2 transition-colors hover:border-brand/40 hover:bg-brand/5"
                         >
                           <span className="tnum text-xs text-muted w-5 shrink-0">{rank}</span>
-                          <span className="font-medium flex-1 min-w-0 truncate">{s.name}</span>
+                          <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+                          {/* 종합평가 등급 */}
+                          <GradeBadge score={grades[s.code]} />
                           <span className="tnum text-sm text-muted shrink-0">{num(s.price)}</span>
                           <span
                             className={`tnum text-sm font-semibold w-16 text-right shrink-0 ${signColor(s.changePct)}`}

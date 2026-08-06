@@ -15,6 +15,7 @@
 //   종목별 지표를 오래 보관해 두고 호출마다 조금씩 채운다. 몇 번 쓰다 보면
 //   기준선이 완성되고, 그 뒤로는 추가 조회가 없다.
 import { redis } from "./cache";
+import { finScore, totalScore, valueScore } from "./score";
 
 /** 절대점수에 쓰는 지표 묶음 — 한 종목 몫 */
 export interface StockMetrics {
@@ -125,4 +126,41 @@ export function baselineScaler(b: Baseline, dim: Dim): ((v: number) => number) |
     const t = Math.min(1, Math.max(0, (v - lo) / range));
     return dir === "hi" ? t : 1 - t;
   };
+}
+
+/**
+ * 보관해 둔 지표로 종합평가 점수를 계산한다.
+ * 섹터평가와 같은 잣대·같은 가중치를 쓰므로 두 화면의 등급이 어긋나지 않는다.
+ * 아직 지표를 모아두지 않은 종목은 null.
+ */
+export async function scoresFor(
+  codes: string[],
+  base: Baseline,
+): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  if (!redis || base.samples < MIN_SAMPLES || !codes.length) return out;
+  const want = [...new Set(codes.filter(Boolean))];
+  for (let i = 0; i < want.length; i += 50) {
+    const part = want.slice(i, i + 50);
+    const hit = await redis.mget<(StockMetrics | null)[]>(...part.map(KEY)).catch(() => null);
+    if (!hit) continue;
+    part.forEach((code, k) => {
+      const m = hit[k];
+      if (!m) return;
+      const S = (d: Dim) => {
+        const f = baselineScaler(base, d);
+        return f ? f(m[d]) : 0.5;
+      };
+      out[code] = totalScore({
+        재무: finScore(S("roe"), S("debt"), S("opMargin")),
+        밸류: valueScore(S("per"), S("pbr"), S("eps")),
+        성장: S("growth"),
+        시총: S("cap"),
+        모멘텀: S("trend"),
+        기관: S("foreign"),
+        배당: S("div"),
+      });
+    });
+  }
+  return out;
 }
