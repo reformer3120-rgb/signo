@@ -80,11 +80,23 @@ function mapStock(s: RawStock): NStock {
 }
 
 /** 카테고리별 종목 리스트 (시총상위/상승률/하락률) */
+/**
+ * 종목 목록. 네이버는 한 번에 100건까지만 주고 그보다 크게 요청하면 빈 응답이
+ * 온다 — 100을 넘으면 페이지를 나눠 받는다.
+ */
 export async function stockList(category: Category, market: Market, size = 20): Promise<NStock[]> {
-  const d = await getJson(
-    `https://m.stock.naver.com/api/stocks/${category}/${market}?page=1&pageSize=${size}`,
-  );
-  return (d.stocks ?? []).map(mapStock);
+  const per = Math.min(size, 100);
+  const pages = Math.ceil(size / per);
+  const out: NStock[] = [];
+  for (let p = 1; p <= pages; p++) {
+    const d = await getJson(
+      `https://m.stock.naver.com/api/stocks/${category}/${market}?page=${p}&pageSize=${per}`,
+    ).catch(() => ({ stocks: [] }));
+    const rows = (d.stocks ?? []) as RawStock[];
+    if (!rows.length) break;
+    out.push(...rows.map(mapStock));
+  }
+  return out.slice(0, size);
 }
 
 // ---- 신고가 / 신저가 (네이버 미제공 → 52주 고저 대비로 직접 판정) ----
