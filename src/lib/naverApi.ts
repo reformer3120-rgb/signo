@@ -822,8 +822,9 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const top10 = scored.slice(0, 10);
   // 검색한 종목이 상위 10위 밖이어도 목록 끝에 붙여 항상 보이게
   const ranked = target && !top10.some((s) => s.code === code) ? [...top10, target] : top10;
-  // 기준선이 아직 덜 모였으면 이번 호출에서 조금 더 채운다 (다음 호출부터 반영)
-  if (!absReady) void fillBaseline().catch(() => {});
+  // 기준선이 아직 덜 모였으면 이번 호출에서 조금 더 채운다.
+  // 서버리스는 응답을 내보내면 곧 멈추므로 뒤로 미루지 않고 여기서 기다린다.
+  if (!absReady) await fillBaseline().catch(() => {});
 
   return {
     industryName: groupName,
