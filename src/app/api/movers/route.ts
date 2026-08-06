@@ -18,7 +18,11 @@ const onlyStocks = <T extends { name: string }>(rows: T[]) =>
  * 두 거래소 어디서든 크게 움직인 종목이 누락되지 않게 하고,
  * 상위 후보는 통합(UN) 시세로 등락률을 보정한다.
  */
-async function mergedMovers(market: Market, dir: "up" | "down"): Promise<NStock[]> {
+async function mergedMovers(
+  market: Market,
+  dir: "up" | "down",
+  minCap = 0,
+): Promise<NStock[]> {
   const [krx, nxt] = await Promise.all([
     stockList(dir, market, 100).catch(() => [] as NStock[]),
     hasKIS() ? fluctuationRank("NX", market, dir).catch(() => []) : Promise.resolve([]),
@@ -43,7 +47,11 @@ async function mergedMovers(market: Market, dir: "up" | "down"): Promise<NStock[
       onNxt: true,
     });
   }
-  const list = [...merged.values()].sort((a, b) =>
+  // 시가총액으로 걸러낸다 — 소형 급등주를 빼고 우량주 흐름만 보고 싶을 때.
+  // 거르기는 상위를 자르기 전에 해야 조건에 맞는 종목이 20개 채워진다.
+  // NXT 목록에만 있는 종목은 시총을 모르는데, 조건을 건 이상 넣지 않는다.
+  const all = [...merged.values()];
+  const list = (minCap > 0 ? all.filter((s) => (s.capRaw ?? 0) >= minCap) : all).sort((a, b) =>
     dir === "up" ? b.changePct - a.changePct : a.changePct - b.changePct,
   );
 
@@ -68,16 +76,21 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const market = (searchParams.get("market") === "KOSDAQ" ? "KOSDAQ" : "KOSPI") as Market;
   const dirRaw = searchParams.get("dir") ?? "up";
+  // 시가총액 하한 (원). 0 = 전체
+  const minCap = Math.max(0, Number(searchParams.get("minCap")) || 0);
   try {
     if (dirRaw === "high" || dirRaw === "low") {
       const raw = await cached(`highlow2:${market}:${dirRaw}`, 600, () =>
         highLow(market, dirRaw as "high" | "low"),
       );
-      return NextResponse.json({ market, dir: dirRaw, data: onlyStocks(raw).slice(0, 20) });
+      const rows = onlyStocks(raw).filter((s) => minCap === 0 || (s.capRaw ?? 0) >= minCap);
+      return NextResponse.json({ market, dir: dirRaw, minCap, data: rows.slice(0, 20) });
     }
     const dir: "up" | "down" = dirRaw === "down" ? "down" : "up";
-    const data = await cached(`movers-un3:${market}:${dir}`, 120, () => mergedMovers(market, dir));
-    return NextResponse.json({ market, dir, data });
+    const data = await cached(`movers-un4:${market}:${dir}:${minCap}`, 120, () =>
+      mergedMovers(market, dir, minCap),
+    );
+    return NextResponse.json({ market, dir, minCap, data });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 502 });
   }

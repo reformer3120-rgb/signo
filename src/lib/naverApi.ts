@@ -53,6 +53,8 @@ export interface NStock {
   volume: number;
   tradingValue: string; // "9조 1,185억원"
   marketCap: string; // "1,286조원"
+  /** 시가총액 원 단위 — 크기로 걸러낼 때 쓴다. 모르면 0 */
+  capRaw?: number;
 }
 
 interface RawStock {
@@ -64,6 +66,8 @@ interface RawStock {
   accumulatedTradingVolume: string;
   accumulatedTradingValueKrwHangeul?: string;
   marketValueHangeul?: string;
+  marketValueRaw?: string;
+  marketValue?: string;
 }
 
 function mapStock(s: RawStock): NStock {
@@ -76,6 +80,7 @@ function mapStock(s: RawStock): NStock {
     volume: n(s.accumulatedTradingVolume),
     tradingValue: s.accumulatedTradingValueKrwHangeul ?? "",
     marketCap: s.marketValueHangeul ?? "",
+    capRaw: n(s.marketValueRaw ?? s.marketValue),
   };
 }
 

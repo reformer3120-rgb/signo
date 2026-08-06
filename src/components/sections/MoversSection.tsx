@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { GradeBadge, useGrades } from "@/components/GradeBadge";
+import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -17,11 +18,20 @@ const DIRS: { key: Dir; label: string; on: string }[] = [
   { key: "low", label: "신저가", on: "bg-down text-white" },
 ];
 
+/** 시가총액 하한 (원). 소형 급등주를 걸러 우량주 흐름만 보고 싶을 때 */
+const CAPS: { key: number; label: string }[] = [
+  { key: 0, label: "전체" },
+  { key: 50_000_000_000, label: "500억↑" },
+  { key: 500_000_000_000, label: "5000억↑" },
+  { key: 1_000_000_000_000, label: "1조↑" },
+];
+
 export function MoversSection() {
   const [market, setMarket] = useState<Mkt>("KOSPI");
   const [dir, setDir] = useState<Dir>("up");
+  const [minCap, setMinCap] = useSticky("kr.movers.minCap", 0);
   const { data, isLoading } = useSWR<{ data: NStock[]; needKey?: boolean }>(
-    `/api/movers?market=${market}&dir=${dir}`,
+    `/api/movers?market=${market}&dir=${dir}&minCap=${minCap}`,
     fetcher,
     { refreshInterval: 60_000 },
   );
@@ -33,8 +43,22 @@ export function MoversSection() {
     <Card
       title="특징주"
       right={
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <MarketToggle value={market} onChange={setMarket} />
+          {/* 시가총액으로 거르기 — 소형 급등주 대신 우량주 흐름을 보고 싶을 때 */}
+          <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
+            {CAPS.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => setMinCap(c.key)}
+                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  minCap === c.key ? "bg-brand text-white" : "text-muted hover:text-fg"
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center gap-1 rounded-lg bg-canvas/50 p-1">
             {DIRS.map((d) => (
               <button
