@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { Search } from "lucide-react";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { useChartFit } from "@/lib/useChartFit";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -477,6 +478,8 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
   const [minU, setMinU] = useSticky("us.stock.min", "5m");
   const { money } = useCur();
   const [ind, setInd] = useState<Indicators>({});
+  // 고정된 차트 카드가 화면보다 커지지 않게 높이를 맞춘다
+  const fitHeight = useChartFit();
   useEffect(() => {
     if (initialSymbol) setLastSym(initialSymbol);
     // 진입 시 한 번만
@@ -506,19 +509,20 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
       <div
         ref={barRef}
         style={{ top: "calc(var(--nav-bottom, 90px) + 4px)" }}
-        className="sticky z-20 flex w-fit flex-wrap items-center gap-2"
+        className="sticky z-20 flex w-fit flex-wrap items-center gap-2 rounded-xl border border-line bg-surface/95 p-1 backdrop-blur"
       >
         <SymbolSearch onSelect={setSymbol} />
         <WatchButton item={{ code: symbol, name: d?.name ?? symbol, market: "US" }} />
         <CurrencyToggle />
       </div>
 
-      <Card>
-        {/* 티커·현재가 — 카드가 보이는 동안 고정 */}
-        <div
-          style={{ top: "calc(var(--nav-bottom, 90px) + var(--stockbar-h, 44px) + 4px)" }}
-          className="sticky z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur"
-        >
+      <Card
+        // 스크롤해도 차트가 화면에 남고 아래 카드들이 그 밑으로 지나간다
+        className="sticky z-[5]"
+        style={{ top: "calc(var(--nav-bottom, 90px) + var(--stockbar-h, 44px) + 4px)" }}
+      >
+        {/* 티커·현재가 — 카드째 고정되므로 따로 붙일 필요가 없다 */}
+        <div className="mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-xl font-semibold">{koName(symbol) ?? d?.name ?? symbol}</span>
             <span className="tnum text-xs text-muted">{symbol}</span>
@@ -581,17 +585,18 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
         </div>
 
         {isLoading && !candles.length ? (
-          <div className="h-[440px] animate-pulse rounded-lg bg-line/40" />
+          <div className="animate-pulse rounded-lg bg-line/40" style={{ height: fitHeight ?? 440 }} />
         ) : candles.length ? (
           <CandleChart
             data={candles}
             indicators={ind}
             session={tab === "min" || tab === "1D"}
             precision={2}
+            fitHeight={fitHeight}
             viewKey={`us:${symbol}:${tab === "min" ? minU : tab}`}
           />
         ) : (
-          <div className="grid h-[440px] place-items-center text-sm text-muted">데이터 없음</div>
+          <div className="grid place-items-center text-sm text-muted" style={{ height: fitHeight ?? 440 }}>데이터 없음</div>
         )}
       </Card>
 

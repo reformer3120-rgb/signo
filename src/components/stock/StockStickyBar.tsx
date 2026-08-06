@@ -22,7 +22,7 @@ export function StockStickyBar({
     <div
       ref={ref}
       style={{ top: "calc(var(--nav-bottom, 90px) + 4px)" }}
-      className="sticky z-20 flex w-fit items-center gap-2"
+      className="sticky z-20 flex w-fit items-center gap-2 rounded-xl border border-line bg-surface/95 p-1 backdrop-blur"
     >
       <StockSearch onSelect={onSelect} />
       <WatchButton item={{ code, name, market: "KR" }} />

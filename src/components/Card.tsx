@@ -1,18 +1,22 @@
-import { ReactNode } from "react";
+import { ReactNode, type CSSProperties } from "react";
 
 export function Card({
   title,
   right,
   children,
   className = "",
+  style,
 }: {
   title?: ReactNode;
   right?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** 고정 위치처럼 계산이 필요한 값에만 쓴다 (예: top: calc(...)) */
+  style?: CSSProperties;
 }) {
   return (
     <section
+      style={style}
       className={`rounded-xl border border-line bg-surface shadow-[0_2px_6px_rgba(20,22,60,.06)] ${className}`}
     >
       {(title || right) && (

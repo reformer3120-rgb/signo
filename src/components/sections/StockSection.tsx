@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { useChartFit } from "@/lib/useChartFit";
 import { KrSessionBadge } from "@/components/SessionBadge";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
@@ -45,6 +46,8 @@ export function StockSection({
   const setTab = (t: string) => (onTab ? onTab(t) : setTabState(t));
   const setMinUnit = (u: Interval) => (onMinUnit ? onMinUnit(u) : setMinUnitState(u));
   const [ind, setInd] = useState<Indicators>({});
+  // 고정된 차트 카드가 화면보다 커지지 않게 높이를 맞춘다
+  const fitHeight = useChartFit();
   const [exch, setExch] = useState<Exch>("KRX");
   const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
@@ -72,12 +75,14 @@ export function StockSection({
   const q = quote?.data;
 
   return (
-    <Card>
-      {/* 종목명·현재가 — 박스가 화면에 있는 동안 스크롤해도 보이도록 고정 */}
-      <div
+    <>
+      <Card
+        // 스크롤해도 차트가 화면에 남고 아래 카드들이 그 밑으로 지나간다
+        className="sticky z-[5]"
         style={{ top: "calc(var(--nav-bottom, 90px) + var(--stockbar-h, 44px) + 4px)" }}
-        className="sticky z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur"
       >
+      {/* 종목명·현재가 — 카드째 고정되므로 따로 붙일 필요가 없다 */}
+      <div className="mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-xl font-semibold">{name}</span>
           {q && (
@@ -152,20 +157,25 @@ export function StockSection({
       </div>
 
       {isLoading ? (
-        <div className="h-[440px] animate-pulse rounded-lg bg-line/40" />
+        <div className="animate-pulse rounded-lg bg-line/40" style={{ height: fitHeight ?? 440 }} />
       ) : candles.length ? (
         <CandleChart
           data={candles}
           indicators={ind}
           session={tab === "min" || tab === "1D"}
           precision={0}
+          fitHeight={fitHeight}
           viewKey={`kr:${code}:${exch}:${interval}`}
         />
       ) : (
-        <div className="grid h-[440px] place-items-center text-sm text-muted">데이터 없음</div>
+        <div className="grid place-items-center text-sm text-muted" style={{ height: fitHeight ?? 440 }}>데이터 없음</div>
       )}
 
+      </Card>
+
+      {/* 투자자수급은 차트 카드 밖으로 뺀다. 차트를 화면에 고정하려면
+          고정되는 카드가 짧아야 아래 자료를 읽을 공간이 남는다. */}
       <InvestorPanel code={code} />
-    </Card>
+    </>
   );
 }

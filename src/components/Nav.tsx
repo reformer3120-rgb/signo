@@ -57,7 +57,7 @@ export function Nav() {
         ))}
       </nav>
       {subs.length > 0 && (
-        <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface/80 p-1">
+        <nav className="flex items-center gap-1 rounded-xl border border-line bg-surface p-1">
           {subs.map((s) => {
             const active =
               s.href === "/" || s.href === "/us" ? path === s.href : path.startsWith(s.href);
