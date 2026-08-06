@@ -149,7 +149,28 @@ export function MarketFlowSection() {
         <div className="h-72 animate-pulse rounded-lg bg-line/30" />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          {/*
+            탭을 바꾸면 열 개수가 달라지는데, 폭이 자동이면 남는 공간을 다시 나눠
+            가지면서 현재가·등락률 자리가 매번 움직인다. 폭을 못 박고 남는 공간은
+            맨 끝 빈 칸이 흡수하게 해서 자리를 고정한다.
+          */}
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col className="w-44" />
+              <col className="w-24" />
+              <col className="w-20" />
+              {byValue ? (
+                <col className="w-32" />
+              ) : (
+                <>
+                  {by !== "inst" && <col className="w-28" />}
+                  {by !== "foreign" && <col className="w-28" />}
+                </>
+              )}
+              <col className="w-28" />
+              {!byValue && <col className="w-20" />}
+              <col />
+            </colgroup>
             <thead>
               <tr className="text-xs text-muted border-b border-line">
                 <th className="text-left font-medium py-2 pl-1">종목</th>
@@ -178,16 +199,19 @@ export function MarketFlowSection() {
                 {!byValue && (
                   <th className="text-right font-medium px-2 whitespace-nowrap">NXT비중</th>
                 )}
+                {/* 남는 가로 공간을 흡수해 앞의 열들이 밀리지 않게 한다 */}
+                <th />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.code} className="border-b border-line/40 hover:bg-surface/70">
-                  <td className="py-1.5 pl-1 font-medium">
+                  <td className="max-w-0 py-1.5 pl-1 font-medium">
                     {/* 종목명도 등락에 따라 — 상승 빨강 / 하락 파랑 */}
                     <Link
                       href={`/stock?code=${r.code}&name=${encodeURIComponent(r.name)}`}
-                      className={`hover:underline ${signColor(r.changePct)}`}
+                      className={`block truncate hover:underline ${signColor(r.changePct)}`}
+                      title={r.name}
                     >
                       {r.name}
                     </Link>
@@ -218,6 +242,7 @@ export function MarketFlowSection() {
                       )}
                     </td>
                   )}
+                  <td />
                 </tr>
               ))}
             </tbody>
