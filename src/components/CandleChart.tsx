@@ -249,20 +249,16 @@ export function CandleChart({
       const from = Math.max(0, Math.floor(r?.from ?? 0));
       const to = Math.min(data.length - 1, Math.ceil(r?.to ?? data.length - 1));
       if (to <= from) return;
-      // 고점을 먼저 찾고, 저점은 '고점 이후'에서만 찾는다.
-      // 그냥 구간 최저를 잡으면 고점보다 앞선 과거 저점이 걸려서
-      // (분봉에서 나흘 전 저점이 잡히는 식) 지금 흐름과 이어지지 않는다.
-      // 고점 → 저점 → 현재가 가 한 줄기로 읽히도록 순서를 지킨다.
+      // 화면에 보이는 봉 중 가장 높은 곳과 가장 낮은 곳.
+      // 저점을 '고점 이후'로 제한했더니 눈에 보이는 최저 캔들이 아닌 곳에
+      // 표시가 붙었다. 어디까지 볼지는 화면 범위가 이미 정하므로,
+      // 그 안에서는 보이는 그대로 잡는다.
       let hi = data[from];
-      let hiAt = from;
+      let lo = data[from];
       for (let i = from; i <= to; i++) {
-        if (data[i].high > hi.high) {
-          hi = data[i];
-          hiAt = i;
-        }
+        if (data[i].high > hi.high) hi = data[i];
+        if (data[i].low < lo.low) lo = data[i];
       }
-      let lo = data[hiAt];
-      for (let i = hiAt; i <= to; i++) if (data[i].low < lo.low) lo = data[i];
       // 기준은 언제나 현재가 — 화면 밖이라도 '지금 얼마인가'가 알고 싶은 값이다
       const cur = last.close;
       const fromHigh = hi.high > 0 ? (cur / hi.high - 1) * 100 : 0; // 고점 대비 (내려온 폭)
