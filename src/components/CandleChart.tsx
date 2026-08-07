@@ -67,7 +67,6 @@ export function CandleChart({
   session,
   precision = 2,
   viewKey,
-  fitHeight,
 }: {
   data: Candle[];
   height?: number;
@@ -76,11 +75,6 @@ export function CandleChart({
   precision?: number;
   /** 확대·이동 상태를 기억할 식별자 (종목·봉주기별로 따로 기억) */
   viewKey?: string;
-  /**
-   * 전체 높이를 이 값에 맞춘다 (보조 패널 포함).
-   * 차트를 화면에 고정할 때 카드가 화면보다 커지지 않게 하려고 쓴다.
-   */
-  fitHeight?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -89,8 +83,10 @@ export function CandleChart({
   const showMacd = !!indicators?.macd;
 
   const extraPanes = (showRsi ? 1 : 0) + (showMacd ? 1 : 0);
-  // fitHeight 를 주면 보조 패널까지 그 안에 나눠 담는다 (패널 비율은 아래 stretchFactor)
-  const totalH = fitHeight ? Math.max(240, fitHeight) : height + extraPanes * 130;
+  // 보조 패널(RSI·MACD)도 가격 패널에 비례해 키운다.
+  // 고정 130px 로 두면 폰처럼 화면이 축소되는 곳에서 선이 뭉개져 안 보인다.
+  const extraH = Math.max(110, Math.round(height * 0.3));
+  const totalH = height + extraPanes * extraH;
 
   const last = data[data.length - 1];
   const key = [
@@ -100,7 +96,6 @@ export function CandleChart({
     showMacd,
     !!session,
     precision,
-    fitHeight ?? 0,
     data.length,
     data[0]?.time ?? 0,
     last?.time ?? 0,

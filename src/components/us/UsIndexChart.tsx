@@ -4,6 +4,7 @@ import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { useChartHeight } from "@/lib/useChartHeight";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -31,6 +32,8 @@ export function UsIndexChart({ indices }: { indices: UsQuote[] }) {
   const [sym, setSym] = useSticky("us.index.sym", "^DJI");
   const [tab, setTab] = useSticky("us.index.tab", "1D");
   const [minU, setMinU] = useSticky("us.index.min", "5m");
+  // 대시보드 안이라 종목 차트보다 작게 잡는다
+  const idxH = useChartHeight(0.24, 190, 640);
   const [ind, setInd] = useState<Indicators>({});
 
   const { data, isLoading } = useSWR<{ data: Candle[] }>(
@@ -111,7 +114,7 @@ export function UsIndexChart({ indices }: { indices: UsQuote[] }) {
       ) : candles.length ? (
         <CandleChart
           data={candles}
-          height={280}
+          height={idxH}
           indicators={ind}
           session={tab === "min" || tab === "1D"}
           precision={2}

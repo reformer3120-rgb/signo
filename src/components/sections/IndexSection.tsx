@@ -4,6 +4,7 @@ import { useSticky } from "@/lib/useSticky";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
+import { useChartHeight } from "@/lib/useChartHeight";
 import { KrSessionBadge } from "@/components/SessionBadge";
 import { KrFuturesStrip } from "@/components/FuturesStrip";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
@@ -45,6 +46,8 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
   const [minU, setMinU] = useSticky(`kr.index.${market}.min`, "5m");
   const [ind, setInd] = useState<Indicators>({});
   const kind = ctab === "min" ? minU : ctab;
+  // 대시보드 안이라 종목 차트보다 작게 잡는다
+  const idxH = useChartHeight(0.24, 190, 640);
   const { data: idx } = useSWR<{ data: Quote[] }>("/api/indices", fetcher, { refreshInterval: 30_000 });
   const { data: chart } = useSWR<{ data: Candle[] }>(
     `/api/index-chart?market=${market}&kind=${kind}`,
@@ -102,7 +105,7 @@ function IndexPane({ market, label, flow }: { market: "KOSPI" | "KOSDAQ"; label:
       {candles.length ? (
         <CandleChart
           data={candles}
-          height={230}
+          height={idxH}
           indicators={ind}
           session={ctab === "min" || ctab === "1D"}
           viewKey={`kridx:${market}:${kind}`}

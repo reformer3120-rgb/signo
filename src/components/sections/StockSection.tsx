@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
-import { useChartFit } from "@/lib/useChartFit";
+import { useChartHeight } from "@/lib/useChartHeight";
 import { ChartFoldButton } from "@/components/ChartFoldButton";
 import { useSticky } from "@/lib/useSticky";
 import { KrSessionBadge } from "@/components/SessionBadge";
@@ -48,8 +48,8 @@ export function StockSection({
   const setTab = (t: string) => (onTab ? onTab(t) : setTabState(t));
   const setMinUnit = (u: Interval) => (onMinUnit ? onMinUnit(u) : setMinUnitState(u));
   const [ind, setInd] = useState<Indicators>({});
-  // 고정된 차트 카드가 화면보다 커지지 않게 높이를 맞춘다
-  const fitHeight = useChartFit();
+  // 화면 크기에 맞춘 차트 높이 (폰에서도 비슷한 비중으로 보이게)
+  const chartH = useChartHeight();
   // 접어두면 아래 자료를 볼 자리가 넓어진다. 선택은 저장된다.
   const [folded, setFolded] = useSticky("kr.chart.folded", false);
   const [exch, setExch] = useState<Exch>("KRX");
@@ -80,13 +80,12 @@ export function StockSection({
 
   return (
     <>
-      <Card
-        // 스크롤해도 차트가 화면에 남고 아래 카드들이 그 밑으로 지나간다
-        className="sticky z-[5]"
+      <Card>
+      {/* 종목명·현재가 — 카드가 화면에 있는 동안 스크롤해도 보이도록 고정 */}
+      <div
         style={{ top: "calc(var(--nav-bottom, 90px) + var(--stockbar-h, 44px) + 4px)" }}
+        className="sticky z-10 mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2 backdrop-blur"
       >
-      {/* 종목명·현재가 — 카드째 고정되므로 따로 붙일 필요가 없다 */}
-      <div className="mb-2 rounded-lg border border-line/60 bg-surface/95 px-3 py-2">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-xl font-semibold">{name}</span>
           {q && (
@@ -168,18 +167,18 @@ export function StockSection({
       </div>
 
       {isLoading ? (
-        <div className="animate-pulse rounded-lg bg-line/40" style={{ height: fitHeight ?? 440 }} />
+        <div className="animate-pulse rounded-lg bg-line/40" style={{ height: chartH }} />
       ) : candles.length ? (
         <CandleChart
           data={candles}
           indicators={ind}
           session={tab === "min" || tab === "1D"}
           precision={0}
-          fitHeight={fitHeight}
+          height={chartH}
           viewKey={`kr:${code}:${exch}:${interval}`}
         />
       ) : (
-        <div className="grid place-items-center text-sm text-muted" style={{ height: fitHeight ?? 440 }}>데이터 없음</div>
+        <div className="grid place-items-center text-sm text-muted" style={{ height: chartH }}>데이터 없음</div>
       )}
         </>
       )}
