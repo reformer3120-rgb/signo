@@ -4,6 +4,8 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { useChartFit } from "@/lib/useChartFit";
+import { ChartFoldButton } from "@/components/ChartFoldButton";
+import { useSticky } from "@/lib/useSticky";
 import { KrSessionBadge } from "@/components/SessionBadge";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
@@ -48,6 +50,8 @@ export function StockSection({
   const [ind, setInd] = useState<Indicators>({});
   // 고정된 차트 카드가 화면보다 커지지 않게 높이를 맞춘다
   const fitHeight = useChartFit();
+  // 접어두면 아래 자료를 볼 자리가 넓어진다. 선택은 저장된다.
+  const [folded, setFolded] = useSticky("kr.chart.folded", false);
   const [exch, setExch] = useState<Exch>("KRX");
   const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
@@ -116,9 +120,16 @@ export function StockSection({
               </span>
             </div>
           )}
+          <ChartFoldButton
+            folded={folded}
+            onToggle={() => setFolded(!folded)}
+            className={stat ? "" : "ml-auto"}
+          />
         </div>
       </div>
 
+      {!folded && (
+        <>
       {/* 지표와 봉주기를 같은 선상에 배치 */}
       <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
@@ -169,6 +180,8 @@ export function StockSection({
         />
       ) : (
         <div className="grid place-items-center text-sm text-muted" style={{ height: fitHeight ?? 440 }}>데이터 없음</div>
+      )}
+        </>
       )}
 
       </Card>

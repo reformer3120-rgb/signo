@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { useChartFit } from "@/lib/useChartFit";
+import { ChartFoldButton } from "@/components/ChartFoldButton";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -480,6 +481,8 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
   const [ind, setInd] = useState<Indicators>({});
   // 고정된 차트 카드가 화면보다 커지지 않게 높이를 맞춘다
   const fitHeight = useChartFit();
+  // 접어두면 아래 자료를 볼 자리가 넓어진다. 선택은 저장된다.
+  const [folded, setFolded] = useSticky("us.chart.folded", false);
   useEffect(() => {
     if (initialSymbol) setLastSym(initialSymbol);
     // 진입 시 한 번만
@@ -546,9 +549,16 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
                 </span>
               </div>
             )}
+            <ChartFoldButton
+              folded={folded}
+              onToggle={() => setFolded(!folded)}
+              className={hi ? "" : "ml-auto"}
+            />
           </div>
         </div>
 
+        {!folded && (
+          <>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <IndicatorBar value={ind} onChange={setInd} />
@@ -597,6 +607,8 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
           />
         ) : (
           <div className="grid place-items-center text-sm text-muted" style={{ height: fitHeight ?? 440 }}>데이터 없음</div>
+        )}
+          </>
         )}
       </Card>
 
