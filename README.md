@@ -11,6 +11,9 @@ Next.js 16 (App Router) · React 19 · Tailwind 4 · SWR · Vercel.
 **이 구조를 다른 앱에 참고하려면 [PATTERNS.md](PATTERNS.md)** — UI 배치와 데이터
 흐름을 구간별로 나눠 실제 코드와 함께 설명한 문서입니다.
 
+**국내 종목탭을 다른 데이터 출처로 옮기려면 [PORTING-STOCK-TAB.md](PORTING-STOCK-TAB.md)**
+— 복사할 파일 29개, 데이터 계약, 코스콤 매핑과 빠지는 항목이 정리되어 있습니다.
+
 ## 실행
 
 ```bash
