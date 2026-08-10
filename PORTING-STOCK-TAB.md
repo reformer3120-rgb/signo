@@ -4,7 +4,7 @@ SIGNO 의 국내 종목 화면(UI + 데이터 배치)을 다른 프로젝트에 
 데이터만 코스콤으로 갈아 끼우기 위한 문서.
 
 읽는 순서 — §1 무엇을 복사하나 → §2 데이터 계약 → §3 코스콤 매핑 →
-§4 빈칸 메우기 → §5 자격·라이선스.
+§4 빈칸 메우기(DART) → §5 라이선스 → §6 환경변수 → §7 작업 순서.
 
 ---
 
@@ -105,89 +105,171 @@ NewsCard           뉴스
 
 ## 3. 코스콤 매핑
 
-코스콤 오픈API 문서 카탈로그(2026-08 확인) 기준.
-출처 <https://koscom.gitbook.io/open-api/api/marketv3>
+코스콤 오픈API 공식 문서(2026-08 확인) 기준. 아래 경로·필드는 모두 문서에서
+확인한 것이다. <https://koscom.gitbook.io/open-api/api/marketv3>
+
+### 인증
+
+```
+게이트웨이   운영 https://apigw.koscom.co.kr
+             샌드박스 https://sandbox-apigw.koscom.co.kr
+             (계약 시 안내받은 주소를 KOSCOM_API_BASE 에 넣는다)
+
+API Key      GET  헤더 apikey: <키>   (?apikey= 도 되지만 URL 에 키가 남는다)
+             POST 헤더 apikey: <키>
+
+OAuth2       POST /auth/oauth/v3/token
+             Authorization: Basic base64(client_id:client_secret)
+             Content-Type: application/x-www-form-urlencoded
+             → access_token 을 Authorization: Bearer 로
+
+경로         /v3/market/closed/{kospi|kosdaq}/{종목코드}/...
+             /v3/market/investors/{kospi|kosdaq}/{종목코드}/investors
+```
 
 ### 코스콤이 주는 것
 
-| 계약 | 코스콤 | 비고 |
+| 계약 | 엔드포인트 | 필드 |
 |---|---|---|
-| `quote` | `/v3/market/closed/{board}/{issuecode}/master` | 체결가·거래량 |
-| `candles` (일·주·월) | `.../history?cycle=D\|W\|M` | `opnprc` `hgprc` `lwprc` `trdPrc` |
-| `detail` 일부 | `.../master` | `mktcap` `per` `pbr` `eps` `listShrs` |
-| `detail` 52주 | selective master | `wk52HgstPrc` `wk52LwstPrc` |
-| 외국인 보유비중 | `.../foreignhistory` | `FornHdVolRt` |
-| `investorDaily` | 유가/코스닥 **종목별투자자** | **전일 및 당일 15:30 이후만** |
-| 업종 지수 | KRX업종 (실시간/종가) | 섹터 화면용 |
-| `search` | 코드표(codetable) | 전 종목 마스터를 받아 두고 로컬 검색 |
+| `search`, 시장 판별 | `/{board}/lists` | `isuSrtCd` `isuKorAbbr` `isuKorNm` |
+| `quote` | `/{board}/{code}/master` | `trdPrc` `prevddClsprc` `accTrdvol` |
+| `candles` 일·주·월 | `/{board}/{code}/history` | `trdDd` `opnprc` `hgprc` `lwprc` `trdPrc` `accTrdvol` — 파라미터 `trnsmCycleTpCd=D\|W\|M` `inqStrtDd` `inqEndDd` `reqCnt` |
+| `detail` 지표 | `/{board}/{code}/master` | `mktcap` `per` `pbr` `eps` `bps` `divYd` `listShrs` `idxIndMidclssCd` |
+| `detail` 52주 | `/selectivemaster` | `wk52HgstPrc` `wk52LwstPrc` (일봉에서 직접 구해도 된다) |
+| 외국인 보유비중 | `/{board}/{code}/foreignhistory` | `FornHdVolRt` `FornHdVol` |
+| `investorDaily` | `/investors/{board}/{code}/investors` | `invstCd` `bidTrdvol` `askTrdvol` — **전일 및 당일 15:30 이후만** |
+| 업종 지수 | KRX업종 (실시간 / 종가) | 섹터 화면용 |
+| 공매도 | `/{board}/{code}/shortsell` | 지금 화면엔 안 쓰지만 있다 |
+
+투자자코드 — `8` 기관계 · `10` 개인 · `11` 외국인 · `6` 연기금 · `1` 금융투자.
+순매수 = `bidTrdvol - askTrdvol`.
 
 ### 코스콤이 주지 않는 것 — 서비스 자체가 없다
 
 ```
-재무제표          FinancialsCard 가 통째로 빈다
+재무제표          FinancialsCard 가 통째로 빈다  → DART 로 해결 (§4)
 컨센서스          목표주가·투자의견·추정 PER
-배당수익률        종합평가 배점 3점
 뉴스              NewsCard 가 통째로 빈다
 분봉·틱           차트가 일·주·월만 남는다
 장중 추정수급     수급 '당일 실시간' 탭이 사라진다
-거래소 구분       NXT 분리 시세 확인되지 않음
+거래소 구분       NXT 분리 시세가 카탈로그에 없다
 ```
 
-**가장 큰 문제는 재무제표다.** 종합평가 100점 중 **65점**(재무건전성 28 ·
-밸류 22 · 성장성 15)이 재무에서 나온다. 코스콤만으로 채울 수 있는 건 시가총액
-10 + 외국인비중 12 + 주가흐름 10 = **32점**뿐이다. PER·PBR·EPS 는 master 에
-있으니 밸류 22 는 살아나 **54점**까지 되지만, ROE·부채비율·영업이익률·성장률은
-재무제표가 있어야 한다.
+배당수익률은 **주는 쪽**이다 (`master.divYd`).
 
-즉 **코스콤 단독으로는 종합평가·업종순위 카드를 띄울 수 없다.**
-`koscom.ts` 의 `sectorRank` 가 그냥 에러를 던지도록 해 둔 이유다 — 반쪽 점수를
-그럴듯하게 보여 주는 쪽이 훨씬 위험하다.
+### 종합평가 점수는 어디까지 채워지나
+
+| | 배점 | 코스콤 단독 | 코스콤+DART |
+|---|---|---|---|
+| 재무건전성 (ROE·부채비율·영업이익률) | 28 | ✗ | ✓ |
+| 밸류 (PER·PBR·EPS) | 22 | ✓ master | ✓ |
+| 성장성 (매출·영업이익 성장) | 15 | ✗ | ✓ |
+| 외국인 보유비중 | 12 | ✓ foreignhistory | ✓ |
+| 시가총액 | 10 | ✓ master | ✓ |
+| 주가흐름 | 10 | ✓ history | ✓ |
+| 배당 | 3 | ✓ master.divYd | ✓ |
+| **합계** | **100** | **57** | **100** |
+
+즉 **코스콤 단독으로는 종합평가·업종순위 카드를 띄울 수 없다.** 43점이 비는
+채로 등급을 매기면 실제보다 낮은 등급이 그럴듯하게 나간다. `koscom.ts` 의
+`sectorRank` 가 DART 키 없이는 그냥 에러를 던지도록 해 둔 이유다.
+
 
 ---
 
 ## 4. 빈칸 메우기
 
-| 빠진 것 | 대안 |
-|---|---|
-| 재무제표 | **DART 오픈API** (무료, 개인 가능) — 단일회사 주요계정 `fnlttSinglAcnt`. 분기·연간 재무제표를 정식으로 준다. 컨센서스(추정치)는 없음 |
-| 컨센서스 | 무료 출처 없음. 화면에서 빼는 편이 낫다 (SIGNO 도 애널리스트 박스를 이미 뺐다) |
-| 배당 | DART 배당 공시 또는 KRX 정보데이터시스템 |
-| 뉴스 | 카드를 빼거나 별도 뉴스 API |
-| 분봉 | 코스콤 실시간 시세를 직접 받아 **분봉으로 집계해 저장**해야 한다. 과거 분봉은 소급 불가 — 수집을 시작한 시점부터만 쌓인다 |
-| 장중 추정수급 | 대안 없음. 15:30 이후 확정치만 |
+| 빠진 것 | 대안 | 상태 |
+|---|---|---|
+| 재무제표 | **DART 오픈API** — `fnlttSinglAcnt` (단일회사 주요계정). 무료, 하루 2만 건 | **구현됨** `providers/dart.ts` |
+| 성장성 | 위 재무제표에서 매출·영업이익 전년비로 산출 | 구현됨 |
+| 컨센서스 | 무료 출처 없음. 화면에서 빼는 편이 낫다 (SIGNO 도 애널리스트 박스를 이미 뺐다) | — |
+| 뉴스 | 카드를 빼거나 별도 뉴스 API | — |
+| 분봉 | 코스콤 실시간 시세를 받아 **분봉으로 집계해 저장**해야 한다. 과거 분봉은 소급 불가 — 수집 시작 시점부터만 쌓인다 | — |
+| 수급 일별 추이 | 코스콤 투자자 API 는 하루치만 준다. 매일 한 번 받아 쌓는 크론 필요 | — |
+| 장중 추정수급 | 대안 없음. 15:30 이후 확정치만 | — |
 
-현실적인 조합은 **코스콤(시세·수급·업종) + DART(재무)** 다.
-이러면 종합평가는 배당 3점만 빠진 **97점 만점**으로 돌아간다.
+### DART 어댑터 (`providers/dart.ts`)
+
+DART 는 종목코드가 아니라 **고유번호(corp_code, 8자리)** 로 조회한다.
+대응표는 `corpCode.xml` 을 ZIP 으로만 주므로, 받아서 풀고 7일 캐시한다.
+
+주요계정은 원장 금액만 주므로 비율은 어댑터가 만든다.
+
+```
+부채비율   = 부채총계 / 자본총계 × 100
+영업이익률 = 영업이익 / 매출액   × 100
+ROE        = 당기순이익 / 자본총계 × 100
+```
+
+**행 제목을 바꾸지 말 것.** 점수 산식(`lib/score.ts`)이 `"ROE"` `"부채비율"`
+`"영업이익률"` `"매출액"` `"영업이익"` 을 **이름으로** 찾는다. 제목이 어긋나면
+오류 없이 점수만 조용히 비어 버린다.
+
+연결(CFS)을 우선하고 없으면 별도(OFS)를 쓴다. DART 는 확정치만 주므로
+컨센서스 열(`periods[].cns`)은 항상 `false` 다.
+
 
 ---
 
-## 5. 자격과 라이선스 — 먼저 확인할 것
+## 5. 자격과 라이선스
 
 - 코스콤 오픈API 는 **개인 신청이 되지 않는다.** 법인 자격이 필요하다.
 - 샌드박스 시세는 **개발 지원용으로만** 허용된다. 서비스에 띄우려면
-  **시세 라이선스 계약**을 따로 맺어야 한다.
+  **시세 라이선스 계약**이 따로 필요하다.
+- 승인되면 샌드박스 키를 먼저 받고, 테스트가 끝나면 운영 키를 받는다.
 - 해외 데이터는 코스콤 카탈로그에 없다. 미국 화면까지 옮길 계획이라면
   야후 등 별도 출처가 그대로 필요하다.
-
-자격·비용이 확정되기 전에는 어댑터만 만들어 두고 네이버·KIS 로 돌려 두는 편이
-안전하다. `DATA_PROVIDER` 환경변수 하나로 갈린다.
-
-```bash
-DATA_PROVIDER=koscom
-```
+- 문의 open@koscom.co.kr
 
 ---
 
-## 6. 작업 순서 제안
+## 6. 환경변수
+
+```bash
+DATA_PROVIDER=koscom          # 비우면 네이버+KIS
+
+KOSCOM_API_BASE=              # 계약 시 안내받은 게이트웨이 주소
+KOSCOM_API_KEY=               # API Key 방식
+# OAuth2 를 쓰는 경우에만
+KOSCOM_OAUTH=1
+KOSCOM_CLIENT_ID=
+KOSCOM_CLIENT_SECRET=
+
+DART_API_KEY=                 # https://opendart.fss.or.kr 무료 발급
+```
+
+키는 `.env.local` 과 배포 환경변수에만 넣는다. 저장소에 올리지 않는다.
+
+---
+
+## 7. 작업 순서
 
 ```
 1  파일 29개 + globals.css @theme + 글꼴 설정 복사
-2  StockDataProvider 를 코스콤으로 구현 (koscom.ts 의 TODO 를 채운다)
-   먼저 quote · candles · detail 셋만 — 차트 카드가 뜨면 절반은 된 것
-3  재무는 DART 로 별도 구현해 financials 에 물린다
-4  sectorRank 는 2·3 이 끝난 뒤에. 채점 규칙(score.ts)은 손대지 않는다
-5  못 주는 것은 빈 값으로 두어 카드가 스스로 숨게 한다
+2  KOSCOM_API_BASE / KOSCOM_API_KEY 를 넣고 quote · candles · detail 확인
+   → 차트 카드가 뜨면 절반은 된 것
+3  DART_API_KEY 를 넣고 FinancialsCard 확인
+   corpCode.xml 이 ZIP 이라 첫 호출이 몇 초 걸린다 (7일 캐시)
+4  sectorRank 구현 — 아래 주의사항 참고
+5  못 주는 것(뉴스·분봉·장중수급)은 빈 값으로 두어 카드가 스스로 숨게 한다
 ```
 
-`score.ts` 는 건드리지 않는다. 원지표만 정확히 넣어 주면 등급·점수 체계가
+### sectorRank 를 만들 때
+
+업종 비교군은 `lists` + `master.idxIndMidclssCd` 로 만들 수 있다. 다만
+비교군 전체의 재무를 매번 DART 로 조회하면 **하루 2만 건 제한에 바로 걸린다.**
+지금 구조에 이미 답이 있다 — `/api/cron/metrics` 가 종목별 지표를 미리 모아
+Redis 에 쌓고(`lib/baseline.ts`), 화면은 쌓인 것만 읽는다. 같은 방식으로
+DART 수집을 크론에 넣는다.
+
+`lib/score.ts` 는 손대지 않는다. 원지표만 정확히 넣으면 등급·점수 체계가
 그대로 따라온다.
+
+### 첫 호출 때 확인할 것
+
+문서에 단위가 명시되지 않은 값이 둘 있다. 실제 응답을 한 번 보고 맞춘다.
+
+- `master.mktcap` — `koscom.ts` 는 **원** 으로 보고 억원으로 나눈다.
+  이미 억원이나 백만원 단위면 `detail()` 의 `capEok` 한 줄만 고치면 된다.
+- `history` 의 날짜 필드가 `trdDd`(yyyymmdd) 인지 확인. 다르면 `ymdToSec` 호출부.
