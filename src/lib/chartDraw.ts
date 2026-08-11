@@ -16,7 +16,10 @@ type Drawing =
   | { kind: "hline"; price: number }
   | { kind: "fib"; a: Pt; b: Pt };
 
-type Tool = "trend" | "hline" | "fib" | "erase" | null;
+type Tool = "trend" | "hline" | "fib" | "erase" | "move" | null;
+
+/** 잡을 수 있는 부분 — 양 끝점이냐 선 전체냐 */
+type Grab = { index: number; part: "a" | "b" | "body" };
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
@@ -47,6 +50,8 @@ function distSeg(px: number, py: number, x1: number, y1: number, x2: number, y2:
 }
 
 const ICONS: Record<string, string> = {
+  move:
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/><path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg>',
   trend:
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="20" x2="20" y2="4"/><circle cx="4" cy="20" r="1.6" fill="currentColor"/><circle cx="20" cy="4" r="1.6" fill="currentColor"/></svg>',
   hline:
@@ -60,6 +65,7 @@ const ICONS: Record<string, string> = {
 };
 
 const TIP: Record<string, string> = {
+  move: "이동 — 그려 둔 선을 끌어 옮긴다 (끝점을 잡으면 그 점만)",
   trend: "추세선 — 시작점, 끝점 두 번 클릭",
   hline: "수평선 — 가격 위치를 클릭",
   fib: "피보나치 되돌림 — 고점과 저점을 두 번 클릭",
@@ -84,6 +90,7 @@ export function attachDraw(opts: {
   let tool: Tool = null;
   let pending: Pt | null = null; // 두 점짜리 도구의 첫 점
   let hover: { x: number; y: number } | null = null;
+  let highlight = -1; // 마우스가 올라간 그림 — 잡을 수 있다는 표시로 손잡이를 띄운다
 
   // ── 색 ──
   const cTrend = "#F2A93B";
@@ -123,7 +130,8 @@ export function attachDraw(opts: {
     pending = null;
     hover = null;
     canvas.style.pointerEvents = tool ? "auto" : "none";
-    canvas.style.cursor = tool === "erase" ? "pointer" : tool ? "crosshair" : "default";
+    canvas.style.cursor =
+      tool === "erase" ? "pointer" : tool === "move" ? "grab" : tool ? "crosshair" : "default";
     for (const [id, b] of btns) {
       const on = id === tool;
       b.style.color = on ? "#fff" : dark ? "#9aa0b4" : "#6b7086";
@@ -132,6 +140,7 @@ export function attachDraw(opts: {
     }
     redraw();
   };
+  mkBtn("move", () => setTool("move"));
   mkBtn("trend", () => setTool("trend"));
   mkBtn("hline", () => setTool("hline"));
   mkBtn("fib", () => setTool("fib"));
@@ -276,6 +285,27 @@ export function attachDraw(opts: {
     void loP;
   }
 
+  /** 잡을 수 있다는 표시 — 끝점에 흰 테두리 손잡이를 띄운다 */
+  function handles(ctx: CanvasRenderingContext2D, d: Drawing, W: number) {
+    const pts: [number | null, number | null][] =
+      d.kind === "hline"
+        ? [[W / 2, yOf(d.price)]]
+        : [
+            [xOf(d.a.time), yOf(d.a.price)],
+            [xOf(d.b.time), yOf(d.b.price)],
+          ];
+    for (const [x, y] of pts) {
+      if (x == null || y == null) continue;
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#3844BE";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
   function redraw() {
     const W = ts.width();
     const H = paneHeight();
@@ -290,7 +320,10 @@ export function attachDraw(opts: {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    for (const d of drawings) drawOne(ctx, d, W);
+    drawings.forEach((d, i) => {
+      drawOne(ctx, d, W);
+      if (i === highlight) handles(ctx, d, W);
+    });
     // 첫 점을 찍고 움직이는 중이면 미리보기
     if (pending && hover && (tool === "trend" || tool === "fib")) {
       const cur = ptAt(hover.x, hover.y);
@@ -311,17 +344,167 @@ export function attachDraw(opts: {
     return { time: data[idx].time, price: price as number };
   }
 
+  // ── 잡기 판정 ──
+
+  /** 끝점 판정 — 먼저 걸리면 그 점만 움직인다 */
+  function grabEnd(d: Drawing, x: number, y: number): "a" | "b" | null {
+    if (d.kind === "hline") return null;
+    const pts: [("a" | "b"), number | null, number | null][] = [
+      ["a", xOf(d.a.time), yOf(d.a.price)],
+      ["b", xOf(d.b.time), yOf(d.b.price)],
+    ];
+    for (const [part, px, py] of pts) {
+      if (px != null && py != null && Math.hypot(x - px, y - py) <= 9) return part;
+    }
+    return null;
+  }
+
+  /** 선 전체 판정 — 8px 안에 걸리는 가장 가까운 그림 */
+  function hitTest(x: number, y: number): number {
+    const W = ts.width();
+    let best = -1;
+    let bestD = 8;
+    drawings.forEach((d, i) => {
+      let dist = Infinity;
+      if (d.kind === "hline") {
+        const yy = yOf(d.price);
+        if (yy != null) dist = Math.abs(y - yy);
+      } else if (d.kind === "trend") {
+        const x1 = xOf(d.a.time), y1 = yOf(d.a.price), x2 = xOf(d.b.time), y2 = yOf(d.b.price);
+        if (x1 != null && y1 != null && x2 != null && y2 != null) {
+          dist = distSeg(x, y, x1, y1, x2, y2);
+          // 연장 구간도 잡을 수 있게
+          if (x2 !== x1) {
+            const slope = (y2 - y1) / (x2 - x1);
+            const [fx, fy] = x2 > x1 ? [x2, y2] : [x1, y1];
+            dist = Math.min(dist, distSeg(x, y, fx, fy, W, fy + slope * (W - fx)));
+          }
+        }
+      } else {
+        const x1 = xOf(d.a.time), x2 = xOf(d.b.time);
+        const left = x1 != null && x2 != null ? Math.min(x1, x2) : 0;
+        const range = d.b.price - d.a.price;
+        for (const lv of FIB_LEVELS) {
+          const yy = yOf(d.b.price - range * lv);
+          if (yy != null && x >= left) dist = Math.min(dist, Math.abs(y - yy));
+        }
+      }
+      if (dist < bestD) {
+        bestD = dist;
+        best = i;
+      }
+    });
+    return best;
+  }
+
+  /** 이 지점에서 무엇을 잡을 수 있나 */
+  function grabAt(x: number, y: number): Grab | null {
+    // 끝점이 우선 — 선 위에 겹쳐 있어도 점을 집으려는 의도로 본다
+    for (let i = drawings.length - 1; i >= 0; i--) {
+      const part = grabEnd(drawings[i], x, y);
+      if (part) return { index: i, part };
+    }
+    const i = hitTest(x, y);
+    return i >= 0 ? { index: i, part: "body" } : null;
+  }
+
   // ── 입력 ──
-  const onClick = (e: MouseEvent) => {
-    if (!tool) return;
+
+  let drag: (Grab & { last: Pt }) | null = null;
+
+  const xy = (e: MouseEvent | PointerEvent) => {
     const r = canvas.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+
+  /**
+   * 도구를 고르지 않았을 때도 선 위에 오면 잡을 수 있어야 한다.
+   * 그런데 캔버스가 입력을 계속 가로채면 차트를 못 움직인다.
+   * 그래서 선 근처에 있을 때만 캔버스가 입력을 받고, 벗어나면 통과시킨다.
+   * (터치에는 마우스오버가 없으므로 '이동' 도구를 눌러 쓰면 된다)
+   */
+  const updateGrabbable = (x: number, y: number) => {
+    if (tool) return; // 도구를 고른 상태에서는 그 도구가 주인
+    const g = grabAt(x, y);
+    canvas.style.pointerEvents = g ? "auto" : "none";
+    canvas.style.cursor = g ? (g.part === "body" ? "move" : "grab") : "default";
+    if ((g?.index ?? -1) !== highlight) {
+      highlight = g?.index ?? -1;
+      redraw();
+    }
+  };
+
+  const onContainerMove = (e: MouseEvent) => {
+    if (drag) return;
+    const { x, y } = xy(e);
+    updateGrabbable(x, y);
+  };
+
+  const onDown = (e: PointerEvent) => {
+    if (tool && tool !== "move") return; // 그리기 도구는 click 으로 처리
+    const { x, y } = xy(e);
+    const g = grabAt(x, y);
+    if (!g) return;
+    const p = ptAt(x, y);
+    if (!p) return;
+    drag = { ...g, last: p };
+    highlight = g.index;
+    canvas.setPointerCapture?.(e.pointerId);
+    canvas.style.cursor = "grabbing";
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const onDragMove = (e: PointerEvent) => {
+    if (!drag) return;
+    const { x, y } = xy(e);
+    const p = ptAt(x, y);
+    if (!p) return;
+    const d = drawings[drag.index];
+    if (!d) return;
+
+    if (d.kind === "hline") {
+      d.price = p.price;
+    } else if (drag.part === "a") {
+      d.a = p;
+    } else if (drag.part === "b") {
+      d.b = p;
+    } else {
+      // 전체 이동 — 마지막 위치에서 움직인 만큼 두 점을 같이 민다.
+      // 시간은 봉 번호 차이로 밀어야 봉 간격이 일정하지 않아도 어긋나지 않는다
+      const di = idxOf(p.time) - idxOf(drag.last.time);
+      const dp = p.price - drag.last.price;
+      const shift = (q: Pt): Pt => {
+        const j = Math.max(0, Math.min(data.length - 1, idxOf(q.time) + di));
+        return { time: data[j].time, price: q.price + dp };
+      };
+      d.a = shift(d.a);
+      d.b = shift(d.b);
+    }
+    drag.last = p;
+    redraw();
+    e.preventDefault();
+  };
+
+  const onUp = (e: PointerEvent) => {
+    if (!drag) return;
+    save(storageKey, drawings);
+    drag = null;
+    canvas.releasePointerCapture?.(e.pointerId);
+    const { x, y } = xy(e);
+    if (tool === "move") canvas.style.cursor = "grab";
+    else updateGrabbable(x, y);
+  };
+
+  const onClick = (e: MouseEvent) => {
+    if (!tool || tool === "move") return;
+    const { x, y } = xy(e);
 
     if (tool === "erase") {
       const hit = hitTest(x, y);
       if (hit >= 0) {
         drawings.splice(hit, 1);
+        highlight = -1;
         save(storageKey, drawings);
         redraw();
       }
@@ -346,56 +529,26 @@ export function attachDraw(opts: {
   };
 
   const onMove = (e: MouseEvent) => {
-    if (!tool) return;
-    const r = canvas.getBoundingClientRect();
-    hover = { x: e.clientX - r.left, y: e.clientY - r.top };
+    if (!tool || tool === "move") return;
+    hover = xy(e);
     if (pending) redraw();
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape" && tool) setTool(null);
+    if (e.key !== "Escape") return;
+    if (drag) {
+      drag = null;
+      redraw();
+    } else if (tool) setTool(null);
   };
-
-  /** 지우개 판정 — 8px 안에 걸리는 가장 가까운 그림 */
-  function hitTest(x: number, y: number): number {
-    const W = ts.width();
-    let best = -1;
-    let bestD = 8;
-    drawings.forEach((d, i) => {
-      let dist = Infinity;
-      if (d.kind === "hline") {
-        const yy = yOf(d.price);
-        if (yy != null) dist = Math.abs(y - yy);
-      } else if (d.kind === "trend") {
-        const x1 = xOf(d.a.time), y1 = yOf(d.a.price), x2 = xOf(d.b.time), y2 = yOf(d.b.price);
-        if (x1 != null && y1 != null && x2 != null && y2 != null) {
-          dist = distSeg(x, y, x1, y1, x2, y2);
-          // 연장 구간도 지울 수 있게
-          if (x2 !== x1) {
-            const slope = (y2 - y1) / (x2 - x1);
-            const [fx, fy] = x2 > x1 ? [x2, y2] : [x1, y1];
-            dist = Math.min(dist, distSeg(x, y, fx, fy, W, fy + slope * (W - fx)));
-          }
-        }
-      } else {
-        const x1 = xOf(d.a.time), x2 = xOf(d.b.time);
-        const left = x1 != null && x2 != null ? Math.min(x1, x2) : 0;
-        const range = d.b.price - d.a.price;
-        for (const lv of FIB_LEVELS) {
-          const yy = yOf(d.b.price - range * lv);
-          if (yy != null && x >= left) dist = Math.min(dist, Math.abs(y - yy));
-        }
-      }
-      if (dist < bestD) {
-        bestD = dist;
-        best = i;
-      }
-    });
-    return best;
-  }
 
   canvas.addEventListener("click", onClick);
   canvas.addEventListener("mousemove", onMove);
+  canvas.addEventListener("pointerdown", onDown);
+  canvas.addEventListener("pointermove", onDragMove);
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointercancel", onUp);
+  container.addEventListener("mousemove", onContainerMove);
   window.addEventListener("keydown", onKey);
 
   // 확대·이동·크기 변경마다 다시 그린다
@@ -408,6 +561,7 @@ export function attachDraw(opts: {
   return () => {
     ts.unsubscribeVisibleLogicalRangeChange(onRange);
     ro.disconnect();
+    container.removeEventListener("mousemove", onContainerMove);
     window.removeEventListener("keydown", onKey);
     canvas.remove();
     bar.remove();
