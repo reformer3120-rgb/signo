@@ -27,8 +27,17 @@ export interface Pattern {
   bias: Bias; // 상승 / 하락 / 중립
   /** 패턴을 이루는 꼭짓점 — 이어서 골격선을 그린다 */
   points: { time: number; price: number }[];
-  /** 기준선 (넥라인·추세선). 두 점을 이어 오른쪽 끝까지 연장해 그린다 */
-  lines?: { a: { time: number; price: number }; b: { time: number; price: number }; dash?: boolean }[];
+  /**
+   * 기준선 (넥라인·추세선). 기본은 오른쪽 끝까지 연장해 그린다 —
+   * 어디서 이탈·돌파하는지 보이게 하기 위해서다.
+   * 다이아몬드처럼 닫힌 도형은 extend:false 로 두 점만 잇는다.
+   */
+  lines?: {
+    a: { time: number; price: number };
+    b: { time: number; price: number };
+    dash?: boolean;
+    extend?: boolean;
+  }[];
   /** 목표가 — 있으면 가격축에 함께 표시 */
   target?: number;
   /** 0~1. 낮은 것은 걸러낸다 */
@@ -75,6 +84,18 @@ export function pivots(data: Candle[], from: number, to: number, dev: number): P
   }
   // 마지막 극점도 넣는다 — 아직 확정되지 않았지만 형태 판단에는 필요하다
   out.push({ i: extI, time: data[extI].time, price: extP, kind: dir === "up" ? "H" : "L" });
+
+  // 첫 극점도 넣는다. 지그재그는 방향이 한 번 꺾여야 극점을 확정하므로
+  // 시작점이 통째로 빠진다 — V자나 컵처럼 시작이 곧 어깨인 모양이 안 잡힌다.
+  if (out.length && out[0].i > from) {
+    const firstIsLow = out[0].kind === "L";
+    out.unshift({
+      i: from,
+      time: data[from].time,
+      price: firstIsLow ? data[from].high : data[from].low,
+      kind: firstIsLow ? "H" : "L",
+    });
+  }
   return out;
 }
 
@@ -96,6 +117,34 @@ export function autoDev(data: Candle[], from: number, to: number): number {
 
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) / Math.max(a, b) <= tol;
 const P = (p: Pivot) => ({ time: p.time, price: p.price });
+
+/** 두 점 사이 변화율 (%) */
+const move = (a: Pivot, b: Pivot) => (b.price / a.price - 1) * 100;
+/** 봉당 변화율 (%) — 가파른 정도. 가격 수준이 달라도 같은 잣대가 된다 */
+const steep = (a: Pivot, b: Pivot) => move(a, b) / Math.max(1, b.i - a.i);
+
+/**
+ * 바닥(또는 천장)이 둥근가 뾰족한가.
+ * 극점에서 zone 만큼 떨어진 값 안에 머문 봉이 구간의 몇 할인지 돌려준다.
+ * 컵은 오래 머물고(둥글다) V 자는 스쳐 지나간다(뾰족하다).
+ */
+function baseShare(
+  data: Candle[],
+  i0: number,
+  i1: number,
+  price: number,
+  isLow: boolean,
+  zone: number,
+): number {
+  const width = i1 - i0;
+  if (width <= 0) return 0;
+  const lvl = isLow ? price * (1 + zone) : price * (1 - zone);
+  let n = 0;
+  for (let i = i0; i <= i1; i++) {
+    if (isLow ? data[i].low <= lvl : data[i].high >= lvl) n++;
+  }
+  return n / width;
+}
 
 /** 최소제곱 직선 — 기울기와 절편 (x 는 봉 번호) */
 function fit(pts: Pivot[]): { m: number; c: number } | null {
@@ -268,10 +317,12 @@ const wedgeTriangle: Matcher = (ps, data) => {
     name = "하락채널";
     bias = "bear";
   } else if (parallel) {
-    name = "횡보 박스";
+    name = "박스권";
     bias = "neutral";
   }
   if (!name) return null;
+  // 박스권은 잔물결만 있어도 모양이 맞아 버린다. 폭 기준을 따로 높인다
+  if (name === "박스권" && Math.max(w0, w1) / mid < 0.035) return null;
 
   const end = Math.min(data.length - 1, i1);
   const lineAt = (l: { m: number; c: number }) => [
@@ -295,7 +346,194 @@ const wedgeTriangle: Matcher = (ps, data) => {
   };
 };
 
-const MATCHERS: Matcher[] = [headShoulders, tripleTB, doubleTB, wedgeTriangle];
+/**
+ * 깃발·페넌트 — 가파른 한 방향 움직임(깃대) 뒤에 붙는 짧은 숨고르기.
+ * 깃발은 추세와 반대로 기운 평행 통로, 페넌트는 좁아지는 삼각형이다.
+ * 둘 다 원래 가던 방향으로 이어진다고 본다.
+ */
+const flagPennant: Matcher = (ps, data) => {
+  for (let s = ps.length - 6; s >= 0; s--) {
+    const p0 = ps[s];
+    const p1 = ps[s + 1];
+    if (!p1) continue;
+    const mv = move(p0, p1);
+    // 깃대 — 짧은 기간에 크게 움직여야 한다
+    if (Math.abs(mv) < 8 || Math.abs(steep(p0, p1)) < 0.5) continue;
+
+    // 깃대 끝점은 숨고르기 계산에서 뺀다. 넣으면 깃대 바닥이 통로 아래쪽
+    // 선을 끌어내려 기울기가 뒤틀리고, 평행한 통로가 벌어진 것처럼 보인다.
+    const rest = ps.slice(s + 2);
+    if (rest.length < 4) continue; // 숨고르기 스윙이 4개 이상
+    const hs = rest.filter((p) => p.kind === "H");
+    const ls = rest.filter((p) => p.kind === "L");
+    if (hs.length < 2 || ls.length < 2) continue;
+    const top = fit(hs);
+    const bot = fit(ls);
+    if (!top || !bot) continue;
+
+    const i0 = rest[0].i;
+    const i1 = rest[rest.length - 1].i;
+    const w0 = at(top, i0) - at(bot, i0);
+    const w1 = at(top, i1) - at(bot, i1);
+    if (!(w0 > 0) || !(w1 > 0)) continue;
+    const poleH = Math.abs(p1.price - p0.price);
+    // 숨고르기가 깃대만큼 커지면 더 이상 깃발이 아니다
+    if (Math.max(w0, w1) > poleH * 0.6) continue;
+    // 깃대보다 오래 끌면 깃발이 아니라 새 추세다
+    if (i1 - i0 > (p1.i - p0.i) * 3) continue;
+
+    const mid = (at(top, i1) + at(bot, i1)) / 2;
+    if (!(mid > 0)) continue;
+    const sTop = (top.m / mid) * 100;
+    const sBot = (bot.m / mid) * 100;
+    const bull = mv > 0;
+    const converge = w1 < w0 * 0.7;
+
+    let name: string | null = null;
+    if (converge) name = bull ? "상승 페넌트" : "하락 페넌트";
+    else if (Math.abs(sTop - sBot) < 0.06) {
+      // 깃발은 추세와 반대로 기운다
+      if (bull && sTop < -0.015) name = "상승깃발";
+      else if (!bull && sTop > 0.015) name = "하락깃발";
+    }
+    if (!name) continue;
+
+    const end = Math.min(data.length - 1, i1);
+    const lineAt = (l: { m: number; c: number }) => ({
+      a: { time: data[i0].time, price: at(l, i0) },
+      b: { time: data[end].time, price: at(l, end) },
+    });
+    return {
+      name,
+      bias: bull ? "bull" : "bear",
+      points: [P(p0), P(p1)],
+      lines: [lineAt(top), lineAt(bot)],
+      // 목표는 깃대 길이만큼 더 간다고 본다
+      target: bull ? at(top, end) + poleH : at(bot, end) - poleH,
+      score: 0.68 + (converge ? 0.14 : 0.12),
+      note: "깃대만큼 더 간다고 본다",
+    };
+  }
+  return null;
+};
+
+/** 다이아몬드 — 흔들림이 커졌다가 다시 좁아지는 마름모 */
+const diamond: Matcher = (ps) => {
+  const use = ps.slice(-9);
+  if (use.length < 7) return null;
+
+  const amp: number[] = [];
+  for (let i = 0; i + 1 < use.length; i++) amp.push(Math.abs(use[i + 1].price - use[i].price));
+  const peak = amp.indexOf(Math.max(...amp));
+  if (peak <= 0 || peak >= amp.length - 1) return null;
+  // 앞에서는 커지고 뒤에서는 작아져야 마름모다
+  for (let i = 1; i <= peak; i++) if (amp[i] < amp[i - 1] * 0.85) return null;
+  for (let i = peak + 1; i < amp.length; i++) if (amp[i] > amp[i - 1] * 1.15) return null;
+  // 넓어졌다 좁아지는 폭이 뚜렷해야 한다
+  if (amp[peak] < amp[0] * 1.35 || amp[peak] < amp[amp.length - 1] * 1.35) return null;
+
+  const hi = use.reduce((m, p) => (p.price > m.price ? p : m), use[0]);
+  const lo = use.reduce((m, p) => (p.price < m.price ? p : m), use[0]);
+  const height = hi.price - lo.price;
+  if (!(height / lo.price > 0.05)) return null;
+
+  // 꼭짓점이 구간 가운데 있어야 마름모로 보인다
+  const left = use[0];
+  const right = use[use.length - 1];
+  const span = right.i - left.i;
+  const midish = (p: Pivot) => Math.abs(p.i - (left.i + right.i) / 2) < span * 0.35;
+  if (!midish(hi) && !midish(lo)) return null;
+
+  // 고점이 가운데면 천장형(하락 반전), 저점이 가운데면 바닥형(상승 반전)
+  const top = midish(hi);
+  const seg = (a: Pivot, b: Pivot) => ({ a: P(a), b: P(b), extend: false });
+  return {
+    name: top ? "다이아몬드 천장" : "다이아몬드 바닥",
+    bias: top ? "bear" : "bull",
+    points: [],
+    lines: [seg(left, hi), seg(hi, right), seg(right, lo), seg(lo, left)],
+    target: top ? lo.price - height : hi.price + height,
+    score: 0.62,
+    note: "높이만큼 움직인다고 본다",
+  };
+};
+
+/**
+ * 컵앤핸들 — 둥근 바닥으로 회복한 뒤 테두리 아래에서 얕게 쉬어 가는 모양.
+ * V 자와 갈리는 지점은 '바닥에 얼마나 머물렀나'다.
+ */
+const cupHandle: Matcher = (ps, data) => {
+  for (let s = ps.length - 3; s >= 0; s--) {
+    const [l, b, r] = ps.slice(s, s + 3);
+    if (!r || l.kind !== "H" || b.kind !== "L" || r.kind !== "H") continue;
+    // 양쪽 테두리 높이가 비슷해야 컵이다
+    if (!near(l.price, r.price, 0.1)) continue;
+    const rim = Math.min(l.price, r.price);
+    const depth = (rim - b.price) / rim;
+    if (depth < 0.12 || depth > 0.6) continue;
+    const width = r.i - l.i;
+    if (width < 15) continue; // 너무 짧으면 컵이라 부르기 어렵다
+    // 둥근가 — 바닥권에 머문 봉이 폭의 4분의 1은 되어야 한다
+    if (baseShare(data, l.i, r.i, b.price, true, depth * 0.3) < 0.25) continue;
+
+    // 손잡이 — 오른쪽 테두리 뒤의 얕은 되돌림
+    const after = ps.slice(s + 3);
+    const h = after.find((p) => p.kind === "L");
+    const hd = h ? (r.price - h.price) / r.price : NaN;
+    const hasHandle = !!h && hd > 0 && hd <= depth / 3;
+
+    return {
+      name: hasHandle ? "컵앤핸들" : "컵형",
+      bias: "bull",
+      points: hasHandle ? [P(l), P(b), P(r), P(h!)] : [P(l), P(b), P(r)],
+      lines: [{ a: P(l), b: P(r), dash: true }],
+      target: r.price + (rim - b.price),
+      score: hasHandle ? 0.84 : 0.58,
+      note: hasHandle ? "테두리 돌파 시 상승 신호" : "손잡이를 기다리는 자리",
+    };
+  }
+  return null;
+};
+
+/** V자 반등·V자 천장 — 가파르게 갔다가 곧바로 되돌아오는 뾰족한 반전 */
+const vReversal: Matcher = (ps, data) => {
+  for (let s = ps.length - 3; s >= 0; s--) {
+    const [a, m, b] = ps.slice(s, s + 3);
+    if (!b || m.kind === a.kind || a.kind !== b.kind) continue;
+    const leg1 = Math.abs(move(a, m));
+    const leg2 = Math.abs(move(m, b));
+    if (leg1 < 10 || leg2 < 10) continue;
+    // 양쪽 다 가팔라야 한다
+    if (Math.abs(steep(a, m)) < 0.7 || Math.abs(steep(m, b)) < 0.7) continue;
+    // 되돌린 정도가 비슷해야 V 자
+    if (leg2 < leg1 * 0.6) continue;
+    // 뾰족한가 — 극점 근처에 오래 머물면 그건 컵이다
+    const bottom = m.kind === "L";
+    if (baseShare(data, a.i, b.i, m.price, bottom, 0.03) > 0.2) continue;
+
+    return {
+      name: bottom ? "V자 반등" : "V자 천장",
+      bias: bottom ? "bull" : "bear",
+      points: [P(a), P(m), P(b)],
+      lines: [{ a: P(a), b: P(b), dash: true }],
+      target: bottom ? a.price : a.price,
+      score: 0.6,
+      note: bottom ? "직전 고점까지 되돌림 여지" : "직전 저점까지 되돌림 여지",
+    };
+  }
+  return null;
+};
+
+const MATCHERS: Matcher[] = [
+  headShoulders,
+  tripleTB,
+  doubleTB,
+  cupHandle,
+  diamond,
+  flagPennant,
+  vReversal,
+  wedgeTriangle,
+];
 
 // ── 4) 진입점 ────────────────────────────────────────────────
 
@@ -315,19 +553,29 @@ export function detectPatterns(data: Candle[], from: number, to: number, max = 2
   }
   if (!(lo > 0) || hi / lo - 1 < 0.012) return [];
 
+  // 되돌림 기준을 두 배율로 본다.
+  // 굵게 보면 머리어깨·다이아몬드 같은 큰 모양이 잡히고, 잘게 보면 깃발·페넌트
+  // 처럼 큰 움직임 뒤에 붙는 작은 조정이 잡힌다. 한 배율만 쓰면 둘 중 하나는
+  // 원리상 못 본다 — 깃발의 조정폭은 깃대보다 훨씬 작기 때문이다.
   const dev = autoDev(data, from, to);
-  const ps = pivots(data, from, to, dev);
-  if (ps.length < 3) return [];
-
   const found: Pattern[] = [];
-  for (const m of MATCHERS) {
-    try {
-      const r = m(ps, data);
-      if (r && r.score >= 0.5) found.push(r);
-    } catch {
-      /* 한 패턴이 실패해도 나머지는 계속 찾는다 */
+  for (const d of [dev, dev / 2.5]) {
+    const ps = pivots(data, from, to, d);
+    if (ps.length < 3) continue;
+    for (const m of MATCHERS) {
+      try {
+        const r = m(ps, data);
+        if (r && r.score >= 0.5) found.push(r);
+      } catch {
+        /* 한 패턴이 실패해도 나머지는 계속 찾는다 */
+      }
     }
   }
-  found.sort((a, b) => b.score - a.score);
-  return found.slice(0, max);
+  // 두 배율에서 같은 이름이 나오면 점수가 높은 쪽만 남긴다
+  const best = new Map<string, Pattern>();
+  for (const p of found) {
+    const cur = best.get(p.name);
+    if (!cur || p.score > cur.score) best.set(p.name, p);
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, max);
 }

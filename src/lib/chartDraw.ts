@@ -394,10 +394,9 @@ export function attachDraw(opts: {
       ctx.setLineDash(ln.dash ? [5, 4] : []);
       ctx.beginPath();
       ctx.moveTo(x1, y1);
-      if (x2 !== x1) {
-        const slope = (y2 - y1) / (x2 - x1);
-        ctx.lineTo(W, y1 + slope * (W - x1));
-      } else ctx.lineTo(x2, y2);
+      // 닫힌 도형(다이아몬드)은 두 점만 잇고, 나머지는 오른쪽 끝까지 늘인다
+      if (ln.extend === false || x2 === x1) ctx.lineTo(x2, y2);
+      else ctx.lineTo(W, y1 + ((y2 - y1) / (x2 - x1)) * (W - x1));
       ctx.stroke();
       ctx.setLineDash([]);
     }
