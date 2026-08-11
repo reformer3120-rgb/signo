@@ -76,7 +76,14 @@ export interface Pivot {
   kind: "H" | "L";
 }
 
-/** 지그재그 — 직전 극점에서 dev 만큼 되돌려야 그 극점을 확정한다 */
+/**
+ * 지그재그 — 직전 극점에서 dev 만큼 되돌려야 그 극점을 확정한다.
+ *
+ * 극점을 세우는 것과 되돌림을 재는 것은 반드시 다른 봉이어야 한다.
+ * 한 봉 안에서 둘 다 하면, 그 봉의 고가~저가 폭이 dev 보다 큰 순간
+ * 변동성 있는 봉마다 스윙이 찍힌다 (실제로 60봉 구간에 스윙 44개,
+ * 간격 0~1봉이 나왔다). 그러면 어떤 패턴도 최소 길이를 못 채운다.
+ */
 export function pivots(data: Candle[], from: number, to: number, dev: number): Pivot[] {
   if (to - from < 4) return [];
   const out: Pivot[] = [];
@@ -87,28 +94,45 @@ export function pivots(data: Candle[], from: number, to: number, dev: number): P
   for (let i = from + 1; i <= to; i++) {
     const hi = data[i].high;
     const lo = data[i].low;
-    if (dir !== "down" && hi > extP) {
-      extP = hi;
-      extI = i;
-      dir = "up";
-    } else if (dir !== "up" && lo < extP) {
-      extP = lo;
-      extI = i;
-      dir = "down";
+
+    if (dir === null) {
+      // 방향이 정해지기 전 — 먼저 dev 만큼 움직이는 쪽을 첫 방향으로 삼는다
+      if (hi >= extP * (1 + dev)) {
+        dir = "up";
+        extP = hi;
+        extI = i;
+      } else if (lo <= extP * (1 - dev)) {
+        dir = "down";
+        extP = lo;
+        extI = i;
+      }
+      continue;
     }
-    if (dir === "up" && lo < extP * (1 - dev)) {
-      out.push({ i: extI, time: data[extI].time, price: extP, kind: "H" });
-      dir = "down";
-      extP = lo;
-      extI = i;
-    } else if (dir === "down" && hi > extP * (1 + dev)) {
-      out.push({ i: extI, time: data[extI].time, price: extP, kind: "L" });
-      dir = "up";
-      extP = hi;
-      extI = i;
+
+    if (dir === "up") {
+      // 새 고점을 세운 봉에서는 되돌림을 재지 않는다 (else if)
+      if (hi > extP) {
+        extP = hi;
+        extI = i;
+      } else if (lo < extP * (1 - dev)) {
+        out.push({ i: extI, time: data[extI].time, price: extP, kind: "H" });
+        dir = "down";
+        extP = lo;
+        extI = i;
+      }
+    } else {
+      if (lo < extP) {
+        extP = lo;
+        extI = i;
+      } else if (hi > extP * (1 + dev)) {
+        out.push({ i: extI, time: data[extI].time, price: extP, kind: "L" });
+        dir = "up";
+        extP = hi;
+        extI = i;
+      }
     }
   }
-  out.push({ i: extI, time: data[extI].time, price: extP, kind: dir === "up" ? "H" : "L" });
+  if (dir) out.push({ i: extI, time: data[extI].time, price: extP, kind: dir === "up" ? "H" : "L" });
 
   // 첫 극점도 넣는다. 지그재그는 방향이 한 번 꺾여야 확정하므로 시작점이 빠지는데,
   // 시작이 곧 어깨인 모양이 통째로 안 잡힌다.
@@ -124,16 +148,37 @@ export function pivots(data: Candle[], from: number, to: number, dev: number): P
   return out;
 }
 
-/** 구간 변동폭에 맞춘 되돌림 기준 */
+/**
+ * 되돌림 기준.
+ *
+ * 구간 전체 변동폭의 1/8 을 기본으로 하되, **봉 하나의 평소 등락폭보다는
+ * 반드시 커야 한다.** 기준이 봉 변동폭보다 작으면 봉 하나가 오르내린 것만으로
+ * 스윙이 성립해 잔가지가 끝없이 잡힌다. 그래서 중앙값 봉폭의 2.5배를 하한으로 둔다.
+ */
 export function autoDev(data: Candle[], from: number, to: number): number {
   let hi = -Infinity;
   let lo = Infinity;
+  const ranges: number[] = [];
   for (let i = from; i <= to; i++) {
-    if (data[i].high > hi) hi = data[i].high;
-    if (data[i].low < lo) lo = data[i].low;
+    const c = data[i];
+    if (c.high > hi) hi = c.high;
+    if (c.low < lo) lo = c.low;
+    if (c.low > 0) ranges.push(c.high / c.low - 1);
   }
   if (!(lo > 0) || !Number.isFinite(hi)) return 0.03;
-  return Math.min(0.12, Math.max(0.012, (hi / lo - 1) / 8));
+  ranges.sort((a, b) => a - b);
+  const medianRange = ranges.length ? ranges[Math.floor(ranges.length / 2)] : 0;
+  const floor = Math.max(0.012, medianRange * 2.5);
+  return Math.min(0.2, Math.max(floor, (hi / lo - 1) / 8));
+}
+
+/** 되돌림 기준의 하한 — 잘게 볼 때도 이 아래로는 내려가지 않는다 */
+export function devFloor(data: Candle[], from: number, to: number): number {
+  const ranges: number[] = [];
+  for (let i = from; i <= to; i++) if (data[i].low > 0) ranges.push(data[i].high / data[i].low - 1);
+  if (!ranges.length) return 0.012;
+  ranges.sort((a, b) => a - b);
+  return Math.max(0.012, ranges[Math.floor(ranges.length / 2)] * 2.5);
 }
 
 // ── 보조 ─────────────────────────────────────────────────────
@@ -727,8 +772,11 @@ export function detectPattern(data: Candle[], from: number, to: number): Detecti
   // 되돌림 기준을 두 배율로 본다. 굵게 보면 머리어깨 같은 큰 모양이,
   // 잘게 보면 깃발처럼 큰 움직임 뒤에 붙는 작은 조정이 잡힌다.
   const dev = autoDev(data, from, to);
+  const floor = devFloor(data, from, to);
+  // 잘게 볼 때도 봉 변동폭 하한 아래로는 내려가지 않는다
+  const scales = [...new Set([dev, Math.max(floor, dev / 2.5)])];
   const cands: Cand[] = [];
-  for (const d of [dev, dev / 2.5]) {
+  for (const d of scales) {
     const ps = pivots(data, from, to, d);
     if (ps.length < 3) continue;
     for (const m of MATCHERS) {
@@ -764,6 +812,66 @@ export function detectPattern(data: Candle[], from: number, to: number): Detecti
 
   // 관문 5 — 확신도 85 미만은 보고하지 않는다
   return best.report.confidence >= MIN_CONF ? best : null;
+}
+
+// ── 진단 ─────────────────────────────────────────────────────
+
+export interface GateTrace {
+  name: string;
+  bars: number;
+  err: number;
+  tol: number;
+  breakoutIndex: number;
+  volRatio: number;
+  confidence: number;
+  /** 어느 관문에서 떨어졌나. 통과했으면 null */
+  rejectedAt: string | null;
+}
+
+/**
+ * 후보가 어느 관문에서 떨어지는지 보여 준다. 기준을 손볼 때 쓴다.
+ * 감지 결과 자체에는 영향을 주지 않는다.
+ */
+export function explain(data: Candle[], from: number, to: number): GateTrace[] {
+  const dev = autoDev(data, from, to);
+  const floor = devFloor(data, from, to);
+  const cands: Cand[] = [];
+  for (const d of [...new Set([dev, Math.max(floor, dev / 2.5)])]) {
+    const ps = pivots(data, from, to, d);
+    if (ps.length < 3) continue;
+    for (const m of MATCHERS) {
+      try {
+        cands.push(...m(ps, data));
+      } catch {
+        /* 무시 */
+      }
+    }
+  }
+  return cands.map((c) => {
+    const idx = c.pts.map((p) => p.i);
+    const i0 = Math.min(...idx);
+    const i1 = Math.max(...idx);
+    const bars = i1 - i0 + 1;
+    const bi = breakout(data, c.line, c.searchFrom, data.length - 1, c.breakDir);
+    const vr = bi >= 0 ? volumeRatio(data, i0, i1, bi) : 0;
+    const scored = qualify(c, data);
+    let rejectedAt: string | null = null;
+    if (bars < MIN_BARS) rejectedAt = "최소길이";
+    else if (c.err > c.tol) rejectedAt = "수평오차";
+    else if (bi < 0) rejectedAt = "돌파없음";
+    else if (!scored) rejectedAt = "기타";
+    else if (scored.report.confidence < MIN_CONF) rejectedAt = "확신도";
+    return {
+      name: c.name,
+      bars,
+      err: c.err,
+      tol: c.tol,
+      breakoutIndex: bi,
+      volRatio: vr,
+      confidence: scored?.report.confidence ?? 0,
+      rejectedAt,
+    };
+  });
 }
 
 // ── 재보고 억제 ──────────────────────────────────────────────
