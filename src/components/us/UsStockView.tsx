@@ -603,6 +603,7 @@ export function UsStockView({ initialSymbol }: { initialSymbol?: string } = {}) 
             precision={2}
             height={chartH}
             viewKey={`us:${symbol}:${tab === "min" ? minU : tab}`}
+            draw
           />
         ) : (
           <div className="grid place-items-center text-sm text-muted" style={{ height: chartH }}>데이터 없음</div>

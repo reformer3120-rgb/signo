@@ -15,6 +15,7 @@ import {
 } from "lightweight-charts";
 import type { Candle } from "@/lib/types";
 import { sma, rsi, macd, MA_PERIODS, MA_COLORS } from "@/lib/indicators";
+import { attachDraw } from "@/lib/chartDraw";
 
 export interface Indicators {
   ma?: boolean;
@@ -67,6 +68,7 @@ export function CandleChart({
   session,
   precision = 2,
   viewKey,
+  draw,
 }: {
   data: Candle[];
   height?: number;
@@ -75,6 +77,8 @@ export function CandleChart({
   precision?: number;
   /** 확대·이동 상태를 기억할 식별자 (종목·봉주기별로 따로 기억) */
   viewKey?: string;
+  /** 그리기 도구(추세선·수평선·피보나치). viewKey 별로 저장된다 */
+  draw?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -305,14 +309,21 @@ export function CandleChart({
     ts.subscribeVisibleLogicalRangeChange(onRange);
     updateMarkers();
 
+    // 그리기 도구 — 차트 위 오버레이. viewKey 별로 저장돼 화면을 나갔다 와도 남는다
+    const disposeDraw =
+      draw && viewKey
+        ? attachDraw({ chart, series: candle, container: ref.current, data, storageKey: viewKey, precision, dark })
+        : null;
+
     return () => {
       clearTimeout(arm);
+      disposeDraw?.();
       ts.unsubscribeVisibleLogicalRangeChange(onRange);
       chart.remove();
       chartRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, viewKey]);
+  }, [key, viewKey, draw]);
 
-  return <div ref={ref} style={{ height: totalH, width: "100%" }} />;
+  return <div ref={ref} style={{ position: "relative", height: totalH, width: "100%" }} />;
 }

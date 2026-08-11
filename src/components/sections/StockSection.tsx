@@ -176,6 +176,7 @@ export function StockSection({
           precision={0}
           height={chartH}
           viewKey={`kr:${code}:${exch}:${interval}`}
+          draw
         />
       ) : (
         <div className="grid place-items-center text-sm text-muted" style={{ height: chartH }}>데이터 없음</div>
