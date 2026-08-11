@@ -9,7 +9,7 @@
 // 화면을 나갔다 와도 유지된다.
 import type { CandlestickData, IChartApi, ISeriesApi, Time, UTCTimestamp } from "lightweight-charts";
 import type { Candle } from "@/lib/types";
-import { detectPatterns, type Pattern } from "@/lib/chartPatterns";
+import { detectPattern, type Detection } from "@/lib/chartPatterns";
 
 type Pt = { time: number; price: number };
 type Drawing =
@@ -165,7 +165,7 @@ export function attachDraw(opts: {
       return false;
     }
   })();
-  let patterns: Pattern[] = [];
+  let found: Detection | null = null;
   const patBtn = mkBtn("pattern", () => {
     showPatterns = !showPatterns;
     try {
@@ -337,7 +337,8 @@ export function attachDraw(opts: {
   const cBull = dark ? "#ff8f8f" : "#E23D3D";
   const cBear = dark ? "#7fbcff" : "#2E77C9";
   const cFlat = dark ? "#9aa0b4" : "#6b7086";
-  const biasColor = (b: Pattern["bias"]) => (b === "bull" ? cBull : b === "bear" ? cBear : cFlat);
+  const dirColor = (d: "상승" | "하락") => (d === "상승" ? cBull : cBear);
+  void cFlat;
 
   /**
    * 보이는 구간이 바뀔 때마다 다시 찾는다. 스크롤 중에 매 프레임 돌리면
@@ -347,7 +348,7 @@ export function attachDraw(opts: {
   function findPatterns() {
     if (findTimer) clearTimeout(findTimer);
     if (!showPatterns) {
-      patterns = [];
+      found = null;
       redraw();
       return;
     }
@@ -355,13 +356,15 @@ export function attachDraw(opts: {
       const r = ts.getVisibleLogicalRange();
       const from = Math.max(0, Math.floor(r?.from ?? 0));
       const to = Math.min(data.length - 1, Math.ceil(r?.to ?? data.length - 1));
-      patterns = to > from ? detectPatterns(data, from, to) : [];
+      found = to > from ? detectPattern(data, from, to) : null;
       redraw();
     }, 120);
   }
 
-  function drawPattern(ctx: CanvasRenderingContext2D, p: Pattern, W: number, slot: number) {
-    const color = biasColor(p.bias);
+  function drawPattern(ctx: CanvasRenderingContext2D, d: Detection, W: number) {
+    const p = d.render;
+    const rep = d.report;
+    const color = dirColor(rep.direction);
     ctx.save();
 
     // 골격선 — 꼭짓점을 차례로 잇는다
@@ -401,6 +404,23 @@ export function attachDraw(opts: {
       ctx.setLineDash([]);
     }
 
+    // 돌파 봉 — 어디서 뚫었는지 세로선으로 짚어 준다
+    if (rep.breakout_index != null && data[rep.breakout_index]) {
+      const bx2 = xOf(data[rep.breakout_index].time);
+      if (bx2 != null) {
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(bx2, 0);
+        ctx.lineTo(bx2, paneHeight());
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.globalAlpha = 1;
+      }
+    }
+
     // 목표가
     if (p.target != null) {
       const y = yOf(p.target);
@@ -419,20 +439,24 @@ export function attachDraw(opts: {
       }
     }
 
-    // 이름표 — 오른쪽 위에 쌓는다
+    // 이름표 — 패턴명·방향·확신도. 아래 줄에 완성 여부와 근거
     ctx.globalAlpha = 1;
     ctx.font = "11px monospace";
-    const arrow = p.bias === "bull" ? "▲" : p.bias === "bear" ? "▼" : "◆";
-    const text = `${arrow} ${p.name}`;
-    const w = ctx.measureText(text).width + 12;
+    const arrow = rep.direction === "상승" ? "▲" : "▼";
+    const head = `${arrow} ${rep.pattern}  ${rep.confidence}점`;
+    // 돌파가 거래량으로 확인되지 않았으면 확정 신호가 아님을 분명히 적는다
+    const sub = rep.status === "완성(돌파확인)" ? "완성 · 돌파확인" : "형성중 · 거래량 미충족";
+    const w = Math.max(ctx.measureText(head).width, ctx.measureText(sub).width) + 14;
     const bx = W - w - 6;
-    const by = 8 + slot * 22;
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.roundRect(bx, by, w, 17, 4);
+    ctx.roundRect(bx, 8, w, 32, 5);
     ctx.fill();
     ctx.fillStyle = "#fff";
-    ctx.fillText(text, bx + 6, by + 12);
+    ctx.fillText(head, bx + 7, 21);
+    ctx.font = "9px monospace";
+    ctx.globalAlpha = 0.85;
+    ctx.fillText(sub, bx + 7, 33);
     ctx.restore();
   }
 
@@ -450,8 +474,8 @@ export function attachDraw(opts: {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    // 자동 탐지 패턴을 먼저 깔고 그 위에 사용자가 그린 것을 올린다
-    patterns.forEach((p, i) => drawPattern(ctx, p, W, i));
+    // 자동 감지 패턴을 먼저 깔고 그 위에 사용자가 그린 것을 올린다
+    if (found) drawPattern(ctx, found, W);
     drawings.forEach((d, i) => {
       drawOne(ctx, d, W);
       if (i === highlight) handles(ctx, d, W);
