@@ -9,10 +9,11 @@
 //
 // 통과해야 하는 공통 관문
 //   1) 패턴 구간이 15봉 이상
-//   2) 비교 대상 변곡점끼리 ±1.5% 안에서 수평
+//   2) 비교 대상 변곡점끼리 ±2.5% 안에서 수평
 //   3) 넥라인·추세선을 '종가 기준'으로 뚜렷하게 이탈한 봉이 존재 (근접은 제외)
 //   4) 돌파 봉 거래량이 구간 평균의 1.3배 이상이어야 '완성'
-//   5) 확신도 85점 이상
+//   5) 확신도 80점 이상
+// 기준값은 TUNING 한 곳에 모여 있다.
 import type { Candle } from "@/lib/types";
 
 // ── 출력 형식 ────────────────────────────────────────────────
@@ -60,12 +61,28 @@ export const toJson = (d: Detection | null): DetectResult => (d ? d.report : { d
 
 // ── 기준값 ───────────────────────────────────────────────────
 
-const MIN_BARS = 15; // 패턴 최소 길이
-const FLAT_TOL = 0.015; // 수평 판정 ±1.5%
-const TOUCH_TOL = 0.01; // 추세선 접점 ±1%
-const BREAK_BUF = 0.005; // 근접과 돌파를 가르는 여유 0.5%
-const VOL_MIN = 1.3; // 돌파 거래량 배수
-const MIN_CONF = 85; // 보고 하한
+/**
+ * 감지 기준. 한 곳에 모아 두어 손볼 때 여기만 고치면 된다.
+ *
+ * 수평 오차는 처음 ±1.5% 로 뒀는데, 실제 일봉에서 이웃한 같은 종류
+ * 변곡점 142쌍 중 13%(18쌍)만 통과해 감지가 거의 일어나지 않았다.
+ * ±2.5% 로 넓히면 24%(34쌍)가 통과한다 — 여전히 '수평에 가깝다'고
+ * 부를 수 있는 범위다.
+ *
+ * 확신도 하한을 85 로 두면 '형성중'(거래량 미확인, 15점 감점)이
+ * 사실상 도달할 수 없어 '완성'만 보고됐다. 80 으로 낮춰 형성중도
+ * 보이게 하되, 상태 표시로 확정 신호가 아님을 분명히 한다.
+ *
+ * 돌파 필수와 거래량 1.3배는 그대로 둔다 — 가짜 신호를 막는 핵심이다.
+ */
+export const TUNING = {
+  minBars: 15, // 패턴 최소 길이
+  flatTol: 0.025, // 수평 판정 ±2.5%
+  touchTol: 0.01, // 추세선 접점 ±1%
+  breakBuf: 0.005, // 근접과 돌파를 가르는 여유 0.5%
+  volMin: 1.3, // 돌파 거래량 배수
+  minConf: 80, // 보고 하한
+};
 
 // ── 스윙 지점 ────────────────────────────────────────────────
 
@@ -244,7 +261,7 @@ function breakout(
   for (let i = Math.max(0, from); i <= to; i++) {
     const lvl = line(i);
     if (!Number.isFinite(lvl) || lvl <= 0) continue;
-    if (dir === "up" ? data[i].close > lvl * (1 + BREAK_BUF) : data[i].close < lvl * (1 - BREAK_BUF)) {
+    if (dir === "up" ? data[i].close > lvl * (1 + TUNING.breakBuf) : data[i].close < lvl * (1 - TUNING.breakBuf)) {
       return i;
     }
   }
@@ -319,9 +336,9 @@ const headShoulders: Matcher = (ps) => {
     if (!headOut) continue;
     // 두 어깨가 ±1.5% 안에서 수평
     const err = gap(a.price, e.price);
-    if (err > FLAT_TOL) continue;
+    if (err > TUNING.flatTol) continue;
     // 넥라인이 될 두 골도 수평에 가까워야 한다
-    if (gap(b.price, d.price) > FLAT_TOL * 2) continue;
+    if (gap(b.price, d.price) > TUNING.flatTol * 2) continue;
 
     const m = (d.price - b.price) / Math.max(1, d.i - b.i);
     const line = (i: number) => b.price + m * (i - b.i);
@@ -342,7 +359,7 @@ const headShoulders: Matcher = (ps) => {
       breakDir: top ? "down" : "up",
       searchFrom: e.i,
       err,
-      tol: FLAT_TOL,
+      tol: TUNING.flatTol,
       reason: top ? "양 어깨 수평, 머리 돌출 후 넥라인 이탈" : "역머리어깨 넥라인 돌파",
       render: {
         points: [a, b, c, d, e].map(P),
@@ -362,7 +379,7 @@ const doubleTB: Matcher = (ps) => {
     const [a, b, c] = ps.slice(s, s + 3);
     if (a.kind !== c.kind || b.kind === a.kind) continue;
     const err = gap(a.price, c.price);
-    if (err > FLAT_TOL) continue;
+    if (err > TUNING.flatTol) continue;
     // 두 극점 사이 골이 평균 대비 3% 이상 — 얕으면 그냥 횡보다
     const avg = (a.price + c.price) / 2;
     if (Math.abs(avg - b.price) / avg < 0.03) continue;
@@ -370,8 +387,8 @@ const doubleTB: Matcher = (ps) => {
     // 그건 박스권이지 반전 신호인 이중천장/바닥이 아니다.
     const before = ps[s - 2];
     const after = ps[s + 4];
-    if (before && before.kind === a.kind && gap(before.price, a.price) <= FLAT_TOL) continue;
-    if (after && after.kind === c.kind && gap(after.price, c.price) <= FLAT_TOL) continue;
+    if (before && before.kind === a.kind && gap(before.price, a.price) <= TUNING.flatTol) continue;
+    if (after && after.kind === c.kind && gap(after.price, c.price) <= TUNING.flatTol) continue;
 
     const top = a.kind === "H";
     const line = () => b.price;
@@ -388,7 +405,7 @@ const doubleTB: Matcher = (ps) => {
       breakDir: top ? "down" : "up",
       searchFrom: c.i,
       err,
-      tol: FLAT_TOL,
+      tol: TUNING.flatTol,
       reason: top ? "두 고점 수평, 넥라인 이탈" : "두 저점 수평, 넥라인 돌파",
       render: {
         points: [a, b, c].map(P),
@@ -416,11 +433,11 @@ const triangle: Matcher = (ps, data) => {
     const bot = fit(ls);
     if (!top || !bot) continue;
     // 각 추세선에 ±1% 안으로 닿은 점이 2개 이상이어야 한다
-    if (touches(hs, top, TOUCH_TOL) < 2 || touches(ls, bot, TOUCH_TOL) < 2) continue;
+    if (touches(hs, top, TUNING.touchTol) < 2 || touches(ls, bot, TUNING.touchTol) < 2) continue;
 
     const i0 = use[0].i;
     const i1 = use[use.length - 1].i;
-    if (i1 - i0 < MIN_BARS) continue;
+    if (i1 - i0 < TUNING.minBars) continue;
     const w0 = at(top, i0) - at(bot, i0);
     const w1 = at(top, i1) - at(bot, i1);
     if (!(w0 > 0) || !(w1 > 0) || w1 >= w0 * 0.75) continue; // 수렴해야 한다
@@ -481,7 +498,7 @@ const triangle: Matcher = (ps, data) => {
       breakDir,
       searchFrom: i1,
       err,
-      tol: TOUCH_TOL,
+      tol: TUNING.touchTol,
       reason: "고저 접점이 추세선에 수렴 후 돌파",
       render: {
         points: [],
@@ -502,7 +519,7 @@ const cupHandle: Matcher = (ps, data) => {
     if (l.kind !== "H" || b.kind !== "L" || r.kind !== "H") continue;
     // 양 테두리가 ±1.5% 안에서 수평
     const err = gap(l.price, r.price);
-    if (err > FLAT_TOL) continue;
+    if (err > TUNING.flatTol) continue;
     // 컵은 20봉 이상
     if (r.i - l.i < 20) continue;
 
@@ -532,7 +549,7 @@ const cupHandle: Matcher = (ps, data) => {
       breakDir: "up",
       searchFrom: h.i,
       err,
-      tol: FLAT_TOL,
+      tol: TUNING.flatTol,
       reason: "U자 컵 후 얕은 핸들, 테두리 돌파",
       render: {
         points: [l, b, r, h].map(P),
@@ -568,7 +585,7 @@ const flagPennant: Matcher = (ps, data) => {
 
     const i0 = rest[0].i;
     const i1 = rest[rest.length - 1].i;
-    if (i1 - p0.i < MIN_BARS) continue;
+    if (i1 - p0.i < TUNING.minBars) continue;
     const w0 = at(top, i0) - at(bot, i0);
     const w1 = at(top, i1) - at(bot, i1);
     if (!(w0 > 0) || !(w1 > 0)) continue;
@@ -622,7 +639,7 @@ const flagPennant: Matcher = (ps, data) => {
       breakDir,
       searchFrom: i1,
       err,
-      tol: TOUCH_TOL,
+      tol: TUNING.touchTol,
       reason: converge ? "깃대 후 수렴, 추세방향 돌파" : "깃대 후 반대기울기 통로 돌파",
       render: {
         points: [P(p0), P(p1)],
@@ -648,14 +665,14 @@ const boxBreak: Matcher = (ps, data) => {
     // 천장끼리·바닥끼리 각각 ±1.5% 안에서 수평이어야 박스다
     const hiErr = Math.max(...hs.map((p) => gap(p.price, hiAvg)));
     const loErr = Math.max(...ls.map((p) => gap(p.price, loAvg)));
-    if (hiErr > FLAT_TOL || loErr > FLAT_TOL) continue;
+    if (hiErr > TUNING.flatTol || loErr > TUNING.flatTol) continue;
     // 박스가 너무 얇으면 잔물결이다
     const height = hiAvg - loAvg;
     if (!(height / loAvg >= 0.035)) continue;
 
     const i0 = use[0].i;
     const i1 = use[use.length - 1].i;
-    if (i1 - i0 < MIN_BARS) continue;
+    if (i1 - i0 < TUNING.minBars) continue;
 
     const upAt = breakout(data, () => hiAvg, i1, data.length - 1, "up");
     const dnAt = breakout(data, () => loAvg, i1, data.length - 1, "down");
@@ -674,7 +691,7 @@ const boxBreak: Matcher = (ps, data) => {
       breakDir: up ? "up" : "down",
       searchFrom: i1,
       err: Math.max(hiErr, loErr),
-      tol: FLAT_TOL,
+      tol: TUNING.flatTol,
       reason: "천장·바닥 수평 유지 후 이탈",
       render: {
         points: [],
@@ -706,7 +723,7 @@ function qualify(c: Cand, data: Candle[]): Scored | null {
   const i0 = Math.min(...idx);
   const i1 = Math.max(...idx);
   // 관문 1 — 15봉 이상
-  if (i1 - i0 + 1 < MIN_BARS) return null;
+  if (i1 - i0 + 1 < TUNING.minBars) return null;
   // 관문 2 — 수평 오차
   if (c.err > c.tol) return null;
   // 관문 3 — 종가 기준 돌파 봉이 존재해야 한다
@@ -715,7 +732,7 @@ function qualify(c: Cand, data: Candle[]): Scored | null {
 
   // 관문 4 — 돌파 거래량
   const vr = volumeRatio(data, i0, i1, bi);
-  const confirmed = vr >= VOL_MIN;
+  const confirmed = vr >= TUNING.volMin;
 
   let conf = 100;
   conf -= (c.err / c.tol) * 15; // 변곡점 오차가 클수록 감점
@@ -759,7 +776,7 @@ function overlapRatio(a: number[], b: number[]): number {
  * 여러 후보가 조건을 만족하면 확신도가 가장 높은 하나만 남긴다.
  */
 export function detectPattern(data: Candle[], from: number, to: number): Detection | null {
-  if (!data.length || to - from < MIN_BARS) return null;
+  if (!data.length || to - from < TUNING.minBars) return null;
   // 구간이 거의 평평하면 무엇을 갖다 대도 맞는 것처럼 보인다
   let hi = -Infinity;
   let lo = Infinity;
@@ -811,7 +828,7 @@ export function detectPattern(data: Candle[], from: number, to: number): Detecti
   }
 
   // 관문 5 — 확신도 85 미만은 보고하지 않는다
-  return best.report.confidence >= MIN_CONF ? best : null;
+  return best.report.confidence >= TUNING.minConf ? best : null;
 }
 
 // ── 진단 ─────────────────────────────────────────────────────
@@ -856,11 +873,11 @@ export function explain(data: Candle[], from: number, to: number): GateTrace[] {
     const vr = bi >= 0 ? volumeRatio(data, i0, i1, bi) : 0;
     const scored = qualify(c, data);
     let rejectedAt: string | null = null;
-    if (bars < MIN_BARS) rejectedAt = "최소길이";
+    if (bars < TUNING.minBars) rejectedAt = "최소길이";
     else if (c.err > c.tol) rejectedAt = "수평오차";
     else if (bi < 0) rejectedAt = "돌파없음";
     else if (!scored) rejectedAt = "기타";
-    else if (scored.report.confidence < MIN_CONF) rejectedAt = "확신도";
+    else if (scored.report.confidence < TUNING.minConf) rejectedAt = "확신도";
     return {
       name: c.name,
       bars,
