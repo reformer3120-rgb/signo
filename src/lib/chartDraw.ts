@@ -9,7 +9,6 @@
 // 화면을 나갔다 와도 유지된다.
 import type { CandlestickData, IChartApi, ISeriesApi, Time, UTCTimestamp } from "lightweight-charts";
 import type { Candle } from "@/lib/types";
-import { detectPattern, type Detection } from "@/lib/chartPatterns";
 
 type Pt = { time: number; price: number };
 type Drawing =
@@ -61,8 +60,6 @@ const ICONS: Record<string, string> = {
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="3" y1="5" x2="21" y2="5"/><line x1="3" y1="10.5" x2="15" y2="10.5"/><line x1="3" y1="15" x2="18" y2="15"/><line x1="3" y1="19.5" x2="21" y2="19.5"/></svg>',
   erase:
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8.5l-4.2-4.2a2 2 0 0 1 0-2.8L13.5 3.8a2 2 0 0 1 2.8 0l4 4a2 2 0 0 1 0 2.8L12 19"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
-  pattern:
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-6 3 3 4-8 3 5 4-3"/><circle cx="7" cy="11" r="1.3" fill="currentColor" stroke="none"/><circle cx="14" cy="6" r="1.3" fill="currentColor" stroke="none"/></svg>',
   clear:
     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
 };
@@ -74,7 +71,6 @@ const TIP: Record<string, string> = {
   fib: "피보나치 되돌림 — 고점과 저점을 두 번 클릭",
   erase: "지우개 — 지울 선을 클릭",
   clear: "모두 지우기",
-  pattern: "패턴 자동 탐지 — 화면에 보이는 캔들에서 찾는다",
 };
 
 export function attachDraw(opts: {
@@ -136,10 +132,7 @@ export function attachDraw(opts: {
     canvas.style.pointerEvents = tool ? "auto" : "none";
     canvas.style.cursor =
       tool === "erase" ? "pointer" : tool === "move" ? "grab" : tool ? "crosshair" : "default";
-    for (const [id, b] of btns) {
-      if (id === "pattern") continue; // 패턴은 도구가 아니라 켜고 끄는 표시라 따로 관리
-      paint(b, id === tool);
-    }
+    for (const [id, b] of btns) paint(b, id === tool);
     redraw();
   };
   const paint = (b: HTMLButtonElement, on: boolean) => {
@@ -156,25 +149,6 @@ export function attachDraw(opts: {
     drawings = [];
     save(storageKey, drawings);
     setTool(null);
-  });
-  // 패턴 표시는 차트마다가 아니라 사람마다의 취향이라 한 번 켜면 어디서나 켜진다
-  let showPatterns = (() => {
-    try {
-      return localStorage.getItem("signo:draw:patterns") === "1";
-    } catch {
-      return false;
-    }
-  })();
-  let found: Detection | null = null;
-  const patBtn = mkBtn("pattern", () => {
-    showPatterns = !showPatterns;
-    try {
-      localStorage.setItem("signo:draw:patterns", showPatterns ? "1" : "0");
-    } catch {
-      /* 저장이 막혀도 이번 화면에서는 동작한다 */
-    }
-    paint(patBtn, showPatterns);
-    findPatterns();
   });
   container.appendChild(bar);
 
@@ -332,137 +306,6 @@ export function attachDraw(opts: {
     }
   }
 
-  // ── 패턴 ──
-
-  const cBull = dark ? "#ff8f8f" : "#E23D3D";
-  const cBear = dark ? "#7fbcff" : "#2E77C9";
-  const cFlat = dark ? "#9aa0b4" : "#6b7086";
-  const dirColor = (d: "상승" | "하락") => (d === "상승" ? cBull : cBear);
-  void cFlat;
-
-  /**
-   * 보이는 구간이 바뀔 때마다 다시 찾는다. 스크롤 중에 매 프레임 돌리면
-   * 무거우니 잠깐 멈춘 뒤에 계산한다.
-   */
-  let findTimer: ReturnType<typeof setTimeout> | null = null;
-  function findPatterns() {
-    if (findTimer) clearTimeout(findTimer);
-    if (!showPatterns) {
-      found = null;
-      redraw();
-      return;
-    }
-    findTimer = setTimeout(() => {
-      const r = ts.getVisibleLogicalRange();
-      const from = Math.max(0, Math.floor(r?.from ?? 0));
-      const to = Math.min(data.length - 1, Math.ceil(r?.to ?? data.length - 1));
-      found = to > from ? detectPattern(data, from, to) : null;
-      redraw();
-    }, 120);
-  }
-
-  function drawPattern(ctx: CanvasRenderingContext2D, d: Detection, W: number) {
-    const p = d.render;
-    const rep = d.report;
-    const color = dirColor(rep.direction);
-    ctx.save();
-
-    // 골격선 — 꼭짓점을 차례로 잇는다
-    const pts = p.points
-      .map((q) => [xOf(q.time), yOf(q.price)] as const)
-      .filter((q): q is readonly [number, number] => q[0] != null && q[1] != null);
-    if (pts.length >= 2) {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.6;
-      ctx.globalAlpha = 0.9;
-      ctx.beginPath();
-      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.stroke();
-      for (const [x, y] of pts) {
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-
-    // 기준선 — 오른쪽 끝까지 연장해 어디서 이탈·돌파하는지 보이게
-    for (const ln of p.lines ?? []) {
-      const x1 = xOf(ln.a.time), y1 = yOf(ln.a.price);
-      const x2 = xOf(ln.b.time), y2 = yOf(ln.b.price);
-      if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.2;
-      ctx.globalAlpha = 0.85;
-      ctx.setLineDash(ln.dash ? [5, 4] : []);
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      // 닫힌 도형(다이아몬드)은 두 점만 잇고, 나머지는 오른쪽 끝까지 늘인다
-      if (ln.extend === false || x2 === x1) ctx.lineTo(x2, y2);
-      else ctx.lineTo(W, y1 + ((y2 - y1) / (x2 - x1)) * (W - x1));
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // 돌파 봉 — 어디서 뚫었는지 세로선으로 짚어 준다
-    if (rep.breakout_index != null && data[rep.breakout_index]) {
-      const bx2 = xOf(data[rep.breakout_index].time);
-      if (bx2 != null) {
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(bx2, 0);
-        ctx.lineTo(bx2, paneHeight());
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // 목표가
-    if (p.target != null) {
-      const y = yOf(p.target);
-      if (y != null && y > 0 && y < paneHeight()) {
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.5;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 5]);
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(W, y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.globalAlpha = 1;
-        label(ctx, `목표 ${priceText(p.target)}`, W - 108, y, color);
-      }
-    }
-
-    // 이름표 — 패턴명·방향·확신도. 아래 줄에 완성 여부와 근거
-    ctx.globalAlpha = 1;
-    ctx.font = "11px monospace";
-    const arrow = rep.direction === "상승" ? "▲" : "▼";
-    const head = `${arrow} ${rep.pattern}  ${rep.confidence}점`;
-    // 돌파가 거래량으로 확인되지 않았으면 확정 신호가 아님을 분명히 적는다
-    // 돌파가 언제였는지 함께 적는다. 며칠 지난 돌파를 오늘 신호로 읽지 않도록.
-    const ago = rep.bars_since_breakout === 0 ? "당일" : `${rep.bars_since_breakout}봉 전`;
-    const sub =
-      rep.status === "완성(돌파확인)" ? `완성 · 돌파 ${ago}` : `형성중 · 거래량 미충족`;
-    const w = Math.max(ctx.measureText(head).width, ctx.measureText(sub).width) + 14;
-    const bx = W - w - 6;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.roundRect(bx, 8, w, 32, 5);
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillText(head, bx + 7, 21);
-    ctx.font = "9px monospace";
-    ctx.globalAlpha = 0.85;
-    ctx.fillText(sub, bx + 7, 33);
-    ctx.restore();
-  }
-
   function redraw() {
     const W = ts.width();
     const H = paneHeight();
@@ -477,8 +320,6 @@ export function attachDraw(opts: {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    // 자동 감지 패턴을 먼저 깔고 그 위에 사용자가 그린 것을 올린다
-    if (found) drawPattern(ctx, found, W);
     drawings.forEach((d, i) => {
       drawOne(ctx, d, W);
       if (i === highlight) handles(ctx, d, W);
@@ -710,20 +551,14 @@ export function attachDraw(opts: {
   container.addEventListener("mousemove", onContainerMove);
   window.addEventListener("keydown", onKey);
 
-  // 확대·이동·크기 변경마다 다시 그린다. 패턴은 보이는 구간이 달라졌으니 다시 찾는다
-  const onRange = () => {
-    redraw();
-    findPatterns();
-  };
+  // 확대·이동·크기 변경마다 다시 그린다
+  const onRange = () => redraw();
   ts.subscribeVisibleLogicalRangeChange(onRange);
   const ro = new ResizeObserver(() => redraw());
   ro.observe(container);
-  paint(patBtn, showPatterns);
   redraw();
-  findPatterns();
 
   return () => {
-    if (findTimer) clearTimeout(findTimer);
     ts.unsubscribeVisibleLogicalRangeChange(onRange);
     ro.disconnect();
     container.removeEventListener("mousemove", onContainerMove);
