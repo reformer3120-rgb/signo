@@ -12,7 +12,8 @@
 //   2) 비교 대상 변곡점끼리 ±2.5% 안에서 수평
 //   3) 넥라인·추세선을 '종가 기준'으로 뚜렷하게 이탈한 봉이 존재 (근접은 제외)
 //   4) 돌파 봉 거래량이 구간 평균의 1.3배 이상이어야 '완성'
-//   5) 확신도 80점 이상
+//   5) 돌파가 20봉 이내 (지나간 움직임을 오늘 신호로 띄우지 않는다)
+//   6) 확신도 80점 이상
 // 기준값은 TUNING 한 곳에 모여 있다.
 import type { Candle } from "@/lib/types";
 
@@ -33,6 +34,8 @@ export interface PatternReport {
   breakout_index: number | null;
   status: "완성(돌파확인)" | "형성중(거래량조건 미충족)";
   reason_short: string;
+  /** 돌파 후 몇 봉 지났나. 오래될수록 이미 지나간 움직임이다 */
+  bars_since_breakout: number;
 }
 
 export type DetectResult = { detected: false } | PatternReport;
@@ -82,6 +85,15 @@ export const TUNING = {
   breakBuf: 0.005, // 근접과 돌파를 가르는 여유 0.5%
   volMin: 1.3, // 돌파 거래량 배수
   minConf: 80, // 보고 하한
+  /**
+   * 돌파가 몇 봉 이내여야 지금 쓸 수 있는 신호로 보나.
+   *
+   * 이걸 두지 않았을 때 실측한 결과, 보고된 신호의 돌파 시점이 중앙값
+   * 65봉 전이었다. 석 달 전에 끝난 움직임을 오늘의 신호처럼 띄운 셈이다.
+   * '한 번에 하나만' 규칙 때문에 오래된 고득점 패턴이 갓 나온 패턴을
+   * 가려 버린 탓도 있다.
+   */
+  maxStale: 20,
 };
 
 // ── 스윙 지점 ────────────────────────────────────────────────
@@ -730,7 +742,10 @@ function qualify(c: Cand, data: Candle[]): Scored | null {
   const bi = breakout(data, c.line, c.searchFrom, data.length - 1, c.breakDir);
   if (bi < 0) return null;
 
-  // 관문 4 — 돌파 거래량
+  // 관문 4 — 돌파가 너무 오래됐으면 지금 쓸 수 있는 신호가 아니다
+  if (data.length - 1 - bi > TUNING.maxStale) return null;
+
+  // 관문 5 — 돌파 거래량
   const vr = volumeRatio(data, i0, i1, bi);
   const confirmed = vr >= TUNING.volMin;
 
@@ -755,6 +770,7 @@ function qualify(c: Cand, data: Candle[]): Scored | null {
       breakout_index: confirmed ? bi : null,
       status: confirmed ? "완성(돌파확인)" : "형성중(거래량조건 미충족)",
       reason_short: c.reason.slice(0, 30),
+      bars_since_breakout: data.length - 1 - bi,
     },
     render: c.render,
     anchor: idx,

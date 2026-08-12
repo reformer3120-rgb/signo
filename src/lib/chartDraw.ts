@@ -445,7 +445,10 @@ export function attachDraw(opts: {
     const arrow = rep.direction === "상승" ? "▲" : "▼";
     const head = `${arrow} ${rep.pattern}  ${rep.confidence}점`;
     // 돌파가 거래량으로 확인되지 않았으면 확정 신호가 아님을 분명히 적는다
-    const sub = rep.status === "완성(돌파확인)" ? "완성 · 돌파확인" : "형성중 · 거래량 미충족";
+    // 돌파가 언제였는지 함께 적는다. 며칠 지난 돌파를 오늘 신호로 읽지 않도록.
+    const ago = rep.bars_since_breakout === 0 ? "당일" : `${rep.bars_since_breakout}봉 전`;
+    const sub =
+      rep.status === "완성(돌파확인)" ? `완성 · 돌파 ${ago}` : `형성중 · 거래량 미충족`;
     const w = Math.max(ctx.measureText(head).width, ctx.measureText(sub).width) + 14;
     const bx = W - w - 6;
     ctx.fillStyle = color;
