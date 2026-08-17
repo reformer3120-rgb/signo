@@ -10,6 +10,11 @@ import { tickerMap, companyFacts, annualSeries, asOf, priorOf } from "./edgar.mj
 
 export const yf = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
+/** 받아 둔 것을 모아 두는 곳. 바깥 서비스가 요청 제한을 걸어도 다시 부르지 않는다 */
+const CACHE_DIR = path.join(process.cwd(), ".cache");
+const PX_CACHE = path.join(CACHE_DIR, "px");
+fs.mkdirSync(PX_CACHE, { recursive: true });
+
 // ── 표시 ─────────────────────────────────────────────────────
 const wid = (s) => [...String(s)].reduce((a, c) => a + (c.charCodeAt(0) > 0x2000 ? 2 : 1), 0);
 export const pad = (s, n) => String(s) + " ".repeat(Math.max(1, n - wid(s)));
@@ -42,6 +47,91 @@ export async function binanceEquityPerps() {
     }));
 }
 
+// ── S&P 500 명단 ────────────────────────────────────────────
+
+/** 따옴표 안의 쉼표를 지키는 최소 CSV 파서 (회사명에 쉼표가 들어 있다) */
+function parseCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let q = false;
+  for (const ch of line) {
+    if (ch === '"') q = !q;
+    else if (ch === "," && !q) { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/**
+ * S&P 500 편입 종목과 GICS 섹터.
+ *
+ * 원본이 GitHub 라 자주 부르면 429 로 막힌다(실제로 겪었다). 받은 것을
+ * 디스크에 두고 30일간 다시 부르지 않는다. 편입 종목은 그렇게 자주
+ * 바뀌지 않으므로 이 정도 신선도면 충분하다.
+ */
+export async function sp500() {
+  const f = path.join(CACHE_DIR, "sp500.json");
+  try {
+    const st = fs.statSync(f);
+    if (Date.now() - st.mtimeMs < 30 * 86400_000) return JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch {
+    /* 캐시 없음 */
+  }
+  // 출처를 둘 둔다 — GitHub 가 429 로 막히는 일이 잦다
+  const sector = (await fromGithub()) ?? (await fromWikipedia());
+  if (!sector || Object.keys(sector).length < 400) {
+    throw new Error("S&P500 명단을 못 받았다 — 두 출처 모두 실패");
+  }
+  fs.writeFileSync(f, JSON.stringify(sector));
+  return sector;
+}
+
+async function fromGithub() {
+  try {
+    const r = await fetch(
+      "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv",
+    );
+    if (!r.ok) return null;
+    const text = await r.text();
+    const out = {};
+    for (const line of text.trim().split("\n").slice(1)) {
+      const c = parseCsvLine(line);
+      const t = (c[0] ?? "").trim().replace(/\./g, "-");
+      if (/^[A-Z-]{1,6}$/.test(t)) out[t] = (c[2] ?? "").trim();
+    }
+    return Object.keys(out).length >= 400 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 위키백과 표에서 뽑는다. 행이 이런 모양이다.
+ *   || {{NyseSymbol|MMM}}
+ *   || [[3M]]
+ *   || Industrials
+ */
+async function fromWikipedia() {
+  try {
+    const r = await fetch(
+      "https://en.wikipedia.org/w/api.php?action=parse&page=List_of_S%26P_500_companies&prop=wikitext&format=json&section=1",
+      { headers: { "User-Agent": process.env.EDGAR_UA ?? "SIGNO research" } },
+    );
+    if (!r.ok) return null;
+    const wt = (await r.json())?.parse?.wikitext?.["*"] ?? "";
+    const out = {};
+    const re = /\|\|\s*\{\{\w*Symbol\|([A-Z.\-]{1,6})\}\}[^\n]*\n\|\|[^\n]*\n\|\|\s*([^\n|]+)/g;
+    for (const m of wt.matchAll(re)) {
+      const t = m[1].trim().replace(/\./g, "-");
+      if (/^[A-Z-]{1,6}$/.test(t)) out[t] = m[2].trim();
+    }
+    return Object.keys(out).length >= 400 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── 펀딩비 ───────────────────────────────────────────────────
 
 /** 봇이 받아 둔 펀딩 CSV 에서 종목별 연환산 요율. 없으면 평균으로 채운다 */
@@ -69,11 +159,36 @@ export function loadFunding(tickers, botData) {
 // ── 자료 적재 ────────────────────────────────────────────────
 
 /**
+ * 일봉 — 디스크에 모아 둔다.
+ *
+ * 야후는 같은 종목을 반복해 부르면 빈 응답을 준다(요청 제한). 500종목을
+ * 여러 스크립트에서 돌리다 보면 금방 걸린다. 한 번 받아 두면 그 뒤로는
+ * 부르지 않으므로 제한에도 안 걸리고 재실행이 즉시 끝난다.
+ */
+async function dailyBars(ticker, from) {
+  const f = path.join(PX_CACHE, `${ticker}-${from}.json`);
+  try {
+    const st = fs.statSync(f);
+    if (Date.now() - st.mtimeMs < 24 * 3600_000) return JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch {
+    /* 캐시 없음 */
+  }
+  const chart = await yf.chart(ticker, { period1: `${from}-01-01`, interval: "1d" });
+  const px = (chart.quotes ?? [])
+    .filter((q) => q.close != null)
+    .map((q) => ({ d: new Date(q.date).toISOString().slice(0, 10), c: q.close }));
+  // 빈 응답을 캐시하면 제한이 풀린 뒤에도 계속 비어 보인다
+  if (px.length >= 400) fs.writeFileSync(f, JSON.stringify(px));
+  return px;
+}
+
+/**
  * 종목별 [공시일 기준 연간 재무 + 일봉]을 모은다.
  * ETF·해외상장은 us-gaap 재무가 없어 여기서 자연히 걸러진다.
  */
 export async function loadStocks(tickers, years, onProgress) {
   const map = await tickerMap();
+  const from = new Date().getUTCFullYear() - years - 2;
   const stock = {};
   const skipped = [];
   let n = 0;
@@ -82,17 +197,8 @@ export async function loadStocks(tickers, years, onProgress) {
     const cik = map[t];
     if (!cik) { skipped.push([t, "CIK없음(ETF·해외 등)"]); continue; }
     try {
-      const [facts, chart] = await Promise.all([
-        companyFacts(cik),
-        yf.chart(t, {
-          period1: `${new Date().getUTCFullYear() - years - 2}-01-01`,
-          interval: "1d",
-        }),
-      ]);
+      const [facts, px] = await Promise.all([companyFacts(cik), dailyBars(t, from)]);
       const fin = annualSeries(facts);
-      const px = chart.quotes
-        .filter((q) => q.close != null)
-        .map((q) => ({ d: new Date(q.date).toISOString().slice(0, 10), c: q.close }));
       if (fin.length < 3) { skipped.push([t, "재무 부족"]); continue; }
       if (px.length < 400) { skipped.push([t, "주가 부족"]); continue; }
       stock[t] = { fin, px, idx: Object.fromEntries(px.map((p, i) => [p.d, i])) };
@@ -139,6 +245,76 @@ function rank(rows, key, higherBetter) {
  * 재무는 **공시일 기준**으로만 읽는다 — 결산이 끝났어도 공시 전이면
  * 그날의 투자자는 모르는 값이다.
  */
+/**
+ * 가중치를 바꿔 가며 쓰는 점수.
+ *
+ * 항목은 SIGNO 종합평가와 같다 — 재무건전성 · 밸류 · 성장 · 시가총액 · 모멘텀.
+ * (기관 보유비중과 배당은 과거 시계열이 없어 뺀다)
+ * 가중치만 바꿔 넣으면 '종합평가 원본' 과 '재배합' 을 같은 잣대로 견줄 수 있다.
+ *
+ * @param weights 예) { 재무: .28, 밸류: .22, 성장: .15, 시총: .10, 모멘텀: .10 }
+ *                값이 0 인 항목은 아예 안 쓴다
+ */
+export function makeWeightedSignal(stock, minNames, weights) {
+  const keys = Object.keys(weights).filter((k) => weights[k] !== 0);
+  return function signalAt(date) {
+    const rows = [];
+    for (const [sym, s] of Object.entries(stock)) {
+      const i = s.idx[date];
+      if (i == null || i < 252) continue;
+      const price = s.px[i].c;
+      const fin = asOf(s.fin, date); // 공시일 기준
+      const prior = priorOf(s.fin, fin);
+      const back = (n) => (i - n >= 0 ? price / s.px[i - n].c - 1 : NaN);
+      const r = { sym, i, price };
+      r.mom = mean([back(63), back(126), back(252)].filter(Number.isFinite));
+      if (fin) {
+        r.roe = fin.equity > 0 ? (fin.netInc / fin.equity) * 100 : NaN;
+        r.debt = fin.equity > 0 ? (fin.liabilities / fin.equity) * 100 : NaN;
+        r.opMargin = fin.revenue > 0 ? (fin.opInc / fin.revenue) * 100 : NaN;
+        r.cap = fin.shares > 0 ? Math.log10(price * fin.shares) : NaN;
+        r.per = fin.eps > 0 ? price / fin.eps : NaN;
+        r.pbr = fin.equity > 0 && fin.shares > 0 ? price / (fin.equity / fin.shares) : NaN;
+        if (prior && prior.revenue > 0) r.growth = fin.revenue / prior.revenue - 1;
+      }
+      rows.push(r);
+    }
+    if (rows.length < minNames) return null;
+
+    const R = {
+      roe: rank(rows, "roe", true),
+      debt: rank(rows, "debt", false),
+      opMargin: rank(rows, "opMargin", true),
+      growth: rank(rows, "growth", true),
+      cap: rank(rows, "cap", true),
+      per: rank(rows, "per", false),
+      pbr: rank(rows, "pbr", false),
+      mom: rank(rows, "mom", true),
+    };
+    rows.forEach((r, k) => {
+      // 항목별 점수 — 재무·밸류의 내부 배합은 lib/score.ts 와 같다
+      const part = {
+        재무: mean([R.roe[k] * 0.5, R.debt[k] * 0.3, R.opMargin[k] * 0.2].filter(Number.isFinite)) * 3,
+        밸류: mean([R.per[k], R.pbr[k]].filter(Number.isFinite)),
+        성장: R.growth[k],
+        시총: R.cap[k],
+        모멘텀: R.mom[k],
+      };
+      let sum = 0;
+      let wsum = 0;
+      for (const key of keys) {
+        const v = key === "재무" ? Math.min(1, part[key]) : part[key];
+        if (Number.isFinite(v)) { sum += v * weights[key]; wsum += weights[key]; }
+      }
+      // 절반 넘게 비면 점수로 치지 않는다
+      const need = keys.reduce((a, k2) => a + weights[k2], 0) * 0.6;
+      r.sig = wsum >= need ? sum / wsum : NaN;
+    });
+    const valid = rows.filter((r) => Number.isFinite(r.sig));
+    return valid.length >= minNames ? valid : null;
+  };
+}
+
 export function makeSignal(stock, minNames) {
   return function signalAt(date) {
     const rows = [];
