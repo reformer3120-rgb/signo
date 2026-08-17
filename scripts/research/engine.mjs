@@ -232,6 +232,49 @@ export function stats(r) {
   return { n: r.length, total, cagr, vol, sharpe: vol ? cagr / vol : NaN, mdd, win: r.filter((x) => x > 0).length / r.length, worst: Math.min(...r) };
 }
 
+/**
+ * 변동성 타게팅 — 최근 변동성이 클수록 비중을 줄인다.
+ *
+ * 알파가 없어도 샤프는 올릴 수 있다. 변동성은 뭉쳐 다니기 때문이다
+ * (요동친 달 다음엔 또 요동친다). 요동칠 때 작게 들고 잠잠할 때 크게
+ * 들면 같은 수익을 더 얕은 낙폭으로 얻는다.
+ *
+ * 미래를 쓰지 않는다 — t 시점 비중은 t 이전 수익률로만 정한다.
+ *
+ * @param rets    월별 수익률
+ * @param target  목표 연변동성 (0.20 = 20%)
+ * @param lookback 변동성을 재는 개월 수
+ * @param maxLev  비중 상한
+ */
+export function volTarget(rets, { target = 0.2, lookback = 6, maxLev = 2 } = {}) {
+  const out = [];
+  const scales = [];
+  for (let i = 0; i < rets.length; i++) {
+    if (i < lookback) { out.push(rets[i]); scales.push(1); continue; }
+    const past = rets.slice(i - lookback, i); // ★ i 는 포함하지 않는다
+    const v = sd(past) * Math.sqrt(12);
+    const k = v > 0 ? Math.min(maxLev, target / v) : 1;
+    out.push(rets[i] * k);
+    scales.push(k);
+  }
+  return { rets: out, scales, avgScale: mean(scales) };
+}
+
+/** 기준선에 회귀해 베타와 알파를 가른다 */
+export function alphaBeta(strategy, base) {
+  const n = Math.min(strategy.length, base.length);
+  const a = strategy.slice(0, n);
+  const b = base.slice(0, n);
+  const mA = mean(a);
+  const mB = mean(b);
+  const varB = mean(b.map((x) => (x - mB) ** 2));
+  const cov = mean(Array.from({ length: n }, (_, i) => (a[i] - mA) * (b[i] - mB)));
+  const beta = varB ? cov / varB : NaN;
+  const alpha = mA - beta * mB;
+  const resid = Array.from({ length: n }, (_, i) => a[i] - beta * b[i] - alpha);
+  return { beta, alpha, t: alpha / (sd(resid) / Math.sqrt(n)), n };
+}
+
 export const HEADER =
   "  " + pad("전략", 24) + padL("개월", 5) + padL("연수익", 11) + padL("변동성", 10) +
   padL("샤프", 8) + padL("최대낙폭", 11) + padL("승률", 7);
