@@ -19,6 +19,7 @@ export function SectorPeek({
   code,
   title,
   group = "detail",
+  period = "1d",
   onPick,
   children,
 }: {
@@ -27,6 +28,8 @@ export function SectorPeek({
   code: string;
   title: string;
   group?: "detail" | "broad";
+  /** 섹터를 보고 있는 기간 — 종목 수익률도 같은 기간으로 맞춘다 */
+  period?: "1d" | "1w" | "1m";
   onPick: (code: string, name: string) => void;
   children: ReactNode;
 }) {
@@ -38,7 +41,7 @@ export function SectorPeek({
   // 열려 있는 동안에만 불러온다 (섹터 22개를 미리 다 받지 않도록)
   const { data, isLoading } = useSWR<{ data: Peer[] }>(
     open && code
-      ? `/api/sector-stocks?market=${market}&code=${encodeURIComponent(code)}&group=${group}`
+      ? `/api/sector-stocks?market=${market}&code=${encodeURIComponent(code)}&group=${group}&period=${period}`
       : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 120_000 },
@@ -87,8 +90,12 @@ export function SectorPeek({
             above ? "bottom-full mb-1" : "top-full mt-1"
           }`}
         >
-          <div className="mb-1 px-1.5 text-[11px] font-semibold text-muted">
-            {title} · 시총 상위
+          <div className="mb-1 flex items-center justify-between gap-2 px-1.5 text-[11px]">
+            <span className="truncate font-semibold text-muted">{title} · 시총 상위</span>
+            {/* 지금 보이는 수익률이 어느 기간인지 — 섹터 탭과 어긋나 보이지 않게 */}
+            <span className="shrink-0 text-muted/70">
+              {period === "1d" ? "당일" : period === "1w" ? "1주" : "1개월"}
+            </span>
           </div>
           {isLoading && !peers.length ? (
             <div className="h-24 animate-pulse rounded-lg bg-line/30" />

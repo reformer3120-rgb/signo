@@ -46,12 +46,14 @@ function SectorBar({
   s,
   max,
   group,
+  period,
   onPick,
 }: {
   s: SectorMove;
   max: number;
   /** 세부는 업종 코드로, 대분류는 이름으로 구성종목을 찾는다 */
   group: "detail" | "broad";
+  period: SectorPeriod;
   onPick: (code: string, name: string) => void;
 }) {
   const up = s.changeRate >= 0;
@@ -69,7 +71,7 @@ function SectorBar({
   );
   // 마우스를 올리면 구성종목이 펼쳐지고, 고르면 그 종목으로 이동
   return (
-    <SectorPeek market="kr" code={s.key} title={s.name} group={group} onPick={onPick}>
+    <SectorPeek market="kr" code={s.key} title={s.name} group={group} period={period} onPick={onPick}>
       {bar}
     </SectorPeek>
   );
@@ -134,7 +136,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-up mb-2">강한 섹터</div>
             <div className="flex flex-col gap-2">
               {strong.map((s) => (
-                <SectorBar key={s.key} s={s} max={max} group={scope} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} group={scope} period={period} onPick={pick} />
               ))}
             </div>
           </div>
@@ -142,7 +144,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-down mb-2">약한 섹터</div>
             <div className="flex flex-col gap-2">
               {weak.map((s) => (
-                <SectorBar key={s.key} s={s} max={max} group={scope} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} group={scope} period={period} onPick={pick} />
               ))}
             </div>
           </div>

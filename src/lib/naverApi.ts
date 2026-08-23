@@ -1222,3 +1222,30 @@ export async function broadSectorStocks(
     .sort((a, b) => b.cap - a.cap)
     .slice(0, limit);
 }
+
+/**
+ * 구성종목의 등락률을 지정한 기간 수익률로 바꾼다.
+ *
+ * 섹터를 1주 기준으로 보고 있는데 펼친 종목은 당일 등락률이면 어긋난다.
+ * 보고 있는 기간과 같은 잣대로 맞춘다.
+ *
+ * 당일(days=1)은 네이버가 준 값을 그대로 쓴다 — 계산할 이유가 없다.
+ * 일봉이 모자란 종목(신규상장 등)은 값을 지어내지 않고 그대로 둔 채
+ * changeRate 를 NaN 이 아닌 원래 값으로 남긴다 — 화면이 빈칸으로 깨지지 않게.
+ */
+export async function withPeriodReturn<T extends { code: string; changeRate: number }>(
+  rows: T[],
+  days: number,
+): Promise<T[]> {
+  if (days <= 1 || !rows.length) return rows;
+  const { bars } = await import("./naver");
+  const out = await pool(rows, 8, async (r) => {
+    const b = await bars(r.code, "day", days + 6).catch(() => []);
+    if (b.length < days + 1) return r; // 이력이 짧으면 당일 값을 그대로 둔다
+    const now = b[b.length - 1].close;
+    const then = b[b.length - 1 - days].close;
+    if (!(then > 0)) return r;
+    return { ...r, changeRate: (now / then - 1) * 100 };
+  });
+  return out;
+}
