@@ -1195,3 +1195,30 @@ export async function sectorStrength(
   const all = await sectorStrengthAll();
   return broad ? all[period].broad : all[period].detail;
 }
+
+/**
+ * 대분류에 속한 구성종목 — 시총 상위.
+ *
+ * 대분류는 네이버 업종 코드가 없다(우리가 묶은 것이다). 그래서 속한
+ * 세부업종들의 구성종목을 모아 시총순으로 다시 세운다.
+ *
+ * 세부업종마다 상위 10개만 받아도 충분하다. 대분류에서 시총 1위인 종목은
+ * 자기가 속한 세부업종에서도 1위이므로, 각 업종의 앞쪽만 봐도 놓치지 않는다.
+ */
+export async function broadSectorStocks(
+  broad: string,
+  limit = 8,
+): Promise<{ code: string; name: string; changeRate: number; cap: number }[]> {
+  const list = await sectors();
+  const mine = list.filter((s) => broadOf(s.name) === broad);
+  if (!mine.length) return [];
+
+  const groups = await pool(mine, 6, (s) => sectorStocks(s.code, 10).catch(() => []));
+  // 한 종목이 두 세부업종에 들어 있을 수 있다 — 코드로 한 번만
+  const seen = new Set<string>();
+  return groups
+    .flat()
+    .filter((r) => !seen.has(r.code) && seen.add(r.code))
+    .sort((a, b) => b.cap - a.cap)
+    .slice(0, limit);
+}

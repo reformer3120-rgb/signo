@@ -18,12 +18,15 @@ export function SectorPeek({
   market,
   code,
   title,
+  group = "detail",
   onPick,
   children,
 }: {
   market: "kr" | "us";
+  /** 세부업종은 네이버 업종 코드, 대분류는 이름 (코드가 없다) */
   code: string;
   title: string;
+  group?: "detail" | "broad";
   onPick: (code: string, name: string) => void;
   children: ReactNode;
 }) {
@@ -34,7 +37,9 @@ export function SectorPeek({
 
   // 열려 있는 동안에만 불러온다 (섹터 22개를 미리 다 받지 않도록)
   const { data, isLoading } = useSWR<{ data: Peer[] }>(
-    open && code ? `/api/sector-stocks?market=${market}&code=${encodeURIComponent(code)}` : null,
+    open && code
+      ? `/api/sector-stocks?market=${market}&code=${encodeURIComponent(code)}&group=${group}`
+      : null,
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 120_000 },
   );
