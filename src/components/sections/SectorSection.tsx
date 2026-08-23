@@ -1,6 +1,6 @@
 "use client";
-import { useMemo } from "react";
-import useSWR from "swr";
+import { useEffect, useMemo } from "react";
+import useSWR, { preload } from "swr";
 import { fetcher } from "@/lib/swr";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/Card";
@@ -85,6 +85,13 @@ export function SectorSection() {
   const [period, setPeriod] = useSticky<SectorPeriod>("kr.sector.period", "1d");
   const [scope, setScope] = useSticky<"broad" | "detail">("kr.sector.scope", "detail");
   const broad = scope === "broad";
+
+  // 1주·1개월은 전 종목 일봉을 받아 만들기 때문에 처음 부를 때 십수 초 걸린다.
+  // 기본 화면(당일)이 뜨는 동안 배경으로 미리 불러 둔다. 사용자가 탭을 누를
+  // 무렵에는 이미 만들어져 있어 기다림이 없다.
+  useEffect(() => {
+    preload("/api/sectors?period=1w&group=detail", fetcher);
+  }, []);
 
   const { data, isLoading } = useSWR<{ data: SectorMove[] }>(
     `/api/sectors?period=${period}&group=${scope}`,

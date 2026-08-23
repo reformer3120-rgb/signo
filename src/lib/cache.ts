@@ -17,21 +17,41 @@ const BUILD =
   process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? process.env.VERCEL_DEPLOYMENT_ID ?? "dev";
 
 /** key로 캐시된 값을 반환하거나, fn()을 실행해 ttlSec 동안 캐시 */
+/**
+ * 같은 키로 이미 계산이 돌고 있으면 그 결과를 같이 기다린다.
+ *
+ * 이게 없으면 캐시가 비었을 때 동시에 들어온 사람 수만큼 같은 계산이
+ * 따로 돈다. 섹터 강약처럼 2,800종목 일봉을 받는 작업은 그 차이가 크다.
+ * 실패한 것은 남기지 않는다 — 남기면 다음 사람도 같은 실패를 받는다.
+ */
+const inFlight = new Map<string, Promise<unknown>>();
+
 export async function cached<T>(key: string, ttlSec: number, fn: () => Promise<T>): Promise<T> {
   const k = `${BUILD}:${key}`;
+
   if (redis) {
     const hit = await redis.get<T>(k);
     if (hit !== null && hit !== undefined) return hit;
-    const v = await fn();
-    await redis.set(k, v, { ex: ttlSec });
-    return v;
+  } else {
+    const hit = mem.get(k);
+    if (hit && hit.exp > Date.now()) return hit.v as T;
   }
-  const now = Date.now();
-  const hit = mem.get(k);
-  if (hit && hit.exp > now) return hit.v as T;
-  const v = await fn();
-  mem.set(k, { v, exp: now + ttlSec * 1000 });
-  return v;
+
+  const running = inFlight.get(k);
+  if (running) return running as Promise<T>;
+
+  const p = (async () => {
+    const v = await fn();
+    if (redis) await redis.set(k, v, { ex: ttlSec });
+    else mem.set(k, { v, exp: Date.now() + ttlSec * 1000 });
+    return v;
+  })();
+  inFlight.set(k, p);
+  try {
+    return await p;
+  } finally {
+    inFlight.delete(k);
+  }
 }
 
 export const cacheBackend = redis ? "upstash" : "memory";

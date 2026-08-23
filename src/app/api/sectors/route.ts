@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
 import { sectors, sectorStrengthAll, type SectorPeriod, type SectorMove } from "@/lib/naverApi";
+import { krSessionNow } from "@/lib/session";
 
 export const revalidate = 0;
 // 전 종목(2,800여 개) 일봉을 받아 계산한다
@@ -32,7 +33,11 @@ export async function GET(req: Request) {
 
     // 나머지는 세 기간·두 묶음을 한 덩어리로 캐시한다.
     // 기간마다 따로 캐시하면 탭을 옮길 때마다 2,800종목 일봉을 다시 받는다.
-    const all = await cached("sectorStrength:all", 600, sectorStrengthAll);
+    //
+    // 장이 열려 있을 때만 값이 움직인다. 장 끝나면 다음 개장까지 그대로이므로
+    // 캐시를 오래 잡아 2,800종목을 헛되이 다시 받지 않는다.
+    const live = krSessionNow() !== "장마감";
+    const all = await cached("sectorStrength:all", live ? 600 : 7200, sectorStrengthAll);
     const data = broad ? all[period].broad : all[period].detail;
     return NextResponse.json({ data, period, broad });
   } catch (e) {
