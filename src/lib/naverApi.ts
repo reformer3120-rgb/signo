@@ -1249,3 +1249,47 @@ export async function withPeriodReturn<T extends { code: string; changeRate: num
   });
   return out;
 }
+
+/**
+ * 당일 섹터 강약 — 일봉을 받지 않는다.
+ *
+ * 당일 값은 종목 등락률만 있으면 나온다. 그런데 대분류를 볼 때도
+ * sectorStrengthAll() 을 타는 바람에 2,800종목 일봉을 받고 있었다
+ * (첫 호출 14초). 당일은 여기서 가볍게 끝낸다.
+ *
+ * 세부업종은 네이버 공식값을 그대로, 대분류는 구성종목을 모아 시총가중.
+ */
+export async function sectorDaily(broad = false): Promise<SectorMove[]> {
+  const list = await sectors();
+  if (!broad) {
+    return list.map((s) => ({ key: s.code, name: s.name, changeRate: s.changeRate, used: s.count }));
+  }
+
+  const withStocks = await pool(list, 8, async (s) => ({
+    sec: s,
+    rows: await sectorStocks(s.code, 10_000).catch(() => []),
+  }));
+
+  const buckets = new Map<BroadSector, { code: string; changeRate: number; cap: number }[]>();
+  for (const { sec, rows } of withStocks) {
+    const b = broadOf(sec.name);
+    if (!b) continue;
+    buckets.set(b, [...(buckets.get(b) ?? []), ...rows]);
+  }
+
+  return BROAD_SECTORS.map((b) => {
+    // 한 종목이 두 세부업종에 들어 있으면 두 번 더해진다 — 코드로 한 번만
+    const seen = new Set<string>();
+    const rows = (buckets.get(b) ?? []).filter((r) => !seen.has(r.code) && seen.add(r.code));
+    let wsum = 0;
+    let acc = 0;
+    let used = 0;
+    for (const r of rows) {
+      if (!(r.cap > 0) || !Number.isFinite(r.changeRate)) continue;
+      acc += r.cap * (r.changeRate / 100);
+      wsum += r.cap;
+      used++;
+    }
+    return { key: b, name: b, changeRate: wsum > 0 ? (acc / wsum) * 100 : NaN, used };
+  }).filter((x) => Number.isFinite(x.changeRate));
+}

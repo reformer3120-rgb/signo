@@ -94,7 +94,7 @@ export function SectorSection() {
     preload("/api/sectors?period=1w&group=detail", fetcher);
   }, []);
 
-  const { data, isLoading } = useSWR<{ data: SectorMove[] }>(
+  const { data, isLoading } = useSWR<{ data: SectorMove[]; period?: SectorPeriod; fallback?: boolean }>(
     `/api/sectors?period=${period}&group=${scope}`,
     fetcher,
     // 당일은 장중에 계속 바뀌지만 주·월은 그렇지 않다
@@ -113,7 +113,12 @@ export function SectorSection() {
   }, [data, broad]);
 
   const note = broad ? "11개 대분류" : "78개 세부업종";
-  const span = period === "1d" ? "당일" : period === "1w" ? "최근 5거래일" : "최근 20거래일";
+  // 서버가 무거운 계산에 실패하면 당일 값으로 대신 내려준다.
+  // 그때 '1주' 라고 적어 두면 틀린 값을 맞다고 보여주는 셈이라, 실제로 받은
+  // 기간을 적는다.
+  const shown = data?.period ?? period;
+  const span = shown === "1d" ? "당일" : shown === "1w" ? "최근 5거래일" : "최근 20거래일";
+  const fellBack = data?.fallback === true;
 
   return (
     <Card
@@ -127,6 +132,7 @@ export function SectorSection() {
     >
       <div className="mb-2 text-[11px] text-muted">
         {note} · {span} · 시가총액 가중
+        {fellBack && <span className="ml-1 text-signal">· 기간 계산이 늦어 당일로 표시</span>}
       </div>
       {isLoading && !data ? (
         <div className="h-64 animate-pulse rounded-lg bg-line/30" />
@@ -136,7 +142,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-up mb-2">강한 섹터</div>
             <div className="flex flex-col gap-2">
               {strong.map((s) => (
-                <SectorBar key={s.key} s={s} max={max} group={scope} period={period} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} group={scope} period={shown} onPick={pick} />
               ))}
             </div>
           </div>
@@ -144,7 +150,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-down mb-2">약한 섹터</div>
             <div className="flex flex-col gap-2">
               {weak.map((s) => (
-                <SectorBar key={s.key} s={s} max={max} group={scope} period={period} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} group={scope} period={shown} onPick={pick} />
               ))}
             </div>
           </div>
