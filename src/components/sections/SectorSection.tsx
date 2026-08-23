@@ -5,16 +5,53 @@ import { fetcher } from "@/lib/swr";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/Card";
 import { SectorPeek } from "@/components/SectorPeek";
+import { useSticky } from "@/lib/useSticky";
 import { pct, signColor } from "@/lib/format";
-import type { Sector } from "@/lib/naverApi";
+import type { SectorMove, SectorPeriod } from "@/lib/naverApi";
+
+const PERIODS: { key: SectorPeriod; label: string }[] = [
+  { key: "1d", label: "당일" },
+  { key: "1w", label: "1주" },
+  { key: "1m", label: "1개월" },
+];
+
+function Tabs<T extends string>({
+  value,
+  onChange,
+  items,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  items: { key: T; label: string }[];
+}) {
+  return (
+    <div className="flex rounded-lg border border-line p-0.5">
+      {items.map((it) => (
+        <button
+          key={it.key}
+          type="button"
+          onClick={() => onChange(it.key)}
+          className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
+            value === it.key ? "bg-brand text-white" : "text-muted hover:text-fg"
+          }`}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function SectorBar({
   s,
   max,
+  peek,
   onPick,
 }: {
-  s: Sector;
+  s: SectorMove;
   max: number;
+  /** 대분류는 구성종목 조회용 코드가 없어 펼침을 끈다 */
+  peek: boolean;
   onPick: (code: string, name: string) => void;
 }) {
   const up = s.changeRate >= 0;
@@ -30,9 +67,10 @@ function SectorBar({
       </span>
     </div>
   );
+  if (!peek) return bar;
   // 마우스를 올리면 구성종목이 펼쳐지고, 고르면 그 종목으로 이동
   return (
-    <SectorPeek market="kr" code={s.code} title={s.name} onPick={onPick}>
+    <SectorPeek market="kr" code={s.key} title={s.name} onPick={onPick}>
       {bar}
     </SectorPeek>
   );
@@ -42,21 +80,46 @@ export function SectorSection() {
   const router = useRouter();
   const pick = (code: string, name: string) =>
     router.push(`/stock?code=${code}&name=${encodeURIComponent(name)}`);
-  const { data, isLoading } = useSWR<{ data: Sector[] }>("/api/sectors", fetcher, {
-    refreshInterval: 60_000,
-  });
+
+  // 화면을 옮겼다 와도 보던 기준이 유지되게
+  const [period, setPeriod] = useSticky<SectorPeriod>("kr.sector.period", "1d");
+  const [scope, setScope] = useSticky<"broad" | "detail">("kr.sector.scope", "detail");
+  const broad = scope === "broad";
+
+  const { data, isLoading } = useSWR<{ data: SectorMove[] }>(
+    `/api/sectors?period=${period}&group=${scope}`,
+    fetcher,
+    // 당일은 장중에 계속 바뀌지만 주·월은 그렇지 않다
+    { refreshInterval: period === "1d" ? 60_000 : 600_000, keepPreviousData: true },
+  );
 
   const { strong, weak, max } = useMemo(() => {
     const secs = [...(data?.data ?? [])].sort((a, b) => b.changeRate - a.changeRate);
+    // 대분류는 11개뿐이라 8개씩 뽑으면 양쪽이 겹친다
+    const n = broad ? Math.floor(secs.length / 2) : 8;
     return {
-      strong: secs.slice(0, 8),
-      weak: secs.slice(-8).reverse(),
+      strong: secs.slice(0, n),
+      weak: secs.slice(-n).reverse(),
       max: Math.max(1, ...secs.map((s) => Math.abs(s.changeRate))),
     };
-  }, [data]);
+  }, [data, broad]);
+
+  const note = broad ? "11개 대분류" : "78개 세부업종";
+  const span = period === "1d" ? "당일" : period === "1w" ? "최근 5거래일" : "최근 20거래일";
 
   return (
-    <Card title="섹터 강약" right={<span className="text-xs text-muted">KRX 업종 · 60초</span>}>
+    <Card
+      title="섹터 강약"
+      right={
+        <div className="flex items-center gap-1.5">
+          <Tabs value={scope} onChange={setScope} items={[{ key: "detail", label: "세부" }, { key: "broad", label: "대분류" }]} />
+          <Tabs value={period} onChange={setPeriod} items={PERIODS} />
+        </div>
+      }
+    >
+      <div className="mb-2 text-[11px] text-muted">
+        {note} · {span} · 시가총액 가중
+      </div>
       {isLoading && !data ? (
         <div className="h-64 animate-pulse rounded-lg bg-line/30" />
       ) : (
@@ -65,7 +128,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-up mb-2">강한 섹터</div>
             <div className="flex flex-col gap-2">
               {strong.map((s) => (
-                <SectorBar key={s.name} s={s} max={max} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} peek={!broad} onPick={pick} />
               ))}
             </div>
           </div>
@@ -73,7 +136,7 @@ export function SectorSection() {
             <div className="text-xs font-semibold text-down mb-2">약한 섹터</div>
             <div className="flex flex-col gap-2">
               {weak.map((s) => (
-                <SectorBar key={s.name} s={s} max={max} onPick={pick} />
+                <SectorBar key={s.key} s={s} max={max} peek={!broad} onPick={pick} />
               ))}
             </div>
           </div>

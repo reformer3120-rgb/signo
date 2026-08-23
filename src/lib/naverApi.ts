@@ -1046,3 +1046,152 @@ export async function sectorStocks(code: string, limit = 8): Promise<
 const ETF_BRAND =
   /^(KODEX|TIGER|KBSTAR|KOSEF|ARIRANG|HANARO|RISE|SOL|ACE|PLUS|KINDEX|TIMEFOLIO|TREX|FOCUS|KIWOOM|WOORI|1Q|HK|BNK|WON|히어로즈|마이티|파워)\s/i;
 const KW = /레버리지|인버스|2X|3X|곱버스|ETN|ETF|선물|국고채|커버드콜|합성|리츠|액티브|금리/i;
+
+// ── 섹터 강약: 기간별 (일/주/월) ─────────────────────────────
+//
+// 네이버 업종 API 는 '당일 등락률' 하나만 준다. 과거 시계열을 주는 곳을
+// 찾아봤으나 전부 막혔다 — 네이버 지수 차트는 업종 코드를 안 받고(빈 배열),
+// KRX 정보데이터시스템은 세션을 요구한다(400 LOGOUT).
+//
+// 그래서 구성종목에서 직접 만든다. 화면의 업종 등락률이 시가총액 가중
+// 평균이라는 것은 확인해 두었으므로(반도체 -7.53% 가 시총가중과 일치),
+// 같은 방식으로 기간만 늘리면 된다.
+//   업종 수익률 = Σ(종목 시총비중 × 종목 기간수익률)
+//
+// 상위 20종목만 써도 당일 값이 네이버와 오차 중앙값 0.004%p 로 맞지만,
+// 잔여 종목만큼은 어긋난다(최대 1.06%p). 전 종목을 써도 2,900개에 7초쯤
+// 이라 굳이 줄일 이유가 없어 전부 쓴다.
+
+import { broadOf, BROAD_SECTORS, type BroadSector } from "./sectorGroup";
+import type { Candle } from "./types";
+
+/** 기간 — 거래일 수 */
+export const SECTOR_PERIODS = { "1d": 1, "1w": 5, "1m": 20 } as const;
+export type SectorPeriod = keyof typeof SECTOR_PERIODS;
+
+export interface SectorMove {
+  key: string; // 세부업종은 네이버 코드, 대분류는 이름
+  name: string;
+  changeRate: number;
+  /** 계산에 실제로 쓰인 종목 수 */
+  used: number;
+}
+
+/** 여러 개를 한꺼번에, 다만 네이버에 몰아치지 않게 */
+async function pool<T, R>(items: T[], size: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...(await Promise.all(items.slice(i, i + size).map(fn))));
+  }
+  return out;
+}
+
+/**
+ * 기간별 섹터 강약 — 세 기간·두 묶음을 **한 번에** 만든다.
+ *
+ * 기간마다 따로 계산하면 2,800종목 일봉을 매번 다시 받는다(탭 하나에 15초).
+ * 일봉은 어차피 같은 것이므로 한 번 받아 세 기간을 함께 낸다. 그러면
+ * 첫 탭에서 한 번 기다린 뒤로는 탭을 옮겨도 즉시 바뀐다.
+ *
+ * 당일 값은 네이버 공식값을 그대로 쓴다 — 계산할 이유가 없다.
+ */
+export async function sectorStrengthAll(): Promise<
+  Record<SectorPeriod, { detail: SectorMove[]; broad: SectorMove[] }>
+> {
+  const list = await sectors();
+
+  // 구성종목 (업종별 전부)
+  const withStocks = await pool(list, 8, async (s) => ({
+    sec: s,
+    rows: await sectorStocks(s.code, 10_000).catch(() => []),
+  }));
+
+  // 일봉 — 한 종목이 여러 업종에 들어갈 수 있으므로 중복을 없앤다.
+  // 가장 긴 기간(20거래일)에 맞춰 한 번만 받는다.
+  const maxDays = Math.max(...Object.values(SECTOR_PERIODS));
+  const codes = [...new Set(withStocks.flatMap((x) => x.rows.map((r) => r.code)))];
+  const px = new Map<string, Candle[]>();
+  const { bars } = await import("./naver");
+  await pool(codes, 40, async (c) => {
+    px.set(c, await bars(c, "day", maxDays + 6).catch(() => []));
+  });
+
+  /** 한 묶음의 시총가중 기간수익률 */
+  const move = (rows: { code: string; changeRate: number; cap: number }[], days: number) => {
+    let wsum = 0;
+    let acc = 0;
+    let used = 0;
+    for (const r of rows) {
+      if (!(r.cap > 0)) continue;
+      let ret: number;
+      if (days === 1) {
+        ret = r.changeRate / 100; // 당일은 네이버가 준 종목 등락률
+      } else {
+        const b = px.get(r.code);
+        if (!b || b.length < days + 1) continue;
+        const now = b[b.length - 1].close;
+        const then = b[b.length - 1 - days].close;
+        if (!(then > 0)) continue;
+        ret = now / then - 1;
+      }
+      if (!Number.isFinite(ret)) continue;
+      acc += r.cap * ret;
+      wsum += r.cap;
+      used++;
+    }
+    return { rate: wsum > 0 ? (acc / wsum) * 100 : NaN, used };
+  };
+
+  // 대분류별로 구성종목을 한데 모은다 (종목 중복 제거)
+  const buckets = new Map<BroadSector, { code: string; changeRate: number; cap: number }[]>();
+  for (const { sec, rows } of withStocks) {
+    const b = broadOf(sec.name);
+    if (!b) continue; // 표에 없는 업종은 넣지 않는다 — 엉뚱한 곳에 섞이면 값이 틀어진다
+    const cur = buckets.get(b) ?? [];
+    cur.push(...rows);
+    buckets.set(b, cur);
+  }
+  const broadRows = new Map<BroadSector, { code: string; changeRate: number; cap: number }[]>();
+  for (const [b, rows] of buckets) {
+    const seen = new Set<string>();
+    broadRows.set(b, rows.filter((r) => !seen.has(r.code) && seen.add(r.code)));
+  }
+
+  const out = {} as Record<SectorPeriod, { detail: SectorMove[]; broad: SectorMove[] }>;
+  for (const [key, days] of Object.entries(SECTOR_PERIODS) as [SectorPeriod, number][]) {
+    const detail =
+      days === 1
+        ? list.map((s) => ({ key: s.code, name: s.name, changeRate: s.changeRate, used: s.count }))
+        : withStocks
+            .map(({ sec, rows }) => {
+              const m = move(rows, days);
+              return { key: sec.code, name: sec.name, changeRate: m.rate, used: m.used };
+            })
+            .filter((x) => Number.isFinite(x.changeRate));
+    const broad = BROAD_SECTORS.map((b) => {
+      const m = move(broadRows.get(b) ?? [], days);
+      return { key: b, name: b, changeRate: m.rate, used: m.used };
+    }).filter((x) => Number.isFinite(x.changeRate));
+    out[key] = { detail, broad };
+  }
+  return out;
+}
+
+/**
+ * 기간별 섹터 강약 하나만.
+ *
+ * @param period 1d 당일 · 1w 5거래일 · 1m 20거래일
+ * @param broad  true 면 11개 대분류로 묶어서
+ */
+export async function sectorStrength(
+  period: SectorPeriod = "1d",
+  broad = false,
+): Promise<SectorMove[]> {
+  // 당일·세부는 네이버 공식값만 있으면 되므로 일봉을 받지 않는다 (즉시)
+  if (!broad && period === "1d") {
+    const list = await sectors();
+    return list.map((s) => ({ key: s.code, name: s.name, changeRate: s.changeRate, used: s.count }));
+  }
+  const all = await sectorStrengthAll();
+  return broad ? all[period].broad : all[period].detail;
+}
