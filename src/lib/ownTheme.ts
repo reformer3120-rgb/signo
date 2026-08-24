@@ -8,14 +8,13 @@
 // 그래서 출처를 전부 갈아끼웠다.
 //   테마 분류 · 편입 사유   SIGNO 가 DART 사업보고서(공공데이터)로 직접 만든 것
 //   시세 · 시총 · PER      KIS (계약)
-//   매출성장 · 영업이익률    DART (공공데이터)
+//   매출성장 · 영업이익률    DART (공공데이터) — 분기에 한 번 바뀌므로 데이터 파일에 미리 실어 둔다
 //
 // 분류를 어떻게 만들고 품질을 어떻게 쟀는지는 scripts/theme/ 에 있다.
 // 응집도(같은 테마 종목이 같이 움직이는 정도)로 재면 에프앤가이드 분류의
 // 98% 수준이다 — 우리 0.500 대 0.508, 무작위는 0.36.
 import { cached, redis } from "./cache";
 import { hasKIS, kisGet, unifiedQuotes } from "./kis";
-import { dartFinancials, hasDart } from "./providers/dart";
 import raw from "@/data/themes.json";
 
 interface RawStock {
@@ -23,6 +22,12 @@ interface RawStock {
   name: string;
   why: string | null;
   tags: string[];
+  /** 매출액증가율 % — DART 확정 실적 (수집 시점에 굳혀 둔다) */
+  growth: number | null;
+  /** 영업이익률 % */
+  opm: number | null;
+  /** 어느 사업연도 기준인가 */
+  finYear: number | null;
 }
 interface RawTheme {
   id: string;
@@ -163,52 +168,6 @@ async function fixedMany(codes: string[]): Promise<Record<string, Fixed>> {
   return out;
 }
 
-/* ── 재무 지표 ────────────────────────────────────────────── */
-
-interface Fin {
-  growth: number | null;
-  opm: number | null;
-}
-
-const num = (s: string | null | undefined) => {
-  if (!s) return null;
-  const v = Number(String(s).replace(/,/g, ""));
-  return Number.isFinite(v) ? v : null;
-};
-
-/**
- * 매출액증가율과 영업이익률을 DART 재무제표에서 만든다.
- * dartFinancials 는 확정치만 주므로 추정이 섞일 걱정이 없다.
- */
-async function finOf(code: string): Promise<Fin> {
-  if (!hasDart()) return { growth: null, opm: null };
-  const f = await dartFinancials(code, "annual");
-  const sales = f.rows.find((r) => r.title === "매출액")?.values ?? [];
-  const opm = f.rows.find((r) => r.title === "영업이익률")?.values ?? [];
-  const last = sales.length - 1;
-  const cur = num(sales[last]);
-  const prev = num(sales[last - 1]);
-  return {
-    growth: cur !== null && prev !== null && prev !== 0 ? +(((cur - prev) / Math.abs(prev)) * 100).toFixed(2) : null,
-    opm: num(opm[last]),
-  };
-}
-
-const fin = (code: string) => cached<Fin>(`ownTheme:fin:v1:${code}`, 24 * 3600, () => finOf(code));
-
-async function finMany(codes: string[]): Promise<Record<string, Fin>> {
-  const out: Record<string, Fin> = {};
-  const CONC = 4;
-  for (let i = 0; i < codes.length; i += CONC) {
-    await Promise.all(
-      codes.slice(i, i + CONC).map(async (c) => {
-        try { out[c] = await fin(c); } catch { out[c] = { growth: null, opm: null }; }
-      }),
-    );
-  }
-  return out;
-}
-
 /* ── 화면이 쓰는 모양 ─────────────────────────────────────── */
 
 export interface OwnThemeRow {
@@ -293,11 +252,7 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
   if (!t) throw new Error(`테마 없음: ${id}`);
 
   const codes = t.stocks.map((s) => s.code);
-  const [{ map: q, stale }, fx, fn] = await Promise.all([
-    quotes(),
-    fixedMany(codes),
-    finMany(codes),
-  ]);
+  const [{ map: q, stale }, fx] = await Promise.all([quotes(), fixedMany(codes)]);
 
   const stocks: OwnThemeStock[] = t.stocks.map((s) => {
     const price = q[s.code]?.price ?? null;
@@ -312,8 +267,8 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
       // 억원 단위로 맞춘다 (화면이 그 단위를 쓴다)
       cap: price && shares ? Math.round((price * shares) / 1e8) : null,
       per: fx[s.code]?.per ?? null,
-      growth: fn[s.code]?.growth ?? null,
-      opm: fn[s.code]?.opm ?? null,
+      growth: s.growth,
+      opm: s.opm,
     };
   });
 

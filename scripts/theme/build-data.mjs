@@ -19,6 +19,11 @@ const MAX_WHY = 220; // 화면에서 두 줄쯤
 const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
 const cls = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
 
+// 재무는 분기에 한 번 바뀐다. 요청 때마다 DART 를 부를 이유가 없어 여기서 싣는다
+// (scripts/theme/collect-fin.mjs 가 모아 둔다).
+const finPath = path.join(DIR, "fin.json");
+const FIN = fs.existsSync(finPath) ? JSON.parse(fs.readFileSync(finPath, "utf8")) : {};
+
 /**
  * 근거 낱말이 든 문장 가운데 가장 잘 읽히는 것을 고른다.
  *
@@ -74,7 +79,16 @@ for (const [id, list] of Object.entries(cls)) {
     const why = row?.text ? pickWhy(row.text, s.why) : null;
     total++;
     if (why) withWhy++;
-    stocks.push({ code: s.code, name: s.name, why, tags: s.why });
+    const f = FIN[s.code] ?? null;
+    stocks.push({
+      code: s.code,
+      name: s.name,
+      why,
+      tags: s.why,
+      growth: f?.growth ?? null,
+      opm: f?.opm ?? null,
+      finYear: f?.year ?? null,
+    });
   }
   themes.push({ id, name: t.name, hint: t.hint, stocks });
 }
@@ -98,7 +112,8 @@ fs.writeFileSync(
 );
 
 const kb = Math.round(fs.statSync(OUT).size / 1024);
-console.log(`테마 ${themes.length}개 · 종목 ${total} · 편입 사유 ${withWhy} (${((withWhy / total) * 100).toFixed(0)}%)`);
+const withFin = themes.flatMap((t) => t.stocks).filter((s) => s.growth !== null || s.opm !== null).length;
+console.log(`테마 ${themes.length}개 · 종목 ${total} · 편입 사유 ${withWhy} (${((withWhy / total) * 100).toFixed(0)}%) · 재무 ${withFin} (${((withFin / total) * 100).toFixed(0)}%)`);
 console.log(`→ ${OUT}  ${kb}KB`);
 console.log("\n예시");
 for (const t of themes.slice(0, 3)) {
