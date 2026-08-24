@@ -71,7 +71,7 @@ export default function RootLayout({
               <li>제공 자료를 무단으로 복제·배포·전송하는 것을 금합니다.</li>
             </ul>
             <p className="text-center text-xs text-muted">
-              SIGNO · KRX 마켓 대시보드 · 데이터: Yahoo · 네이버 · KIS
+              SIGNO · KRX 마켓 대시보드 · 테마 분류: SIGNO 자체(DART 기반) · 시세: KIS · 그 외: Yahoo · 네이버
             </p>
           </footer>
         </div>

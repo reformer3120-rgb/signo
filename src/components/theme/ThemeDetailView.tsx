@@ -7,7 +7,7 @@ import { Card } from "@/components/Card";
 import { Tabs } from "@/components/Tabs";
 import { useSticky } from "@/lib/useSticky";
 import { pct, signColor, won } from "@/lib/format";
-import type { ThemeDetail, ThemeStock } from "@/lib/theme";
+import type { OwnThemeDetail, OwnThemeStock } from "@/lib/ownTheme";
 
 type Sort = "chg" | "cap" | "name";
 
@@ -21,21 +21,6 @@ const SORTS: { key: Sort; label: string }[] = [
 function cap(n: number | null): string {
   if (n === null) return "—";
   return n >= 10_000 ? `${(n / 10_000).toFixed(2)}조` : `${won(n)}억`;
-}
-
-/**
- * 테마 등락률은 구성종목의 단순 평균이다 (업종은 시총 가중이라 다르다).
- * 시총으로 다시 가중해 보면 대형주가 끌었는지 소형주가 끌었는지 갈린다.
- * 이 화면에서 유일하게 계산으로 얻는 값이다.
- */
-function tiltOf(stocks: ThemeStock[]) {
-  const ok = stocks.filter((s) => s.cap !== null && s.chg !== null);
-  if (ok.length < 2) return null;
-  const sum = ok.reduce((a, s) => a + (s.cap as number), 0);
-  if (!sum) return null;
-  const weighted = ok.reduce((a, s) => a + ((s.cap as number) / sum) * (s.chg as number), 0);
-  const equal = ok.reduce((a, s) => a + (s.chg as number), 0) / ok.length;
-  return { weighted, equal, gap: weighted - equal };
 }
 
 /** 상승 · 보합 · 하락 구성비를 한 줄 막대로 */
@@ -70,7 +55,7 @@ function StockCard({
   s,
   onPick,
 }: {
-  s: ThemeStock;
+  s: OwnThemeStock;
   onPick: (code: string, name: string) => void;
 }) {
   return (
@@ -115,7 +100,7 @@ export function ThemeDetailView({
   onBack: () => void;
 }) {
   const router = useRouter();
-  const { data, isLoading, error } = useSWR<{ data: ThemeDetail }>(`/api/themes/${no}`, fetcher, {
+  const { data, isLoading, error } = useSWR<{ data: OwnThemeDetail }>(`/api/themes/${no}`, fetcher, {
     revalidateOnFocus: false,
     dedupingInterval: 120_000,
   });
@@ -124,7 +109,7 @@ export function ThemeDetailView({
 
   const stocks = useMemo(() => {
     const list = d?.stocks ?? [];
-    const by: Record<Sort, (a: ThemeStock, b: ThemeStock) => number> = {
+    const by: Record<Sort, (a: OwnThemeStock, b: OwnThemeStock) => number> = {
       chg: (a, b) => (b.chg ?? -999) - (a.chg ?? -999),
       cap: (a, b) => (b.cap ?? -1) - (a.cap ?? -1),
       name: (a, b) => a.name.localeCompare(b.name, "ko"),
@@ -132,7 +117,10 @@ export function ThemeDetailView({
     return [...list].sort(by[sort]);
   }, [d, sort]);
 
-  const tilt = useMemo(() => (d ? tiltOf(d.stocks) : null), [d]);
+  // 시총 가중과 단순 평균의 차이 — 대형주가 끌었는지 소형주가 끌었는지
+  const gap =
+    d && d.weighted !== null && d.chg !== null ? d.weighted - d.chg : null;
+
   const pick = (code: string, name: string) =>
     router.push(`/stock?code=${code}&name=${encodeURIComponent(name)}`);
 
@@ -191,11 +179,11 @@ export function ThemeDetailView({
                   {d.chg === null ? "—" : pct(d.chg)}
                 </b>
               </span>
-              {tilt && (
+              {d.weighted !== null && (
                 <span className="flex items-baseline gap-1.5">
                   시총 가중
-                  <b className={`tnum text-sm font-semibold ${signColor(tilt.weighted)}`}>
-                    {pct(tilt.weighted)}
+                  <b className={`tnum text-sm font-semibold ${signColor(d.weighted)}`}>
+                    {pct(d.weighted)}
                   </b>
                 </span>
               )}
@@ -206,28 +194,29 @@ export function ThemeDetailView({
               </span>
             </div>
             <Composition up={d.up} flat={d.flat} down={d.down} />
-            {tilt && (
+            {gap !== null && (
               <p className="text-[11.5px] leading-relaxed text-muted">
-                {Math.abs(tilt.gap) < 0.5 ? (
+                {Math.abs(gap) < 0.5 ? (
                   <>크기와 상관없이 고르게 움직였다.</>
-                ) : tilt.gap > 0 ? (
+                ) : gap > 0 ? (
                   <>
                     <b className="font-medium text-fg">대형주가 끌었다</b> — 시총으로 가중하면{" "}
-                    <span className="tnum">{tilt.gap.toFixed(2)}%p</span> 높다.
+                    <span className="tnum">{gap.toFixed(2)}%p</span> 높다.
                   </>
                 ) : (
                   <>
                     <b className="font-medium text-fg">소형주가 끌었다</b> — 시총으로 가중하면{" "}
-                    <span className="tnum">{Math.abs(tilt.gap).toFixed(2)}%p</span> 낮다.
+                    <span className="tnum">{Math.abs(gap).toFixed(2)}%p</span> 낮다.
                   </>
                 )}
               </p>
             )}
           </div>
 
-          {d.desc && (
+          {/* 테마를 우리가 정의했으므로, 무엇을 묶은 것인지도 우리 말로 밝힌다 */}
+          {d.hint && (
             <p className="mt-2 rounded-lg bg-canvas p-3 text-[12px] leading-relaxed text-muted">
-              {d.desc}
+              {d.hint}
             </p>
           )}
 
@@ -237,10 +226,11 @@ export function ThemeDetailView({
             ))}
           </ul>
 
-          <p className="mt-3 text-[11px] text-muted">
-            평균은 구성종목 단순 평균이고, 시총 가중은 우리가 다시 계산한 값이다. 실적 지표는 최근
-            확정 실적 기준이며, 영업이익률은 영업이익을 매출액으로 나눈 값이라 매출이 없는 종목은
-            빈칸으로 둔다.
+          <p className="mt-3 text-[11px] leading-relaxed text-muted">
+            편입 사유는 그 종목의 <b className="font-medium text-fg">사업보고서에서 뽑은 문장</b>이다.
+            테마 분류도 SIGNO 가 직접 만든 것이다. 매출성장·영업이익률은 DART 확정 실적,
+            시가총액·PER 은 한국투자증권 시세 기준.
+            {d.stale && <span className="text-signal"> · 장 시작 전이라 직전 거래일 기준</span>}
           </p>
         </>
       )}

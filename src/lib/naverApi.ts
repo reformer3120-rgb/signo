@@ -2,7 +2,8 @@
 // 시총상위 · 상승/하락률 상위(특징주) · 국내 지수 시세.
 import { daily } from "./naver";
 import { krSessionNow } from "./session";
-import { themesOf, themeByNo } from "./theme";
+// 테마는 SIGNO 자체 분류를 쓴다 (예전에는 네이버=에프앤가이드 것을 썼다)
+import { themesOfStock, themeById } from "./ownTheme";
 import {
   baselineScaler,
   marketBaseline,
@@ -584,7 +585,7 @@ async function groupMembers(
   groupKey: string,
 ): Promise<{ name: string; raw: Record<string, string>[] }> {
   if (groupKey.startsWith("theme:")) {
-    const g = await themeByNo(groupKey.slice(6));
+    const g = themeById(groupKey.slice(6));
     if (g) {
       // 테마 구성종목의 시세/시총은 업종 API로는 못 얻으므로 종목별 basic 조회
       const raw = await Promise.all(
@@ -626,7 +627,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
   const detail = await stockDetail(code);
   const [{ name: groupName, raw }, themes] = await Promise.all([
     groupMembers(code, detail, groupKey),
-    themesOf(code).catch(() => []),
+    Promise.resolve(themesOfStock(code)).catch(() => []),
   ]);
   // 선택 가능한 그룹: 업종(기본) + 소속 테마(더 세분화된 섹터)
   const industryName =
@@ -637,7 +638,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         ).then((d) => d.groupInfo?.name ?? "")) as string);
   const groups: SectorGroupOption[] = [
     { key: "industry", name: industryName || "업종", count: 0 },
-    ...themes.slice(0, 8).map((t) => ({ key: `theme:${t.no}`, name: t.name, count: t.codes.length })),
+    ...themes.slice(0, 8).map((t) => ({ key: `theme:${t.id}`, name: t.name, count: t.codes.length })),
   ];
   // 다른 종목에서 고른 비교군을 그대로 유지할 수 있게, 현재 선택된 그룹이 목록에 없으면 추가
   if (!groups.some((g) => g.key === groupKey)) {

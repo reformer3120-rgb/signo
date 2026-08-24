@@ -6,14 +6,13 @@ import { Card } from "@/components/Card";
 import { Tabs } from "@/components/Tabs";
 import { useSticky } from "@/lib/useSticky";
 import { pct, signColor } from "@/lib/format";
-import type { ThemeRow } from "@/lib/theme";
+import type { OwnThemeRow } from "@/lib/ownTheme";
 
-type Sort = "chg" | "chg3d" | "size" | "name";
+type Sort = "chg" | "size" | "name";
 type Filter = "all" | "up" | "down";
 
 const SORTS: { key: Sort; label: string }[] = [
-  { key: "chg", label: "당일" },
-  { key: "chg3d", label: "3일" },
+  { key: "chg", label: "등락" },
   { key: "size", label: "종목수" },
   { key: "name", label: "이름" },
 ];
@@ -50,10 +49,14 @@ function Mark({ text, q }: { text: string; q: string }) {
 }
 
 export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => void }) {
-  const { data, isLoading, error } = useSWR<{ data: ThemeRow[] }>("/api/themes", fetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 120_000,
-  });
+  const { data, isLoading, error } = useSWR<{ data: OwnThemeRow[]; stale?: boolean }>(
+    "/api/themes",
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      dedupingInterval: 120_000,
+    },
+  );
   const [q, setQ] = useState("");
   const [sort, setSort] = useSticky<Sort>("kr.theme.sort", "chg");
   const [filter, setFilter] = useSticky<Filter>("kr.theme.filter", "all");
@@ -66,16 +69,16 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
       ? all.filter(
           (t) =>
             t.name.toLowerCase().includes(needle) ||
+            t.hint.toLowerCase().includes(needle) ||
             t.leaders.some((l) => l.name.toLowerCase().includes(needle)),
         )
       : all;
     const kept = hit.filter((t) =>
       filter === "up" ? (t.chg ?? 0) > 0 : filter === "down" ? (t.chg ?? 0) < 0 : true,
     );
-    const by: Record<Sort, (a: ThemeRow, b: ThemeRow) => number> = {
+    const by: Record<Sort, (a: OwnThemeRow, b: OwnThemeRow) => number> = {
       chg: (a, b) => (b.chg ?? -999) - (a.chg ?? -999),
-      chg3d: (a, b) => (b.chg3d ?? -999) - (a.chg3d ?? -999),
-      size: (a, b) => b.up + b.flat + b.down - (a.up + a.flat + a.down),
+      size: (a, b) => b.count - a.count,
       name: (a, b) => a.name.localeCompare(b.name, "ko"),
     };
     return [...kept].sort(by[sort]);
@@ -119,7 +122,7 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="테마명 또는 종목명 — 예: HBM, 삼성SDI"
+          placeholder="테마·종목·설명 — 예: HBM, 양극재, 삼성SDI"
           aria-label="테마 검색"
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
         />
@@ -150,9 +153,9 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map((t) => (
             <button
-              key={t.no}
+              key={t.id}
               type="button"
-              onClick={() => onOpen(t.no, t.name)}
+              onClick={() => onOpen(t.id, t.name)}
               className="flex flex-col gap-2 rounded-lg border border-line bg-canvas p-3 text-left transition-colors hover:border-brand"
             >
               <div className="flex items-start justify-between gap-2">
@@ -169,16 +172,18 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <UpDown up={t.up} down={t.down} />
-                  <span className="tnum text-[10px] text-muted">{t.up + t.flat + t.down}</span>
+                  <span className="tnum text-[10px] text-muted">{t.count}</span>
                 </div>
               </div>
             </button>
           ))}
         </div>
       )}
-      <p className="mt-3 text-[11px] text-muted">
-        정렬은 <b className="font-medium text-fg">당일</b> 등락률 기준이고, 3일은 최근 3거래일
-        누적이다. 막대는 테마 안 상승 대 하락 종목 비율.
+      <p className="mt-3 text-[11px] leading-relaxed text-muted">
+        테마 분류와 편입 사유는 <b className="font-medium text-fg">SIGNO 가 DART 사업보고서로
+        직접 만든 것</b>이다. 등락률은 편입 종목의 단순 평균이고, 막대는 테마 안 상승 대 하락
+        비율이다.
+        {data?.stale && <span className="text-signal"> · 장 시작 전이라 직전 거래일 기준</span>}
       </p>
     </Card>
   );

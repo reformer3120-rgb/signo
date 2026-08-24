@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { themeList } from "@/lib/theme";
+import { ownThemeList, themeMeta } from "@/lib/ownTheme";
 
 export const revalidate = 0;
-// 목록은 10페이지를 훑는다
-export const maxDuration = 30;
+// 편입 종목 전체 시세를 KIS 멀티조회로 받는다 (30종목씩 90번쯤)
+export const maxDuration = 60;
 
 export async function GET() {
   try {
-    return NextResponse.json({ data: await themeList() });
+    const { rows, stale } = await ownThemeList();
+    return NextResponse.json({ data: rows, stale, meta: themeMeta() });
   } catch (e) {
     return NextResponse.json({ error: String(e), data: [] }, { status: 502 });
   }
