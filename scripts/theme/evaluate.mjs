@@ -3,22 +3,27 @@
 // 잣대 — 진짜 테마라면 구성종목이 같이 움직인다. 테마 안 종목쌍의 일간
 // 수익률 상관을 재고, 시장에서 아무렇게나 뽑은 묶음과 견준다.
 //
-// 기준선 (scripts/theme/cohesion.mjs 로 잰 값)
-//   에프앤가이드 테마 평균  0.579
-//   무작위 묶음 평균        0.385
-//   무작위 상위 5% 경계     0.527
+// ── 공정하게 견주려면 ──────────────────────────────────────
+// 기준선 0.579 는 에프앤가이드 테마의 "시총 상위 12종목" 으로 쟀다.
+// 우리 쪽을 점수 상위로 뽑으면 소형주끼리 견주는 셈이라 불리하다.
+// 그래서 여기서도 시총 순으로 뽑는다 (scripts/theme/caps.mjs).
+//
+// 대조군도 마찬가지다. 테마 종목 안에서 뽑으면 이미 서로 겹치므로
+// 기준선이 부풀어 테마 효과가 사라져 보인다 (처음에 그렇게 재서 차이가
+// 0.071 로 나왔다. 시장에서 뽑으니 0.194 였다).
 //
 // 실행
 //   node scripts/theme/evaluate.mjs
 import fs from "node:fs";
 import path from "node:path";
 import { THEMES } from "./dict.mjs";
+import { ensureCaps } from "./caps.mjs";
 
-const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36" };
+const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0" };
 const DIR = ".cache/theme";
 const BARS = 60;
-const MIN_MEMBERS = 5; // 이보다 적으면 상관이 흔들려 의미가 없다
-const CAP_MEMBERS = 15; // 점수 높은 순으로 이만큼만
+const MIN_MEMBERS = 5;
+const TOP_N = 12; // 기준선과 같은 크기
 
 const FN_BASE = { theme: 0.579, random: 0.385, p95: 0.527 };
 
@@ -64,89 +69,103 @@ function cohesion(codes, R) {
   return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null;
 }
 
-// ── 우리 분류
-const cls = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
-const named = Object.fromEntries(THEMES.map((t) => [t.id, t.name]));
-const groups = Object.entries(cls)
-  .map(([id, list]) => ({
-    id,
-    name: named[id] ?? id,
-    codes: list.slice(0, CAP_MEMBERS).map((x) => x.code),
-  }))
-  .filter((g) => g.codes.length >= MIN_MEMBERS);
+export async function evaluate(log = console.log) {
+  const cls = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
+  const named = Object.fromEntries(THEMES.map((t) => [t.id, t.name]));
 
-if (!groups.length) {
-  console.log(`구성종목 ${MIN_MEMBERS}개 이상인 테마가 없다. 수집을 더 해야 한다.`);
-  process.exit(0);
+  // 시총을 채우고, 테마마다 시총 상위 TOP_N 을 고른다
+  const allCodes = [...new Set(Object.values(cls).flat().map((x) => x.code))];
+  const caps = await ensureCaps(allCodes, log);
+
+  const groups = Object.entries(cls)
+    .map(([id, list]) => ({
+      id,
+      name: named[id] ?? id,
+      total: list.length,
+      codes: [...list]
+        .sort((a, b) => (caps[b.code] ?? 0) - (caps[a.code] ?? 0))
+        .slice(0, TOP_N)
+        .map((x) => x.code),
+    }))
+    .filter((g) => g.codes.length >= MIN_MEMBERS);
+
+  if (!groups.length) {
+    log(`구성종목 ${MIN_MEMBERS}개 이상인 테마가 없다.`);
+    return null;
+  }
+
+  // 대조군 — 시장 전체
+  const themeSet = new Set(groups.flatMap((g) => g.codes));
+  const market = [];
+  for (const m of ["KOSPI", "KOSDAQ"]) {
+    try {
+      const rows = (await (await fetch(`http://localhost:3000/api/marketcap?market=${m}&limit=100`)).json()).data;
+      for (const r of rows ?? []) if (!themeSet.has(r.code)) market.push(r.code);
+    } catch { /* 서버가 없으면 건너뛴다 */ }
+  }
+  if (market.length < 30) {
+    log("대조군을 만들 수 없다 — 개발 서버(npm run dev)가 떠 있어야 한다.");
+    return null;
+  }
+
+  const all = [...themeSet, ...market];
+  log(`테마 ${groups.length}개 · 종목 ${themeSet.size} · 대조군 ${market.length} · 일봉 수집…`);
+  const R = {};
+  for (let i = 0; i < all.length; i += 10) {
+    await Promise.all(all.slice(i, i + 10).map(async (c) => {
+      try { R[c] = await daily(c); } catch { R[c] = []; }
+    }));
+    await sleep(120);
+  }
+
+  const vals = [];
+  for (const g of groups) {
+    const v = cohesion(g.codes, R);
+    if (v !== null) vals.push({ name: g.name, v, n: g.codes.length, total: g.total });
+  }
+  vals.sort((a, b) => b.v - a.v);
+  const ours = vals.reduce((s, x) => s + x.v, 0) / vals.length;
+
+  let seed = 987654321;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const sizes = vals.map((x) => x.n);
+  const randVals = [];
+  for (let k = 0; k < 300; k++) {
+    const n = sizes[k % sizes.length];
+    const s = [...market].sort(() => rnd() - 0.5).slice(0, n);
+    const v = cohesion(s, R);
+    if (v !== null) randVals.push(v);
+  }
+  randVals.sort((a, b) => a - b);
+  const avgRand = randVals.reduce((s, v) => s + v, 0) / randVals.length;
+  const p95 = randVals[Math.floor(randVals.length * 0.95)];
+
+  const lines = [];
+  lines.push(`■ 우리 분류의 응집도 (시총 상위 ${TOP_N}, 최근 ${BARS}거래일)`);
+  for (const x of vals) {
+    const mark = x.v >= p95 ? "★" : x.v >= avgRand ? "·" : " ";
+    lines.push(`  ${mark} ${x.name.padEnd(20)}${x.v.toFixed(3)}  (${x.n}/${x.total}종목)`);
+  }
+  lines.push("");
+  lines.push("■ 견줌");
+  lines.push(`  우리 분류 평균          ${ours.toFixed(3)}`);
+  lines.push(`  무작위 묶음 평균        ${avgRand.toFixed(3)}  (${randVals.length}회, 같은 크기)`);
+  lines.push(`  무작위 상위 5% 경계     ${p95.toFixed(3)}`);
+  lines.push(`  차이                    ${ours - avgRand >= 0 ? "+" : ""}${(ours - avgRand).toFixed(3)}`);
+  lines.push(`  무작위 상위 5% 를 넘은 테마  ${vals.filter((x) => x.v > p95).length}/${vals.length}`);
+  lines.push("");
+  const lift = ours - avgRand;
+  const fnLift = FN_BASE.theme - FN_BASE.random;
+  lines.push("■ 에프앤가이드 대비");
+  lines.push(`  에프앤가이드 평균       ${FN_BASE.theme.toFixed(3)} (무작위 ${FN_BASE.random.toFixed(3)}, 올린 폭 +${fnLift.toFixed(3)})`);
+  lines.push(`  우리 평균               ${ours.toFixed(3)} (무작위 ${avgRand.toFixed(3)}, 올린 폭 ${lift >= 0 ? "+" : ""}${lift.toFixed(3)})`);
+  lines.push(`  → ${((lift / fnLift) * 100).toFixed(0)}%`);
+
+  const text = lines.join("\n");
+  log(text);
+  return { ours, avgRand, p95, lift, ratio: lift / fnLift, vals, text };
 }
 
-// ── 대조군: 시장 전체 (개발 서버의 시총 상위)
-const themeSet = new Set(groups.flatMap((g) => g.codes));
-const market = [];
-for (const m of ["KOSPI", "KOSDAQ"]) {
-  try {
-    const rows = (await (await fetch(`http://localhost:3000/api/marketcap?market=${m}&limit=100`)).json()).data;
-    for (const r of rows ?? []) if (!themeSet.has(r.code)) market.push(r.code);
-  } catch { /* 서버가 없으면 건너뛴다 */ }
+if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`) {
+  await evaluate();
 }
-if (market.length < 30) {
-  console.log("대조군을 만들 수 없다 — 개발 서버(npm run dev)가 떠 있어야 한다.");
-  process.exit(1);
-}
-
-const all = [...themeSet, ...market];
-process.stdout.write(`테마 ${groups.length}개 · 종목 ${themeSet.size} · 대조군 ${market.length} · 일봉 수집…`);
-const R = {};
-for (let i = 0; i < all.length; i += 10) {
-  await Promise.all(all.slice(i, i + 10).map(async (c) => {
-    try { R[c] = await daily(c); } catch { R[c] = []; }
-  }));
-  await sleep(120);
-}
-console.log(" 완료\n");
-
-console.log("■ 우리 분류의 응집도");
-const vals = [];
-for (const g of groups) {
-  const v = cohesion(g.codes, R);
-  if (v === null) continue;
-  vals.push({ name: g.name, v, n: g.codes.length });
-}
-vals.sort((a, b) => b.v - a.v);
-for (const x of vals) {
-  const mark = x.v >= FN_BASE.p95 ? "★" : x.v >= FN_BASE.random ? "·" : " ";
-  console.log("  " + mark + " " + x.name.padEnd(20) + x.v.toFixed(3) + "  (" + x.n + "종목)");
-}
-const ours = vals.reduce((s, x) => s + x.v, 0) / vals.length;
-
-// 대조군 — 시장에서 같은 크기로 아무렇게나
-let seed = 987654321;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-const sizes = vals.map((x) => x.n);
-const randVals = [];
-for (let k = 0; k < 200; k++) {
-  const n = sizes[k % sizes.length];
-  const s = [...market].sort(() => rnd() - 0.5).slice(0, n);
-  const v = cohesion(s, R);
-  if (v !== null) randVals.push(v);
-}
-randVals.sort((a, b) => a - b);
-const avgRand = randVals.reduce((s, v) => s + v, 0) / randVals.length;
-const p95 = randVals[Math.floor(randVals.length * 0.95)];
-
-console.log("\n■ 견줌");
-console.log("  우리 분류 평균          " + ours.toFixed(3));
-console.log("  무작위 묶음 평균        " + avgRand.toFixed(3) + `  (${randVals.length}회, 같은 크기)`);
-console.log("  무작위 상위 5% 경계     " + p95.toFixed(3));
-console.log("  차이                    +" + (ours - avgRand).toFixed(3));
-console.log("  무작위 상위 5% 를 넘은 테마  " + vals.filter((x) => x.v > p95).length + "/" + vals.length);
-
-console.log("\n■ 에프앤가이드 대비");
-console.log("  에프앤가이드 평균       " + FN_BASE.theme.toFixed(3));
-console.log("  우리 평균               " + ours.toFixed(3));
-const ratio = (ours - avgRand) / (FN_BASE.theme - FN_BASE.random);
-console.log(
-  "  무작위 위로 올린 폭     우리 +" + (ours - avgRand).toFixed(3) +
-    " vs 에프앤 +" + (FN_BASE.theme - FN_BASE.random).toFixed(3) +
-    "  → " + (ratio * 100).toFixed(0) + "%",
-);

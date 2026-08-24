@@ -1,21 +1,28 @@
 // 사업의 개요 → 테마 배정.
 //
-// 규칙 기반이다. LLM 없이 어디까지 가는지 먼저 재고, 모자라면 그때 붙인다.
-// 응집도라는 잣대가 있으니 "모자라다" 를 느낌이 아니라 숫자로 말할 수 있다.
+// 규칙 기반이다. 돈이 들지 않는다. 응집도라는 잣대가 있으니 "모자라다" 를
+// 느낌이 아니라 숫자로 말할 수 있고, 모자라면 그때 LLM 을 붙이면 된다.
 //
-// ── 낱말만 세면 안 되는 이유 ────────────────────────────────
-// 사업보고서에는 자기 사업이 아닌 문장이 많다.
+// ── 글자 창으로 세다가 두 번 데었다 ────────────────────────
+// 처음에는 낱말 앞뒤 60자를 보고 자사 이야기인지 판정했다. 두 가지가 샜다.
 //
-//   에코프로비엠  "2차전지 산업의 성장세가 둔화되고 있으나…"   ← 시황
-//   솔브레인      "당사가 속해 있는 반도체 … 전방산업은"        ← 전방산업
-//   아무개        "고객사는 2차전지 제조업체이며"               ← 고객 이야기
+//   1) 부분 문자열
+//      대성하이텍 "정밀 부품 사업의 전방산업을 방산, 로봇 …"
+//      전"방산"업 안에 방산이 들어 있어 방위산업으로 잡혔다. 점수 16.
+//      한국어는 띄어쓰기로 낱말 경계를 못 잡으므로 창 방식이 위험하다.
 //
-// 낱말만 세면 셋 다 걸린다. 앞서 네이버 테마 설명에서 "니켈 함량 80% 이상" 을
-// 등락률 80% 로 잘못 읽었던 것과 같은 함정이다.
+//   2) 시황 문장
+//      잘만테크 "온라인 게임 산업은 … 지속적으로 성장하고 있습니다"
+//      PC 쿨러 회사가 게임사로 잡혔다.
 //
-// 그래서 두 가지를 본다.
-//   1) 낱말이 '자사 행위' 문맥에 있는가 — 생산·제조·개발·공급·영위 …
-//   2) '남의 이야기' 문맥에 있지 않은가 — 전방산업·고객사·시황·경쟁사 …
+// 그래서 문장 단위로 바꿨다.
+//   · 개요를 문장으로 쪼갠다
+//   · 시황·전방산업·고객사 이야기인 문장은 통째로 버린다
+//   · 남은 문장 안에서, 낱말과 자사 행위 동사가 같은 문장에 있을 때만 센다
+//   · 부분 문자열 덫은 따로 적어 두고 먼저 지운다
+//
+// 사업보고서에는 자기 사업이 아닌 문장이 많다. 앞서 네이버 테마 설명에서
+// "니켈 함량 80% 이상" 을 등락률 80% 로 잘못 읽었던 것과 같은 함정이다.
 //
 // 실행
 //   node scripts/theme/classify.mjs
@@ -28,16 +35,11 @@ const DIR = ".cache/theme";
 const IN = path.join(DIR, "overview.json");
 const OUT = path.join(DIR, "classified.json");
 
-/**
- * 테마별 판정 낱말.
- * core = 이게 자사 행위 문맥에 있으면 편입
- * sub  = 혼자서는 부족하고 core 를 거들 때만 점수
- * veto = 있으면 그 테마가 아니다
- */
 const RULES = {
   "batt-cathode": {
     core: ["양극재", "양극활물질", "양극 활물질", "NCM", "NCA", "LFP 양극", "하이니켈"],
     sub: ["전구체", "리튬이온전지", "이차전지 소재"],
+    ctx: /전지|배터리|리튬|양극/,
     veto: [],
   },
   "batt-anode": {
@@ -48,6 +50,7 @@ const RULES = {
   "batt-parts": {
     core: ["분리막", "전해액", "전해질", "동박", "일렉포일", "양극집전체", "전지박", "파우치 필름"],
     sub: ["이차전지 소재", "2차전지 소재", "배터리 케이스"],
+    ctx: /전지|배터리|리튬/,
     veto: [],
   },
   "batt-cell": {
@@ -83,11 +86,13 @@ const RULES = {
   "semi-material": {
     core: ["포토레지스트", "식각액", "에천트", "CMP 슬러리", "전구체", "특수가스", "반도체 공정용 화학", "반도체용 소재", "블랭크마스크", "포토마스크"],
     sub: ["반도체 소재"],
+    ctx: /반도체|웨이퍼|디스플레이 ?공정|식각|증착/,
     veto: [],
   },
   "semi-pkg": {
     core: ["패키징", "OSAT", "웨이퍼 테스트", "반도체 후공정", "FC-BGA", "플립칩", "반도체 기판", "리드프레임", "본딩 와이어"],
     sub: ["테스트 소켓", "프로브카드"],
+    ctx: /반도체|웨이퍼|칩|다이|기판/,
     veto: [],
   },
   "semi-hbm": {
@@ -98,6 +103,7 @@ const RULES = {
   "bio-cdmo": {
     core: ["CDMO", "CMO", "위탁개발생산", "위탁생산", "수탁 생산"],
     sub: ["바이오의약품 생산"],
+    ctx: /의약품|바이오|항체|백신|세포|원료|제약/,
     veto: [],
   },
   "bio-biosimilar": {
@@ -148,6 +154,7 @@ const RULES = {
   "pwr-hydrogen": {
     core: ["수소", "연료전지", "수전해", "SOFC", "PEMFC"],
     sub: ["암모니아"],
+    ctx: /수소|연료전지|수전해/,
     veto: [],
   },
   "grid-power": {
@@ -158,6 +165,7 @@ const RULES = {
   "it-ai": {
     core: ["인공지능", "AI 솔루션", "머신러닝", "딥러닝", "AI 반도체", "생성형 AI", "LLM"],
     sub: ["빅데이터 분석"],
+    ctx: /솔루션|플랫폼|엔진|모델|서비스|반도체/,
     veto: [],
   },
   "it-security": {
@@ -178,6 +186,7 @@ const RULES = {
   "csm-cosmetic": {
     core: ["화장품"],
     sub: ["ODM", "OEM", "기초화장품", "색조"],
+    ctx: /화장품|코스메틱|뷰티/,
     veto: [],
   },
   "csm-food": {
@@ -192,49 +201,86 @@ const RULES = {
   },
 };
 
-// 자사 행위를 뜻하는 말 — 이 근처에 있어야 편입으로 본다
-const SELF = /(생산|제조|개발|공급|판매|영위|사업을|제품은|주력|납품|서비스를|보유|양산|수행)/;
-// 남의 이야기 — 이 근처면 뺀다
-const OTHER = /(전방산업|후방산업|고객사|수요처|시황|업황|경쟁사|시장 규모|산업의 성장|성장세가|전망됩니다|예상됩니다|관련 산업)/;
+// 자사가 무엇을 한다는 말 — 낱말과 같은 문장에 있어야 편입으로 본다
+const SELF = /(생산|제조|개발|공급|판매|영위|납품|양산|제작|주력|주요 제품|당사(는|의|가)|연결회사|자사)/;
 
-const WINDOW = 60; // 낱말 앞뒤로 볼 글자 수
+// 자기 사업이 아닌 문장 — 통째로 버린다.
+// 사업보고서는 자기 이야기보다 산업·시장 이야기가 더 길 때가 많다.
+const NOT_OURS = [
+  /전방산업|후방산업/,
+  /고객사|수요처|전방 ?업체|매출처(는|가)/,
+  /시장 ?규모|시장은|시장이|업황|시황/,
+  /산업은|산업이|산업의 (성장|특성|규모|동향)/,
+  /성장(세|률|할 것|하고 있)|전망(됩니다|이다|된다)|예상(됩니다|된다)/,
+  /경쟁사|경쟁업체|점유율은/,
+  /향후|중장기적으로|계획(입니다|이다)|추진할 예정/,
+];
 
-/** 낱말이 자사 행위 문맥에 몇 번 나오는가 */
-function hits(text, word) {
-  let self = 0, other = 0;
-  let i = 0;
-  while ((i = text.indexOf(word, i)) >= 0) {
-    const around = text.slice(Math.max(0, i - WINDOW), i + word.length + WINDOW);
-    if (OTHER.test(around)) other++;
-    else if (SELF.test(around)) self++;
-    i += word.length;
-  }
-  return { self, other };
+// 낱말이 더 큰 말 안에 박혀 뜻이 달라지는 자리 — 세기 전에 지운다.
+// 예: 전"방산"업 · 후"방산"업 → 방위산업이 아니다
+const TRAPS = [
+  "전방산업", "후방산업", "전방 산업", "후방 산업",
+  "일반산업", "산업용",
+];
+
+/** 개요를 문장으로 쪼갠다 */
+function sentences(text) {
+  return text
+    .split(/(?<=[다요음]\.)\s+|(?<=\.)\s+(?=[가-힣A-Z])/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 8);
+}
+
+/** 자사 이야기로 볼 수 있는 문장만 남긴다 */
+function ourSentences(text) {
+  return sentences(text).filter((s) => !NOT_OURS.some((re) => re.test(s)));
+}
+
+/**
+ * 한 문장에서 낱말이 자사 행위와 함께 나오는가.
+ * 덫이 되는 큰 말은 먼저 지운 뒤에 센다.
+ */
+function inSentence(sent, word) {
+  let s = sent;
+  for (const t of TRAPS) if (t.includes(word) && t !== word) s = s.split(t).join(" ");
+  if (!s.includes(word)) return false;
+  return SELF.test(s);
 }
 
 function scoreOne(text, rule) {
+  let sents = ourSentences(text);
+  if (!sents.length) return { score: 0, why: [] };
+
+  // 뜻이 여러 분야에 걸치는 낱말이 있다. CDMO 는 바이오에도 로봇에도 쓰이고
+  // (대성하이텍 "로봇 CDMO 사업"), 패키징은 반도체에도 포장에도, 전구체는
+  // 전지에도 반도체에도 쓰인다. 그런 테마는 같은 문장에 분야 말이 있어야 센다.
+  if (rule.ctx) sents = sents.filter((s) => rule.ctx.test(s));
+  if (!sents.length) return { score: 0, why: [] };
+
+  // veto 는 문서 전체에서 본다 — 있으면 그 테마가 아니다
+  for (const w of rule.veto ?? []) if (text.includes(w)) return { score: 0, why: [] };
+
   let score = 0;
   const why = [];
-  for (const w of rule.veto ?? []) if (text.includes(w)) return { score: 0, why: [] };
   for (const w of rule.core) {
-    const h = hits(text, w);
-    if (h.self) {
-      score += 3 + Math.min(2, h.self - 1);
+    const n = sents.filter((s) => inSentence(s, w)).length;
+    if (n) {
+      score += 3 + Math.min(2, n - 1); // 여러 문장에 걸치면 조금 더
       why.push(w);
-    } else if (h.other) {
-      score -= 1; // 남의 이야기로만 나오면 오히려 감점
     }
   }
+  // 뒷받침 낱말은 core 가 이미 잡혔을 때만 센다
   if (score > 0) {
     for (const w of rule.sub ?? []) {
-      const h = hits(text, w);
-      if (h.self) { score += 1; why.push(w); }
+      if (sents.some((s) => inSentence(s, w))) { score += 1; why.push(w); }
     }
   }
   return { score, why };
 }
 
-const MIN_SCORE = 3;
+// 문장 단위로 바꾸면서 잡음이 줄었으므로 문턱을 올린다.
+// 근거 문장 하나(3점)로는 부족하고, 여러 문장이거나 뒷받침이 있어야 한다.
+const MIN_SCORE = 4;
 
 const data = JSON.parse(fs.readFileSync(IN, "utf8"));
 const rows = Object.values(data).filter((r) => r.text);
