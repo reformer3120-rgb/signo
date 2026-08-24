@@ -40,7 +40,7 @@ const OUT = path.join(DIR, "classified.json");
 // 한쪽만 고쳐 어긋났다.
 
 // 자사가 무엇을 한다는 말 — 낱말과 같은 문장에 있어야 편입으로 본다
-const SELF = /(생산|제조|개발|공급|판매|영위|납품|양산|제작|주력|주요 제품|당사(는|의|가)|연결회사|자사)/;
+const SELF = /(생산|제조|개발|공급|판매|영위|납품|양산|제작|주력|주요 제품|당사(는|의|가)|연결회사|자사|수주|매출(을|이|은|의)|사업(을|은|부문|에)|진출|제공하|보유하|운영하|서비스하|출시)/;
 
 // 자기 사업이 아닌 문장 — 통째로 버린다.
 // 사업보고서는 자기 이야기보다 산업·시장 이야기가 더 길 때가 많다.
@@ -59,6 +59,13 @@ const NOT_OURS = [
   // "저희 고객은 판매자입니다" — 남이 무엇을 하는지에 대한 문장.
   // 카페24(쇼핑몰 솔루션)가 유통업으로 잡혔다.
   /(가|이|은|는) 고객(입니다|이다)|고객으로 (합니다|한다)/,
+  // 어디에 파는지는 자기 업종이 아니다. 하림(닭고기)이 "이마트와 같은 대형마트를
+  // 주요 목표시장으로" 라고 적어 유통업에 잡혔다.
+  /(와|과) 같은|판로(를|가)|주요 목표시장|판매 ?채널|납품처|유통망(을|이)|입점/,
+  // "X 를 운영하는 창업자·기업이 우리 고객" — 남이 운영하는 것이다.
+  // 카페24(쇼핑몰 솔루션)가 "온라인 쇼핑몰을 운영하는 1인 창업자 … 가 이용" 으로
+  // 다시 유통업에 잡혔다. 앞의 '고객입니다' 규칙으로는 이 문장이 안 걸린다.
+  /(운영|사용|이용|구매)하는 .{0,25}(창업자|기업|업체|사업자|고객|이용자|소비자|회원)/,
 ];
 
 // 낱말이 더 큰 말 안에 박혀 뜻이 달라지는 자리 — 세기 전에 지운다.
@@ -92,7 +99,7 @@ function inSentence(sent, word) {
   return SELF.test(s);
 }
 
-function scoreOne(text, rule) {
+export function scoreOne(text, rule) {
   let sents = ourSentences(text);
   if (!sents.length) return { score: 0, why: [] };
 
@@ -123,39 +130,43 @@ function scoreOne(text, rule) {
   return { score, why };
 }
 
-// 문장 단위로 바꾸면서 잡음이 줄었으므로 문턱을 올린다.
-// 근거 문장 하나(3점)로는 부족하고, 여러 문장이거나 뒷받침이 있어야 한다.
-const MIN_SCORE = 4;
+// 문턱을 4 로 올렸다가 되돌렸다. "당사는 2차전지 전해액을 생산하여 배터리
+// 제조사에 공급합니다" 처럼 한 문장으로 분명히 밝힌 회사가 걸러졌기 때문이다.
+// 시황 문장 걸러내기 · 문맥 조건 · 덫 제거를 다 통과한 근거 문장 하나면 근거로 본다.
+export const MIN_SCORE = 3;
 
-const data = JSON.parse(fs.readFileSync(IN, "utf8"));
-const rows = Object.values(data).filter((r) => r.text);
-console.log(`개요 확보 ${rows.length}종목 · 테마 ${THEMES.length}개\n`);
+// 직접 실행할 때만 분류를 돈다 (test-classify.mjs 가 판정 함수만 가져다 쓴다)
+if (import.meta.url === `file:///${process.argv[1].split("\\").join("/")}`) {
+  const data = JSON.parse(fs.readFileSync(IN, "utf8"));
+  const rows = Object.values(data).filter((r) => r.text);
+  console.log(`개요 확보 ${rows.length}종목 · 테마 ${THEMES.length}개\n`);
 
-const out = {};
-for (const t of THEMES) out[t.id] = [];
-let tagged = 0;
-for (const r of rows) {
-  let any = false;
-  for (const t of THEMES) {
-    const { score, why } = scoreOne(r.text, t);
-    if (score >= MIN_SCORE) {
-      out[t.id].push({ code: r.code, name: r.name, score, why: [...new Set(why)].slice(0, 4) });
-      any = true;
+  const out = {};
+  for (const t of THEMES) out[t.id] = [];
+  let tagged = 0;
+  for (const r of rows) {
+    let any = false;
+    for (const t of THEMES) {
+      const { score, why } = scoreOne(r.text, t);
+      if (score >= MIN_SCORE) {
+        out[t.id].push({ code: r.code, name: r.name, score, why: [...new Set(why)].slice(0, 4) });
+        any = true;
+      }
     }
+    if (any) tagged++;
   }
-  if (any) tagged++;
-}
 
-for (const id of Object.keys(out)) out[id].sort((a, b) => b.score - a.score);
-fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
+  for (const id of Object.keys(out)) out[id].sort((a, b) => b.score - a.score);
+  fs.writeFileSync(OUT, JSON.stringify(out, null, 1));
 
-const named = Object.fromEntries(THEMES.map((t) => [t.id, t.name]));
-const sorted = Object.entries(out).sort((a, b) => b[1].length - a[1].length);
-console.log("테마별 편입 종목 수");
-for (const [id, list] of sorted) {
-  const head = list.slice(0, 4).map((x) => x.name).join(", ");
-  console.log("  " + named[id].padEnd(18) + String(list.length).padStart(4) + "  " + head);
+  const named = Object.fromEntries(THEMES.map((t) => [t.id, t.name]));
+  const sorted = Object.entries(out).sort((a, b) => b[1].length - a[1].length);
+  console.log("테마별 편입 종목 수");
+  for (const [id, list] of sorted) {
+    const head = list.slice(0, 4).map((x) => x.name).join(", ");
+    console.log("  " + named[id].padEnd(18) + String(list.length).padStart(4) + "  " + head);
+  }
+  const empty = sorted.filter(([, l]) => !l.length).length;
+  console.log(`\n분류된 종목 ${tagged}/${rows.length} · 빈 테마 ${empty}개`);
+  console.log(`→ ${OUT}`);
 }
-const empty = sorted.filter(([, l]) => !l.length).length;
-console.log(`\n분류된 종목 ${tagged}/${rows.length} · 빈 테마 ${empty}개`);
-console.log(`→ ${OUT}`);
