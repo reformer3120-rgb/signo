@@ -12,7 +12,7 @@ import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { maColor, num, pct, signColor } from "@/lib/format";
-import { scoreGrade, scoreGradeTone } from "@/lib/score";
+import { SCORE_LIMIT_NOTE, SCORE_MEANING, scoreGrade, scoreGradeTone } from "@/lib/score";
 import type { Candle } from "@/lib/types";
 import { useCur, CurrencyToggle, StockName, ExtQuote } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
@@ -427,7 +427,18 @@ function SectorCard({
           <div className="mt-2 text-[11px] leading-relaxed text-muted">
             점수 = 재무건전성(ROE·부채·이익률) 28 + 밸류(PER·PBR·EPS) 22 + 성장성 15 +
             기관보유비중 12 + 시가총액 10 + 주가흐름(기간수익률·골든크로스) 10 + 배당 3
-            (섹터 내 상대평가, 100점) · 한국 증시와 동일 기준
+            (100점)
+            <br />
+            {/*
+              "한국 증시와 동일 기준" 이라고 적혀 있었는데 사실이 아니다. 배합(가중치)은
+              한·미 공용이지만 기준선이 다르다 — 한국은 시장 전체(시총 상위 100종목)
+              분포를 쓰고, 미국은 이 화면에서 섹터 대표 종목만으로 정규화한다
+              (`lib/us.ts` 의 baseRows). 그래서 미국 점수는 섹터 안에서의 상대평가다.
+            */}
+            <b>배합</b>은 한국 증시와 같지만 <b>기준선은 이 섹터 대표 종목</b>입니다 —
+            섹터 안에서의 상대평가라, 섹터가 다르면 같은 점수라도 뜻이 다릅니다.
+            <br />
+            {SCORE_MEANING} {SCORE_LIMIT_NOTE}
           </div>
         </>
       )}

@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { maColor, signColor } from "@/lib/format";
-import { scoreGrade, scoreGradeTone } from "@/lib/score";
+import { SCORE_LIMIT_NOTE, SCORE_MEANING, scoreGrade, scoreGradeTone } from "@/lib/score";
 import type { SectorRank } from "@/lib/naverApi";
 
 function scoreColor(s: number) {
@@ -228,6 +228,8 @@ export function SectorRankCard({
             점수는 <b>시장 전체(시총 상위 100종목) 분포 기준</b>이라 비교군을 바꿔도
             변하지 않습니다. 비교군은 누구와 견줄지(순위)를 정할 뿐입니다.
             평가는 <b>직전 정규장 종가</b> 기준이라 장중에 점수가 출렁이지 않습니다.
+            <br />
+            {SCORE_MEANING} {SCORE_LIMIT_NOTE}
             {r.baseline && !r.baseline.ready && (
               <>
                 {" "}
