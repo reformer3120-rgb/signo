@@ -220,6 +220,11 @@ async function buildDetail(no: string): Promise<ThemeDetail> {
   const tally = (f: (s: ThemeStock) => boolean) => stocks.filter(f).length;
   const own = stocks.length > 0;
 
+  // 없는 번호를 넣으면 네이버가 빈 표를 준다. 그대로 돌려주면 화면이
+  // 제목도 종목도 없이 뜬다. 던져서 라우트가 404 로 답하게 한다.
+  // 던지면 캐시에 남지 않으므로, 잠깐 실패한 것뿐이면 다음 요청에 다시 받는다.
+  if (!name && !own) throw new Error(`테마 없음: ${no}`);
+
   return {
     no,
     name,

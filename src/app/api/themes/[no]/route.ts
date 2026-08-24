@@ -12,6 +12,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ no: string }> 
   try {
     return NextResponse.json({ data: await themeDetail(no) });
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 502 });
+    // 없는 번호와 수집 실패를 가른다. 앞은 다시 불러도 소용없고, 뒤는 소용있다.
+    const notFound = String(e).includes("테마 없음");
+    return NextResponse.json(
+      { error: notFound ? "그런 테마가 없다" : String(e) },
+      { status: notFound ? 404 : 502 },
+    );
   }
 }

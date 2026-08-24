@@ -158,7 +158,19 @@ export function ThemeDetailView({
       right={<Tabs value={sort} onChange={setSort} items={SORTS} />}
     >
       {error ? (
-        <p className="py-10 text-center text-sm text-muted">테마를 불러오지 못했다.</p>
+        <div className="flex flex-col items-center gap-2 py-10">
+          <p className="text-sm text-muted">
+            {/* fetcher 가 상태 코드를 메시지로 던진다 */}
+            {String(error?.message) === "404" ? "그런 테마가 없다." : "테마를 불러오지 못했다."}
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-md border border-line px-3 py-1 text-[11px] font-medium text-muted transition-colors hover:text-fg"
+          >
+            테마 목록으로
+          </button>
+        </div>
       ) : isLoading || !d ? (
         <div className="flex flex-col gap-2">
           <div className="h-16 animate-pulse rounded-lg bg-line/30" />
