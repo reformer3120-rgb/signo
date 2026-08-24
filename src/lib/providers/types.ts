@@ -76,6 +76,65 @@ export interface StockDataProvider {
 }
 
 /**
+ * 테마 출처. StockDataProvider 와 일부러 갈라 둔다.
+ *
+ * 테마는 시세와 소유자가 다르다. 시세는 KRX 것이라 코스콤 계약으로
+ * 덮이지만, 테마 분류·편입 사유·재무 지표는 에프앤가이드 것이라
+ * 별도 계약이 필요하다 (네이버 금융 푸터가 그렇게 밝히고 있다).
+ *
+ * 하나로 묶어 두면 한쪽 계약만 있어도 다른 쪽까지 덮이는 것처럼 보인다.
+ * 따로 두면 "시세는 코스콤, 테마는 아직 없음" 이 코드에 드러난다.
+ *
+ * lib/theme.ts 의 네이버 파서가 이 계약을 만족하는 개발용 구현이다.
+ */
+export interface ThemeSource {
+  /** 출처 이름 — 화면 하단 표기에 쓴다 */
+  readonly 표기: string;
+  /** 정식 라이선스로 받는 자료인가. false 면 개발용이라는 뜻이다 */
+  readonly 라이선스: boolean;
+  list(): Promise<ThemeRowLike[]>;
+  detail(no: string): Promise<ThemeDetailLike>;
+}
+
+export interface ThemeRowLike {
+  no: string;
+  name: string;
+  chg: number | null;
+  chg3d: number | null;
+  up: number;
+  flat: number;
+  down: number;
+  leaders: { code: string; name: string }[];
+}
+
+export interface ThemeStockLike {
+  code: string;
+  name: string;
+  /** 테마 편입 사유 — 에프앤가이드가 쓴 문장이다 */
+  why: string;
+  price: number | null;
+  chg: number | null;
+  cap: number | null;
+  sales: number | null;
+  op: number | null;
+  opm: number | null;
+  growth: number | null;
+  per: number | null;
+}
+
+export interface ThemeDetailLike {
+  no: string;
+  name: string;
+  desc: string;
+  chg: number | null;
+  count: number;
+  up: number;
+  flat: number;
+  down: number;
+  stocks: ThemeStockLike[];
+}
+
+/**
  * 출처가 못 주는 기능을 화면에 알리는 표.
  * 라우트가 이 값을 응답에 실어 주면 카드가 스스로 숨거나 안내를 띄운다.
  */
@@ -87,4 +146,5 @@ export interface ProviderCapabilities {
   컨센서스: boolean; // 목표주가·투자의견
   배당: boolean;
   거래소구분: boolean; // KRX / NXT 분리 시세
+  테마: boolean; // 에프앤가이드 계약이 있어야 참
 }

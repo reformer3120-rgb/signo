@@ -61,10 +61,15 @@ export default function RootLayout({
           {children}
           <footer className="mt-2 flex flex-col gap-2 py-4">
             {/* 책임 한계 고지 — 모든 화면 하단에 표시 */}
-            <p className="rounded-lg border border-line bg-surface/60 px-4 py-3 text-center text-xs leading-relaxed text-muted">
-              본 사이트에서 제공하는 지표는 투자 참고용이며, 투자의 최종 책임은 투자자 본인에게
-              있습니다.
-            </p>
+            <ul className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface/60 px-5 py-3.5 text-xs leading-relaxed text-muted marker:text-line list-disc list-outside pl-8">
+              <li>이 화면은 정보 제공을 위한 것이며, 특정 종목의 매매를 권유하지 않습니다.</li>
+              <li>
+                시세·재무 수치는 외부 제공처에서 받은 값이라 지연되거나 실제와 다를 수 있으며,
+                정확성과 완전성을 보장하지 않습니다.
+              </li>
+              <li>투자 판단과 그 결과는 이용자 본인에게 귀속됩니다.</li>
+              <li>제공 자료를 무단으로 복제·배포·전송하는 것을 금합니다.</li>
+            </ul>
             <p className="text-center text-xs text-muted">
               SIGNO · KRX 마켓 대시보드 · 데이터: Yahoo · 네이버 · KIS
             </p>

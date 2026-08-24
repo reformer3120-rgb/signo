@@ -17,6 +17,7 @@ const SUB: Record<string, { href: string; label: string }[]> = {
   kr: [
     { href: "/", label: "대시보드" },
     { href: "/stock", label: "종목" },
+    { href: "/theme", label: "테마" },
     { href: "/market", label: "시장지표" },
   ],
   us: [
