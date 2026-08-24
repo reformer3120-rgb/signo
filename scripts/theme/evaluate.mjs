@@ -4,9 +4,12 @@
 // 수익률 상관을 재고, 시장에서 아무렇게나 뽑은 묶음과 견준다.
 //
 // ── 공정하게 견주려면 ──────────────────────────────────────
-// 기준선 0.579 는 에프앤가이드 테마의 "시총 상위 12종목" 으로 쟀다.
-// 우리 쪽을 점수 상위로 뽑으면 소형주끼리 견주는 셈이라 불리하다.
-// 그래서 여기서도 시총 순으로 뽑는다 (scripts/theme/caps.mjs).
+// 기준선은 에프앤가이드 테마의 "시총 상위 12종목" 으로 쟀다. 우리 쪽을
+// 점수 상위로 뽑으면 소형주끼리 견주는 셈이라 불리하다. 그래서 여기서도
+// 시총 순으로 뽑는다 (scripts/theme/caps.mjs).
+//
+// 기준선 값 자체도 한 번 틀렸다. 처음에 테마 6개로 재서 0.579 라고 알았는데,
+// 30개로 넓히니 0.508 이었다. 강세 테마만 골라 재면 부풀려진다.
 //
 // 대조군도 마찬가지다. 테마 종목 안에서 뽑으면 이미 서로 겹치므로
 // 기준선이 부풀어 테마 효과가 사라져 보인다 (처음에 그렇게 재서 차이가
@@ -25,7 +28,17 @@ const BARS = 60;
 const MIN_MEMBERS = 5;
 const TOP_N = 12; // 기준선과 같은 크기
 
-const FN_BASE = { theme: 0.579, random: 0.385, p95: 0.527 };
+// 기준선은 cohesion.mjs 가 실제로 잰 값을 쓴다.
+// 처음에는 0.579 로 알고 있었는데 테마 6개로만 잰 값이었다.
+// 30개로 넓히니 0.508 이었다 — 강세 테마만 골라 재면 부풀려진다.
+const FN_BASE = (() => {
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(DIR, "baseline.json"), "utf8"));
+    return { theme: b.theme, random: b.random, p95: b.p95, n: b.n };
+  } catch {
+    return { theme: 0.508, random: 0.366, p95: 0.486, n: 30 };
+  }
+})();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -157,7 +170,7 @@ export async function evaluate(log = console.log) {
   const lift = ours - avgRand;
   const fnLift = FN_BASE.theme - FN_BASE.random;
   lines.push("■ 에프앤가이드 대비");
-  lines.push(`  에프앤가이드 평균       ${FN_BASE.theme.toFixed(3)} (무작위 ${FN_BASE.random.toFixed(3)}, 올린 폭 +${fnLift.toFixed(3)})`);
+  lines.push(`  에프앤가이드 평균       ${FN_BASE.theme.toFixed(3)} (테마 ${FN_BASE.n}개 · 무작위 ${FN_BASE.random.toFixed(3)} · 올린 폭 +${fnLift.toFixed(3)})`);
   lines.push(`  우리 평균               ${ours.toFixed(3)} (무작위 ${avgRand.toFixed(3)}, 올린 폭 ${lift >= 0 ? "+" : ""}${lift.toFixed(3)})`);
   lines.push(`  → ${((lift / fnLift) * 100).toFixed(0)}%`);
 
