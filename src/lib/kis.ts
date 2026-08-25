@@ -495,6 +495,87 @@ export async function exchangeBars(
 }
 
 /**
+ * 지수 일봉 (코스피 0001 · 코스닥 1001).
+ * 종목 일봉과 TR·필드 이름이 다르다 — 종목 쪽 TR 에 U 를 넣으면 거부한다.
+ */
+export async function indexBars(
+  iscd: "0001" | "1001",
+  from: string,
+  to: string,
+): Promise<KisCandle[]> {
+  const j = await kisGet(
+    "/uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice",
+    "FHKUP03500100",
+    {
+      FID_COND_MRKT_DIV_CODE: "U",
+      FID_INPUT_ISCD: iscd,
+      FID_INPUT_DATE_1: from,
+      FID_INPUT_DATE_2: to,
+      FID_PERIOD_DIV_CODE: "D",
+    },
+  );
+  const rows = (j.output2 as Record<string, string>[]) ?? [];
+  return rows
+    .filter((r) => r.stck_bsop_date && n(r.bstp_nmix_prpr) > 0)
+    .map((r) => {
+      const [y, mo, d] = ymd(r.stck_bsop_date);
+      const close = n(r.bstp_nmix_prpr);
+      return {
+        time: kstUnix(y, mo, d),
+        open: n(r.bstp_nmix_oprc) || close,
+        high: n(r.bstp_nmix_hgpr) || close,
+        low: n(r.bstp_nmix_lwpr) || close,
+        close,
+        volume: n(r.acml_vol),
+      };
+    })
+    .sort((a, b) => a.time - b.time);
+}
+
+/**
+ * 일봉을 원하는 개수만큼 거슬러 올라가며 이어 받는다.
+ *
+ * KIS 는 요청한 기간과 상관없이 한 번에 주는 건수가 정해져 있다 —
+ * 종목은 100건, 지수는 50건. 6개월치를 달라고 해도 최근 것만 온다.
+ * 그래서 받은 것 중 가장 이른 날 바로 앞으로 다시 요청하기를 되풀이한다.
+ *
+ * 더 못 받으면(상장 전이거나 자료가 없으면) 그 자리에서 멈춘다.
+ */
+async function pageBars(
+  fetchOne: (from: string, to: string) => Promise<KisCandle[]>,
+  days: number,
+): Promise<KisCandle[]> {
+  const out: KisCandle[] = [];
+  const seen = new Set<number>();
+  let to = new Date();
+  for (let round = 0; round < 6 && out.length < days; round++) {
+    const from = new Date(to.getTime() - 200 * 24 * 3600 * 1000);
+    const ymdOf = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+    let got: KisCandle[];
+    try {
+      got = await fetchOne(ymdOf(from), ymdOf(to));
+    } catch {
+      break;
+    }
+    const fresh = got.filter((b) => !seen.has(b.time));
+    if (!fresh.length) break;
+    for (const b of fresh) seen.add(b.time);
+    out.push(...fresh);
+    // 가장 이른 날 하루 앞으로 옮겨 다시 받는다
+    to = new Date(Math.min(...fresh.map((b) => b.time)) * 1000 - 24 * 3600 * 1000);
+  }
+  return out.sort((a, b) => a.time - b.time).slice(-days);
+}
+
+/** 종목 일봉 N 거래일 (100건 넘으면 이어 받는다) */
+export const dailyBars = (code: string, days: number) =>
+  pageBars((f, t) => exchangeBars(code, "J", "D", f, t), days);
+
+/** 지수 일봉 N 거래일 (50건 넘으면 이어 받는다) */
+export const dailyIndexBars = (iscd: "0001" | "1001", days: number) =>
+  pageBars((f, t) => indexBars(iscd, f, t), days);
+
+/**
  * 분봉 — KIS는 요청 시각 기준 직전 30건(1분봉)만 주므로 시각을 거슬러 올라가며 수집 후 리샘플.
  * NXT는 08:00~20:00까지 거래되므로 그 범위를 커버한다.
  */

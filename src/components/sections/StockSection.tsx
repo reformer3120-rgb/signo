@@ -7,6 +7,7 @@ import { useChartHeight } from "@/lib/useChartHeight";
 import { ChartFoldButton } from "@/components/ChartFoldButton";
 import { useSticky } from "@/lib/useSticky";
 import { KrSessionBadge } from "@/components/SessionBadge";
+import { StockThemeChips } from "@/components/stock/StockThemeChips";
 import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
@@ -106,6 +107,7 @@ export function StockSection({
           </span>
           {/* KRX가 닫힌 시간대면 지금 시세가 NXT 기준임을 알린다 */}
           <KrSessionBadge />
+          <StockThemeChips code={code} />
           {stat && (
             <div className="ml-auto flex items-center gap-2.5 text-xs text-muted">
               <span>

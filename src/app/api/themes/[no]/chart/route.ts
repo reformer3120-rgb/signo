@@ -12,7 +12,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ no: string }> }
   }
   const days = Math.min(250, Math.max(20, Number(new URL(req.url).searchParams.get("days")) || 60));
   try {
-    return NextResponse.json({ data: await ownThemeChart(no, days), days });
+    const c = await ownThemeChart(no, days);
+    return NextResponse.json({ data: c.points, leadName: c.leadName, days });
   } catch (e) {
     const notFound = String(e).includes("테마 없음");
     return NextResponse.json(

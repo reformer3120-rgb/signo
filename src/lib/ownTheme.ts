@@ -14,7 +14,7 @@
 // 응집도(같은 테마 종목이 같이 움직이는 정도)로 재면 에프앤가이드 분류의
 // 98% 수준이다 — 우리 0.500 대 0.508, 무작위는 0.36.
 import { cached, redis } from "./cache";
-import { exchangeBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
+import { dailyBars, dailyIndexBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
 import raw from "@/data/themes.json";
 
 interface RawStock {
@@ -350,8 +350,20 @@ export function themeIndex(): { id: string; name: string; group: string; names: 
 export interface ThemePoint {
   /** YYYYMMDD */
   d: string;
-  /** 첫날을 0 으로 둔 누적 등락률 % */
+  /** 테마 — 첫날을 0 으로 둔 누적 등락률 % */
   v: number;
+  /** 대장주 (시총 1위) */
+  lead: number | null;
+  /** 코스피 */
+  ks: number | null;
+  /** 코스닥 */
+  kq: number | null;
+}
+
+export interface ThemeChart {
+  points: ThemePoint[];
+  /** 대장주 이름 — 범례에 쓴다 */
+  leadName: string | null;
 }
 
 /**
@@ -364,37 +376,47 @@ export interface ThemePoint {
  * 전 종목 일봉을 받으면 무거우므로 시총 상위 20개만 쓴다. 테마의 움직임은
  * 큰 종목이 좌우하고, 20개면 모양이 충분히 잡힌다.
  */
-async function buildChart(id: string, days: number): Promise<ThemePoint[]> {
+async function buildChart(id: string, days: number): Promise<ThemeChart> {
   const t = DATA.themes.find((x) => x.id === id);
   if (!t) throw new Error(`테마 없음: ${id}`);
-  if (!hasKIS()) return [];
+  if (!hasKIS()) return { points: [], leadName: null };
 
   const codes = t.stocks.map((s) => s.code);
   const fx = await fixedMany(codes);
   const q = (await quotes()).map;
-  const top = codes
+  const ranked = codes
     .map((c) => ({ c, cap: (q[c]?.price ?? 0) * (fx[c]?.shares ?? 0) }))
-    .sort((a, b) => b.cap - a.cap)
-    .slice(0, 20)
-    .map((x) => x.c);
+    .sort((a, b) => b.cap - a.cap);
+  const top = ranked.slice(0, 20).map((x) => x.c);
+  const leadCode = ranked[0]?.c ?? null;
+  const leadName = t.stocks.find((s) => s.code === leadCode)?.name ?? null;
 
-  const to = new Date();
-  const from = new Date(to.getTime() - (days + 20) * 24 * 3600 * 1000);
-  const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  // 등락률을 만들려면 하루 앞 종가가 더 있어야 한다
+  const need = days + 1;
+  const dayOf = (unix: number) =>
+    new Date(unix * 1000).toISOString().slice(0, 10).replace(/-/g, "");
 
-  // 날짜별 등락률을 모은다
+  /** 종가열 → 날짜별 등락률 */
+  const rates = (bars: { time: number; close: number }[]) => {
+    const m = new Map<string, number>();
+    for (let k = 1; k < bars.length; k++) {
+      const prev = bars[k - 1].close;
+      if (prev <= 0) continue;
+      const r = ((bars[k].close - prev) / prev) * 100;
+      m.set(dayOf(bars[k].time), r);
+    }
+    return m;
+  };
+
+  // 테마 — 구성종목 등락률의 단순 평균 (화면의 숫자와 같은 방식)
   const byDate = new Map<string, number[]>();
   const CONC = 5;
   for (let i = 0; i < top.length; i += CONC) {
     await Promise.all(
       top.slice(i, i + CONC).map(async (c) => {
         try {
-          const bars = await exchangeBars(c, "J", "D", ymd(from), ymd(to));
-          for (let k = 1; k < bars.length; k++) {
-            const prev = bars[k - 1].close;
-            if (prev <= 0) continue;
-            const d = new Date(bars[k].time * 1000).toISOString().slice(0, 10).replace(/-/g, "");
-            const r = ((bars[k].close - prev) / prev) * 100;
+          const rs = rates(await dailyBars(c, need));
+          for (const [d, r] of rs) {
             // 가격제한폭 밖은 시세가 아니라 오류다 (목록에서와 같은 기준)
             if (Math.abs(r) > LIMIT) continue;
             byDate.set(d, [...(byDate.get(d) ?? []), r]);
@@ -404,21 +426,44 @@ async function buildChart(id: string, days: number): Promise<ThemePoint[]> {
     );
   }
 
+  // 견줄 것 셋 — 대장주 · 코스피 · 코스닥
+  const [leadR, ksR, kqR] = await Promise.all([
+    leadCode
+      ? dailyBars(leadCode, need).then(rates).catch(() => new Map<string, number>())
+      : Promise.resolve(new Map<string, number>()),
+    dailyIndexBars("0001", need).then(rates).catch(() => new Map<string, number>()),
+    dailyIndexBars("1001", need).then(rates).catch(() => new Map<string, number>()),
+  ]);
+
   const dates = [...byDate.keys()].sort().slice(-days);
-  const out: ThemePoint[] = [];
+  const points: ThemePoint[] = [];
   let acc = 1;
+  let aLead = 1;
+  let aKs = 1;
+  let aKq = 1;
   for (const d of dates) {
     const rs = byDate.get(d)!;
     // 그날 값이 몇 종목뿐이면 평균이 튄다 — 절반은 있어야 쓴다
     if (rs.length < Math.max(3, top.length / 2)) continue;
-    // 첫날은 0 에서 시작한다. 첫날 등락률부터 얹으면 그래프가 0 이 아닌 데서
-    // 시작해 '누적' 으로 읽히지 않는다 (첫 점이 +8.37% 로 뜬 적이 있다).
-    if (out.length) acc *= 1 + rs.reduce((a, b) => a + b, 0) / rs.length / 100;
-    out.push({ d, v: +((acc - 1) * 100).toFixed(2) });
+    // 첫날은 다 같이 0 에서 시작한다. 그래야 겹쳐 놓고 견줄 수 있다.
+    if (points.length) {
+      acc *= 1 + rs.reduce((a, b) => a + b, 0) / rs.length / 100;
+      aLead *= 1 + (leadR.get(d) ?? 0) / 100;
+      aKs *= 1 + (ksR.get(d) ?? 0) / 100;
+      aKq *= 1 + (kqR.get(d) ?? 0) / 100;
+    }
+    const at = (a: number, has: boolean) => (has ? +((a - 1) * 100).toFixed(2) : null);
+    points.push({
+      d,
+      v: +((acc - 1) * 100).toFixed(2),
+      lead: at(aLead, leadR.size > 0),
+      ks: at(aKs, ksR.size > 0),
+      kq: at(aKq, kqR.size > 0),
+    });
   }
-  return out;
+  return { points, leadName };
 }
 
 /** 테마 등락률 시계열 (12시간 캐시 — 하루 한 점씩 늘어난다) */
 export const ownThemeChart = (id: string, days = 60) =>
-  cached<ThemePoint[]>(`ownTheme:chart:v2:${id}:${days}`, 12 * 3600, () => buildChart(id, days));
+  cached<ThemeChart>(`ownTheme:chart:v5:${id}:${days}`, 12 * 3600, () => buildChart(id, days));
