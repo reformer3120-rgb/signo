@@ -142,6 +142,34 @@ function inSentence(sent, word) {
   return SELF.test(s);
 }
 
+/**
+ * 낱말마다 무게가 다르다.
+ *
+ * "시공" 은 사업보고서 3,982건 중 226건에 나온다. 생산라인을 들이는 회사면
+ * 어디든 적는 말이라 이것 하나로 건설사라고 할 수 없다. 반대로 "후보물질" 은
+ * 76건에만 나오고, 그 76건은 거의 다 신약 회사다.
+ *
+ * 그래서 흔한 낱말일수록 점수를 깎는다. 문턱이 3 이므로
+ *   드문 낱말(2% 미만)   3점 → 하나만 나와도 편입
+ *   보통(2~5%)          2점 → 하나 더 있어야 편입
+ *   흔한 낱말(5% 넘음)   1점 → 셋은 모여야 편입
+ *
+ * 빈도는 build-df.mjs 가 재어 df.json 에 넣어 둔다. 없으면 예전처럼 3점씩 준다.
+ */
+const DF = (() => {
+  const p = path.join(DIR, "df.json");
+  return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+})();
+const 전체문서 = DF?.["__문서수"] ?? 0;
+
+function 무게(w) {
+  if (!DF || !전체문서) return 3;
+  const n = DF[w];
+  if (n == null) return 3;
+  const p = n / 전체문서;
+  return p > 0.05 ? 1 : p > 0.02 ? 2 : 3;
+}
+
 export function scoreOne(text, rule) {
   let sents = ourSentences(text);
   if (!sents.length) return { score: 0, why: [] };
@@ -166,7 +194,7 @@ export function scoreOne(text, rule) {
   for (const w of rule.core) {
     const n = sents.filter((s) => inSentence(s, w)).length;
     if (n) {
-      score += 3 + Math.min(2, n - 1); // 여러 문장에 걸치면 조금 더
+      score += 무게(w) + Math.min(2, n - 1); // 여러 문장에 걸치면 조금 더
       why.push(w);
     }
   }

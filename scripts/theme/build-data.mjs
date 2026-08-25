@@ -61,8 +61,58 @@ function pickWhy(text, keywords) {
   }
   if (!best) return null;
   let out = best.replace(/^[(（]?\d+[)）]?\s*/, "").replace(/^[가-힣][.)]\s*/, "").trim();
+  if (거른다(out)) return null;
+  out = 평서문(out);
   if (out.length > MAX_WHY) out = out.slice(0, MAX_WHY).replace(/\s+\S*$/, "") + "…";
   return out;
+}
+
+/**
+ * 점수만으로 고르면 마땅한 문장이 없는 종목에서 찌꺼기가 뽑힌다.
+ * 그럴 때는 억지로 채우지 말고 비워 두는 편이 낫다 — 표를 풀어 놓은 줄이나
+ * 업계 전망을 편입 사유라고 내보내면 읽는 사람을 속이는 것이다.
+ */
+function 거른다(s) {
+  if (s.length < 25) return true;
+  // 앞이 잘렸거나 앞 문장에 매달린 것 — 그것만 떼어 놓으면 뜻이 서지 않는다
+  if (/^(또한|더불어|이에|그리고|한편|이러한|이와|아울러|반면|다만|따라서|특히)/.test(s)) return true;
+  if (/^[를을은는이가와과의도]\s/.test(s) || /^[를을]/.test(s)) return true;
+  // 하려는 일이지 하고 있는 일이 아니다
+  if (/할 예정|추진 중|계획(이다|입니다|하고)|목표로 하|검토 중/.test(s)) return true;
+  // 표를 한 줄로 풀어 놓은 것
+  if ((s.match(/[,·]/g) ?? []).length > 6) return true;
+  if ((s.match(/\//g) ?? []).length >= 3) return true;
+  if (/대분류\s*중분류|사업부문\s*주요|구분\s*(품목|내용|주요)/.test(s)) return true;
+  // 업계 전망 · 시장 규모 — 회사가 무엇을 하는지가 아니다
+  if (/전망(하|이며|되며|입니다)|달할 것|성장할 것|파급효과|시장규모(는|가)|연평균 성장률/.test(s)) return true;
+  // 업종 일반론 (자기 회사 얘기가 아니다)
+  if (/^(지주회사|리츠|이 산업|해당 산업|본 산업)(는|은|이란)/.test(s)) return true;
+  return false;
+}
+
+/**
+ * 사람이 적어 준 문장은 "…생산한다" 인데 원문 발췌는 "…생산합니다" 다.
+ * 한 화면에 섞이면 눈에 걸리므로 어미만 맞춘다. 뜻은 건드리지 않는다.
+ */
+const 어미 = [
+  [/하였습니다\.?$/, "했다."], [/되었습니다\.?$/, "됐다."],
+  [/있습니다\.?$/, "있다."], [/없습니다\.?$/, "없다."],
+  [/습니다\.?$/, "다."],
+  [/합니다\.?$/, "한다."], [/됩니다\.?$/, "된다."],
+];
+function 평서문(s) {
+  // "…영위하고 있습니다.3) 건설업" — 다음 절 머리가 붙어 온 것을 떼어 낸다
+  let t = s.trim().replace(/([다요])\.\s*\d+[).]?\s*\S*$/, "$1.").trim();
+  // "…입니다" 는 받침을 봐야 한다. 기업입니다→기업이다 · 회사입니다→회사다
+  const m = t.match(/^(.*?)입니다\.?$/);
+  if (m) {
+    const h = m[1].trim();
+    const c = h.charCodeAt(h.length - 1) - 0xac00;
+    const 받침 = c >= 0 && c < 11172 && c % 28 !== 0;
+    return h + (받침 ? "이다." : "다.");
+  }
+  for (const [re, to] of 어미) if (re.test(t)) return t.replace(re, to);
+  return /[.!?…]$/.test(t) ? t : t + ".";
 }
 
 /**
