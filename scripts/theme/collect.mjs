@@ -16,6 +16,7 @@
 //   node scripts/theme/collect.mjs           전 종목 (이어받기)
 //   node scripts/theme/collect.mjs 300       앞 300종목만
 //   node scripts/theme/collect.mjs --wait    막혀 있으면 풀릴 때까지 기다렸다 시작
+//   node scripts/theme/collect.mjs --only 069080   한 종목만, 왜 안 되는지 찍어 가며
 //
 // 결과 → .cache/theme/overview.json
 //   { 종목코드: { code, name, report, text } }        받음
@@ -36,6 +37,7 @@ const OUT = path.join(OUT_DIR, "overview.json");
 
 const args = process.argv.slice(2);
 const WAIT = args.includes("--wait");
+const ONLY = args[args.indexOf("--only") + 1] && args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const LIMIT = Number(args.find((a) => /^\d+$/.test(a))) || Infinity;
 const CONC = 2;
 const PAUSE_MS = 400; // 배치 사이 쉼
@@ -83,7 +85,7 @@ function unzipAll(buf) {
       const body = buf.subarray(start, start + csize);
       data = method === 0 ? body : method === 8 ? inflateRawSync(body) : null;
     } catch { /* 깨진 항목은 건너뛴다 */ }
-    out.push({ name, data });
+    out.push({ name, data, method });
     p += 46 + nameLen + extraLen + cmtLen;
   }
   return out;
@@ -110,9 +112,49 @@ async function corpList() {
 }
 
 /**
- * "사업의 개요" 뒤 ~ "주요 제품" 앞.
- * 목차에도 같은 제목이 있으므로 나오는 자리를 모두 재서 본문이 가장 긴 것을 고른다.
+ * 본문을 글자로 푼다.
+ *
+ * DART 원문은 EUC-KR 인 것도 있고 UTF-8 인 것도 있다. 처음에는 EUC-KR 로 읽고
+ * "사업" 이라는 글자가 안 보이면 UTF-8 로 다시 읽었는데, 깨진 글자 속에 우연히
+ * "사업" 이 섞이면 그대로 넘어갔다. 웹젠·조광피혁 등 34종목이 이 때문에
+ * "개요 없음" 으로 접혔다.
+ *
+ * 이제 XML 선언을 먼저 보고, 그래도 애매하면 한글이 더 많이 나오는 쪽을 고른다.
  */
+function decode(buf) {
+  const head = buf.subarray(0, 200).toString("latin1");
+  const dec = /encoding\s*=\s*["']?utf-?8/i.test(head)
+    ? "utf-8"
+    : /encoding\s*=\s*["']?(euc-kr|ks_c_5601)/i.test(head)
+      ? "euc-kr"
+      : null;
+  if (dec) return new TextDecoder(dec).decode(buf);
+
+  // 선언이 없으면 둘 다 읽어 보고 한글이 많은 쪽을 쓴다
+  const sample = buf.subarray(0, 60000);
+  const hangul = (t) => (t.match(/[가-힣]/g) ?? []).length;
+  const e = new TextDecoder("euc-kr").decode(sample);
+  const u = sample.toString("utf8");
+  return hangul(u) > hangul(e)
+    ? buf.toString("utf8")
+    : new TextDecoder("euc-kr").decode(buf);
+}
+
+/**
+ * "사업의 개요" 뒤 ~ "주요 제품" 앞.
+ *
+ * 목차에도 같은 제목이 있으므로 나오는 자리를 모두 재서 본문이 가장 긴 것을 고른다.
+ *
+ * 개요를 짧게 쓰는 회사가 있다. 웹젠은 167자다 —
+ * "당사는 지배회사로서 게임 개발 및 서비스업, 지적재산권의 라이선스를 주요
+ * 사업으로 영위하고 있으며…". 문턱을 200자로 뒀더니 이런 회사 서른 곳이
+ * 통째로 빠졌다. 짧아도 무엇 하는 회사인지는 충분히 알 수 있다.
+ *
+ * 그래도 너무 짧으면 판정할 게 없으므로, 개요가 얇을 때는 바로 다음 절
+ * ("주요 제품 및 서비스")까지 이어 붙여 본다.
+ */
+const MIN_OVERVIEW = 80;
+
 function overview(plain) {
   let best = "";
   const re = /사업의\s*개요/g;
@@ -121,10 +163,39 @@ function overview(plain) {
     const from = m.index + m[0].length;
     const tail = plain.slice(from, from + 12000);
     const stop = /(?:2\s*\.?\s*주요\s*제품|주요\s*제품\s*및\s*서비스)/.exec(tail);
-    const seg = (stop ? tail.slice(0, stop.index) : tail).trim();
+    let seg = (stop ? tail.slice(0, stop.index) : tail).trim();
+
+    // 개요가 얇으면 다음 절까지 이어 붙인다 (제품 목록에 업종이 드러난다)
+    if (stop && seg.length < 400) {
+      const more = /(?:3\s*\.?\s*원재료|원재료\s*및\s*생산설비|4\s*\.?\s*매출)/.exec(tail);
+      seg = tail.slice(0, more ? more.index : Math.min(tail.length, stop.index + 1500)).trim();
+    }
     if (seg.length > best.length) best = seg;
   }
-  return best.length > 200 ? best.slice(0, 6000) : null;
+  return best.length > MIN_OVERVIEW ? best.slice(0, 6000) : null;
+}
+
+
+/** 본문 하나를 받아 개요를 뽑는다. 파일이 없으면 "없음", 통신 실패면 null */
+async function docOf(rcept) {
+  const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rcept}`);
+  if (!dr) return null;
+  const buf = Buffer.from(await dr.arrayBuffer());
+
+  // ZIP 이 아니면 오류 XML 이다. 그 중 014 는 "그 접수번호에 본문 파일이 없다" 는
+  // 뜻이라 다시 불러도 소용없다 — [첨부정정] 보고서에서 자주 나온다.
+  // 통신 실패와 구분하지 않으면 연속 실패로 세어져 수집이 통째로 멈춘다.
+  if (buf.length < 200 || buf.readUInt32LE(0) !== 0x04034b50) {
+    const t = buf.toString("utf8");
+    if (/<status>014<\/status>/.test(t)) return "없음";
+    return null;
+  }
+  let files;
+  try { files = unzipAll(buf); } catch { return null; }
+  const main = files.filter((f) => f.data).sort((a, b) => b.data.length - a.data.length)[0];
+  if (!main) return "없음";
+  const plain = decode(main.data).replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
+  return overview(plain) ?? "없음";
 }
 
 /** 성공 → 기록 / 받을 게 없음 → skip / 통신 실패 → null (기록하지 않는다) */
@@ -137,25 +208,19 @@ async function fetchOne({ corp, code, name }) {
   try { j = await lr.json(); } catch { return null; }
   if (j.status === "013") return { code, name, skip: "공시없음" };
   if (j.status !== "000") return null; // 020 한도초과 등 — 다시 시도해야 한다
-  const rep = (j.list ?? []).find((x) => /사업보고서/.test(x.report_nm));
-  if (!rep) return { code, name, skip: "사업보고서없음" };
 
-  const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rep.rcept_no}`);
-  if (!dr) return null;
-  const buf = Buffer.from(await dr.arrayBuffer());
-  // 오류일 때는 XML 로 온다 (ZIP 이 아니다)
-  if (buf.length < 200 || buf.readUInt32LE(0) !== 0x04034b50) return null;
-  let files;
-  try { files = unzipAll(buf); } catch { return null; }
-  const main = files.filter((f) => f.data).sort((a, b) => b.data.length - a.data.length)[0];
-  if (!main) return { code, name, skip: "본문없음" };
-  let text = new TextDecoder("euc-kr").decode(main.data);
-  if (!/사업/.test(text.slice(0, 20000))) text = main.data.toString("utf8");
-  const plain = text.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
-  const t = overview(plain);
-  return t
-    ? { code, name, report: rep.report_nm, text: t }
-    : { code, name, skip: "개요항목없음" };
+  // 사업보고서 후보를 최근 순으로 모은다. 가장 최근 것이 [첨부정정] 이라 본문이
+  // 없을 수 있으므로, 될 때까지 아래로 내려간다. 서연이화·제주항공 등 55종목이
+  // 이 때문에 빠져 있었다.
+  const cands = (j.list ?? []).filter((x) => /사업보고서/.test(x.report_nm));
+  if (!cands.length) return { code, name, skip: "사업보고서없음" };
+
+  for (const rep of cands.slice(0, 4)) {
+    const r = await docOf(rep.rcept_no);
+    if (r === null) return null;      // 통신 실패 — 다음 실행에서 다시
+    if (r !== "없음") return { code, name, report: rep.report_nm, text: r };
+  }
+  return { code, name, skip: "개요항목없음" };
 }
 
 /** 막혀 있는지 확인. 필요하면 풀릴 때까지 기다린다 */
@@ -196,8 +261,77 @@ if (!(await waitUntilOpen())) {
 console.log("  열려 있다.");
 
 const all = await corpList();
-const todo = all.filter((c) => !have[c.code]).slice(0, LIMIT);
-console.log(`상장사 ${all.length} · 이미 처리 ${Object.keys(have).length} · 받을 것 ${todo.length}`);
+
+// 상장 종목 목록이 있으면 그것만 받는다.
+//
+// DART 대응표에는 상장폐지된 회사가 남아 있다 (하이트맥주·웅진에너지 등
+// 3,985건 중 1,200여 개). 그것까지 두드리면 시간도 한도도 낭비고, 무엇보다
+// 남은 건수가 실제보다 훨씬 많아 보여 어디까지 왔는지 알기 어렵다.
+const listedPath = path.join(OUT_DIR, "listed.json");
+let onlyListed = null;
+if (fs.existsSync(listedPath)) {
+  onlyListed = new Set(
+    JSON.parse(fs.readFileSync(listedPath, "utf8")).map((s) => s.code),
+  );
+}
+const pool = onlyListed ? all.filter((c) => onlyListed.has(c.code)) : all;
+if (onlyListed) console.log(`상장 종목만 받는다 — 대응표 ${all.length} 중 ${pool.length}`);
+const todo = ONLY
+  ? pool.filter((c) => c.code === ONLY)
+  : pool.filter((c) => !have[c.code]).slice(0, LIMIT);
+
+// 한 종목만 볼 때는 어디서 걸리는지 찍는다
+if (ONLY) {
+  const c = todo[0];
+  if (!c) { console.log(`${ONLY} — 상장 목록에 없다`); process.exit(0); }
+  const lr = await get(
+    `${BASE}/list.json?crtfc_key=${KEY}&corp_code=${c.corp}&bgn_de=20240101&pblntf_ty=A&page_count=30`,
+  );
+  const j = await lr.json();
+  const cands = (j.list ?? []).filter((x) => /사업보고서/.test(x.report_nm));
+  console.log(`${c.name} (${c.code}) — 사업보고서 후보 ${cands.length}건`);
+  for (const rep of cands.slice(0, 4)) {
+    const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rep.rcept_no}`);
+    const buf = Buffer.from(await dr.arrayBuffer());
+    const isZip = buf.length >= 200 && buf.readUInt32LE(0) === 0x04034b50;
+    let note = `ZIP 아님 (${buf.subarray(0, 120).toString("utf8").replace(/\s+/g, " ")})`;
+    if (isZip) {
+      let files = [];
+      try { files = unzipAll(buf); } catch (e) { note = "ZIP 해제 실패: " + e.message; }
+      const live = files.filter((f) => f.data);
+      if (live.length) {
+        const main = live.sort((a, b) => b.data.length - a.data.length)[0];
+        const txt = decode(main.data);
+        const plain = txt.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
+        const o = overview(plain);
+        note =
+          `본문 ${Math.round(main.data.length / 1024)}KB · 한글 ${(txt.match(/[가-힣]/g) ?? []).length}자` +
+          ` · "사업의 개요" ${plain.includes("사업의 개요") ? "있음" : "없음"}` +
+          ` · 뽑힘 ${o ? o.length + "자" : "실패"}`;
+        if (!o) {
+          const re2 = /사업의\s*개요/g;
+          let mm;
+          let k = 0;
+          while ((mm = re2.exec(plain)) && k < 4) {
+            k++;
+            const from = mm.index + mm[0].length;
+            const tail = plain.slice(from, from + 12000);
+            const stop = /(?:2\s*\.?\s*주요\s*제품|주요\s*제품\s*및\s*서비스)/.exec(tail);
+            const seg = (stop ? tail.slice(0, stop.index) : tail).trim();
+            note += `
+       #${k} 끊긴자리 ${stop ? stop.index : "없음"} · 길이 ${seg.length} · ${seg.slice(0, 70)}`;
+          }
+        }
+      } else if (files.length) {
+        note = `ZIP 안 ${files.length}개 중 풀린 것 0 — 압축 방식 ${files.map((f) => f.method ?? "?").join(",")}`;
+      }
+    }
+    console.log(`  ${rep.rcept_dt} ${rep.report_nm}
+     ${note}`);
+  }
+  process.exit(0);
+}
+console.log(`이미 처리 ${Object.keys(have).length} · 받을 것 ${todo.length}`);
 
 let done = 0, ok = 0, skip = 0, fail = 0, streak = 0;
 const t0 = Date.now();
