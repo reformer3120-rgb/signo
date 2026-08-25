@@ -49,3 +49,6 @@ next-env.d.ts
 *.log
 dev.log
 .cache/
+
+# 테마 문서
+SIGNO-테마분류기준.pdf
