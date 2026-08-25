@@ -14,7 +14,7 @@
 // 응집도(같은 테마 종목이 같이 움직이는 정도)로 재면 에프앤가이드 분류의
 // 98% 수준이다 — 우리 0.500 대 0.508, 무작위는 0.36.
 import { cached, redis } from "./cache";
-import { hasKIS, kisGet, unifiedQuotes } from "./kis";
+import { exchangeBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
 import raw from "@/data/themes.json";
 
 interface RawStock {
@@ -328,3 +328,97 @@ export function themeById(id: string): ThemeOfStock | undefined {
   const t = DATA.themes.find((x) => x.id === id);
   return t ? { id: t.id, name: t.name, codes: t.stocks.map((s) => s.code) } : undefined;
 }
+
+/* ── 종목명으로 테마 찾기 ────────────────────────────────── */
+
+/**
+ * 테마별 편입 종목 이름 목록. 화면에서 "삼성SDI 가 어느 테마에 있지" 를
+ * 바로 찾을 수 있게 한 번 내려 주고 그 뒤로는 브라우저에서 찾는다.
+ * 분기에 한 번 바뀌는 값이라 오래 캐시해도 된다.
+ */
+export function themeIndex(): { id: string; name: string; group: string; names: string[] }[] {
+  return DATA.themes.map((t) => ({
+    id: t.id,
+    name: t.name,
+    group: t.group,
+    names: t.stocks.map((s) => s.name),
+  }));
+}
+
+/* ── 테마 등락률 시계열 ──────────────────────────────────── */
+
+export interface ThemePoint {
+  /** YYYYMMDD */
+  d: string;
+  /** 첫날을 0 으로 둔 누적 등락률 % */
+  v: number;
+}
+
+/**
+ * 테마 지수를 만든다.
+ *
+ * 화면에 쓰는 테마 등락률이 "편입 종목의 단순 평균" 이므로, 시계열도 같은
+ * 방식이어야 한다. 날마다 구성종목의 등락률을 평균 내고 그것을 이어 붙인다.
+ * 시총 가중으로 만들면 화면의 숫자와 그래프가 어긋난다.
+ *
+ * 전 종목 일봉을 받으면 무거우므로 시총 상위 20개만 쓴다. 테마의 움직임은
+ * 큰 종목이 좌우하고, 20개면 모양이 충분히 잡힌다.
+ */
+async function buildChart(id: string, days: number): Promise<ThemePoint[]> {
+  const t = DATA.themes.find((x) => x.id === id);
+  if (!t) throw new Error(`테마 없음: ${id}`);
+  if (!hasKIS()) return [];
+
+  const codes = t.stocks.map((s) => s.code);
+  const fx = await fixedMany(codes);
+  const q = (await quotes()).map;
+  const top = codes
+    .map((c) => ({ c, cap: (q[c]?.price ?? 0) * (fx[c]?.shares ?? 0) }))
+    .sort((a, b) => b.cap - a.cap)
+    .slice(0, 20)
+    .map((x) => x.c);
+
+  const to = new Date();
+  const from = new Date(to.getTime() - (days + 20) * 24 * 3600 * 1000);
+  const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+
+  // 날짜별 등락률을 모은다
+  const byDate = new Map<string, number[]>();
+  const CONC = 5;
+  for (let i = 0; i < top.length; i += CONC) {
+    await Promise.all(
+      top.slice(i, i + CONC).map(async (c) => {
+        try {
+          const bars = await exchangeBars(c, "J", "D", ymd(from), ymd(to));
+          for (let k = 1; k < bars.length; k++) {
+            const prev = bars[k - 1].close;
+            if (prev <= 0) continue;
+            const d = new Date(bars[k].time * 1000).toISOString().slice(0, 10).replace(/-/g, "");
+            const r = ((bars[k].close - prev) / prev) * 100;
+            // 가격제한폭 밖은 시세가 아니라 오류다 (목록에서와 같은 기준)
+            if (Math.abs(r) > LIMIT) continue;
+            byDate.set(d, [...(byDate.get(d) ?? []), r]);
+          }
+        } catch { /* 한 종목이 빠져도 평균은 선다 */ }
+      }),
+    );
+  }
+
+  const dates = [...byDate.keys()].sort().slice(-days);
+  const out: ThemePoint[] = [];
+  let acc = 1;
+  for (const d of dates) {
+    const rs = byDate.get(d)!;
+    // 그날 값이 몇 종목뿐이면 평균이 튄다 — 절반은 있어야 쓴다
+    if (rs.length < Math.max(3, top.length / 2)) continue;
+    // 첫날은 0 에서 시작한다. 첫날 등락률부터 얹으면 그래프가 0 이 아닌 데서
+    // 시작해 '누적' 으로 읽히지 않는다 (첫 점이 +8.37% 로 뜬 적이 있다).
+    if (out.length) acc *= 1 + rs.reduce((a, b) => a + b, 0) / rs.length / 100;
+    out.push({ d, v: +((acc - 1) * 100).toFixed(2) });
+  }
+  return out;
+}
+
+/** 테마 등락률 시계열 (12시간 캐시 — 하루 한 점씩 늘어난다) */
+export const ownThemeChart = (id: string, days = 60) =>
+  cached<ThemePoint[]>(`ownTheme:chart:v2:${id}:${days}`, 12 * 3600, () => buildChart(id, days));

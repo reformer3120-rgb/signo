@@ -107,14 +107,25 @@ export async function evaluate(log = console.log) {
     return null;
   }
 
-  // 대조군 — 시장 전체
+  // 대조군 — 기준선을 잴 때 쓴 것을 그대로 쓴다.
+  //
+  // 여기서 새로 뽑으면 "테마에 안 든 종목" 중에서 뽑게 되는데, 분류가 넓어질수록
+  // 그 풀이 작고 별난 종목만 남아 무작위 응집도가 내려간다. 그러면 우리 쪽
+  // 올린 폭만 저절로 커진다. 실제로 분류를 1,633 → 1,737 종목으로 넓혔더니
+  // 무작위가 0.356 → 0.327 로 내려가 122% 라는 숫자가 나왔다. 기준이 흔들린 것이다.
   const themeSet = new Set(groups.flatMap((g) => g.codes));
-  const market = [];
-  for (const m of ["KOSPI", "KOSDAQ"]) {
-    try {
-      const rows = (await (await fetch(`http://localhost:3000/api/marketcap?market=${m}&limit=100`)).json()).data;
-      for (const r of rows ?? []) if (!themeSet.has(r.code)) market.push(r.code);
-    } catch { /* 서버가 없으면 건너뛴다 */ }
+  let market = [];
+  try {
+    const b = JSON.parse(fs.readFileSync(path.join(DIR, "baseline.json"), "utf8"));
+    if (Array.isArray(b.market) && b.market.length >= 30) market = b.market;
+  } catch { /* 없으면 아래에서 새로 뽑는다 */ }
+  if (!market.length) {
+    for (const m of ["KOSPI", "KOSDAQ"]) {
+      try {
+        const rows = (await (await fetch(`http://localhost:3000/api/marketcap?market=${m}&limit=100`)).json()).data;
+        for (const r of rows ?? []) if (!themeSet.has(r.code)) market.push(r.code);
+      } catch { /* 서버가 없으면 건너뛴다 */ }
+    }
   }
   if (market.length < 30) {
     log("대조군을 만들 수 없다 — 개발 서버(npm run dev)가 떠 있어야 한다.");
@@ -172,7 +183,10 @@ export async function evaluate(log = console.log) {
   lines.push("■ 에프앤가이드 대비");
   lines.push(`  에프앤가이드 평균       ${FN_BASE.theme.toFixed(3)} (테마 ${FN_BASE.n}개 · 무작위 ${FN_BASE.random.toFixed(3)} · 올린 폭 +${fnLift.toFixed(3)})`);
   lines.push(`  우리 평균               ${ours.toFixed(3)} (무작위 ${avgRand.toFixed(3)}, 올린 폭 ${lift >= 0 ? "+" : ""}${lift.toFixed(3)})`);
-  lines.push(`  → ${((lift / fnLift) * 100).toFixed(0)}%`);
+  lines.push(`  → 올린 폭 기준 ${((lift / fnLift) * 100).toFixed(0)}%`);
+  lines.push(`  → 응집도 자체로는 ${((ours / FN_BASE.theme) * 100).toFixed(0)}%  (${ours.toFixed(3)} 대 ${FN_BASE.theme.toFixed(3)})`);
+  lines.push("");
+  lines.push("  같은 조건(시총 상위 12 · 최근 60거래일 · 같은 대조군)에서 잰 값이다.");
 
   const text = lines.join("\n");
   log(text);

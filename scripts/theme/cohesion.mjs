@@ -16,9 +16,15 @@
 // 처음에는 테마 6개로만 쟀다. 비교 대상으로 삼기에 얇아서, 종목 수가
 // 넉넉한 테마를 폭넓게 뽑아 다시 잰다.
 //
-// 실행 — 개발 서버가 떠 있어야 한다
+// ── 앱과 떼어 놓는다 ──────────────────────────────────────
+// 예전에는 개발 서버의 /api/themes 를 읽었는데, 그 API 가 이제 우리 테마를
+// 준다. 기준선은 에프앤가이드 쪽을 재야 하므로 여기서 직접 받는다.
+// 이 스크립트는 검증용으로 로컬에서만 돈다 — 서비스로 내보내는 것이 아니다.
+//
+// 실행 — 개발 서버가 떠 있어야 한다 (대조군 시총 상위를 받는다)
 //   node scripts/theme/cohesion.mjs [테마수]
 import fs from "node:fs";
+import { ensureCaps } from "./caps.mjs";
 
 const UA = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36" };
 const BARS = 60;
@@ -70,11 +76,55 @@ function cohesion(codes, R) {
 
 const j = async (u) => (await (await fetch(u)).json()).data;
 
+async function eucKr(url) {
+  const r = await fetch(url, { headers: UA, cache: "no-store" });
+  return new TextDecoder("euc-kr").decode(await r.arrayBuffer());
+}
+const strip = (h) => h.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+const num = (t) => {
+  const v = Number(String(t ?? "").replace(/[,%\s]/g, ""));
+  return Number.isFinite(v) ? v : null;
+};
+
+/** 에프앤가이드 테마 목록 (네이버 금융 경유) */
+async function fnThemeList() {
+  const out = [];
+  const seen = new Set();
+  for (let p = 1; p <= 10; p++) {
+    const html = await eucKr(`https://finance.naver.com/sise/theme.naver?&page=${p}`);
+    let added = 0;
+    for (const row of html.split("</tr>")) {
+      const m = /sise_group_detail\.naver\?type=theme&no=(\d+)"[^>]*>([^<]+)</.exec(row);
+      if (!m || seen.has(m[1])) continue;
+      seen.add(m[1]);
+      const cnt = [...row.matchAll(/<td[^>]*class="[^"]*col_type4[^"]*"[^>]*>([\s\S]*?)<\/td>/g)]
+        .map((x) => num(strip(x[1])) ?? 0);
+      out.push({ no: m[1], name: m[2].trim(), n: cnt.reduce((a, b) => a + b, 0) });
+      added++;
+    }
+    if (!added) break;
+  }
+  return out;
+}
+
+/** 테마 구성종목 (시총 순으로 쓰려면 시총이 필요해 항목선택 쿠키를 실어 보낸다) */
+async function fnThemeStocks(no) {
+  const html = await eucKr(
+    `https://finance.naver.com/sise/sise_group_detail.naver?type=theme&no=${no}`,
+  );
+  const table = html.slice(Math.max(0, html.indexOf("type_5")));
+  const out = [];
+  for (const row of table.split("</tr>")) {
+    const m = /code=(\d{6})"[^>]*>([^<]+)</.exec(row);
+    if (m) out.push({ code: m[1], name: m[2].trim() });
+  }
+  return out;
+}
+
 // 종목 수가 넉넉한 테마를 고루 뽑는다. 너무 큰 테마(지주사·밸류업 등)는
 // 사실상 시장 전체라 기준선을 흐리므로 뺀다.
-const list = await j("http://localhost:3000/api/themes");
+const list = await fnThemeList();
 const cands = list
-  .map((t) => ({ no: t.no, name: t.name, n: t.up + t.flat + t.down }))
   .filter((t) => t.n >= TOP_N && t.n <= 60)
   .sort((a, b) => b.n - a.n);
 
@@ -87,11 +137,16 @@ console.log(`후보 ${cands.length}개 중 ${picked.length}개 선정 (구성종
 const themes = [];
 for (const p of picked) {
   try {
-    const d = await j(`http://localhost:3000/api/themes/${p.no}`);
-    if (!d?.stocks?.length) continue;
+    const stocks = await fnThemeStocks(p.no);
+    if (!stocks.length) continue;
+    // 시총 순으로 맞추려면 시총이 필요하다 — 앱과 같은 출처(caps)를 쓴다
+    const caps = await ensureCaps(stocks.map((s) => s.code));
     themes.push({
-      name: d.name || p.name,
-      codes: [...d.stocks].sort((a, b) => (b.cap ?? 0) - (a.cap ?? 0)).slice(0, TOP_N).map((s) => s.code),
+      name: p.name,
+      codes: [...stocks]
+        .sort((a, b) => (caps[b.code] ?? 0) - (caps[a.code] ?? 0))
+        .slice(0, TOP_N)
+        .map((s) => s.code),
     });
   } catch { /* 건너뛴다 */ }
   await sleep(150);
@@ -145,5 +200,7 @@ console.log(`  무작위 상위 5%     ${p95.toFixed(3)}`);
 console.log(`  올린 폭            +${(avg - avgRand).toFixed(3)}`);
 console.log(`  무작위 상위 5% 를 넘은 테마  ${vals.filter((x) => x.v > p95).length}/${vals.length}`);
 
-fs.writeFileSync(OUT, JSON.stringify({ theme: avg, median: med, random: avgRand, p95, n: vals.length, vals }, null, 1));
+// 대조군 종목까지 남긴다. 자체 분류를 잴 때 같은 대조군을 써야 견줄 수 있다 —
+// 분류가 넓어질수록 "테마에 안 든 종목" 이 줄어 대조군이 저절로 달라지기 때문이다.
+fs.writeFileSync(OUT, JSON.stringify({ theme: avg, median: med, random: avgRand, p95, n: vals.length, market, vals }, null, 1));
 console.log(`\n→ ${OUT}`);

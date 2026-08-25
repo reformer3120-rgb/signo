@@ -6,6 +6,7 @@ import { StockStickyBar } from "@/components/stock/StockStickyBar";
 import { StockDetailCard } from "@/components/stock/StockDetailCard";
 import { FinancialsCard } from "@/components/stock/FinancialsCard";
 import { SectorRankCard } from "@/components/stock/SectorRankCard";
+import { StockThemeCard } from "@/components/stock/StockThemeCard";
 import { NewsCard } from "@/components/stock/NewsCard";
 import type { Interval } from "@/lib/types";
 
@@ -54,6 +55,7 @@ export function StockView({
         onMinUnit={setMinUnit}
       />
       <StockDetailCard code={code} />
+      <StockThemeCard code={code} />
       <FinancialsCard code={code} />
       <SectorRankCard code={code} onSelect={selectFromSector} />
       <NewsCard code={code} />

@@ -67,6 +67,13 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 120_000 },
   );
+  // 편입 종목 이름 목록. "삼성SDI 가 어느 테마에 있지" 가 실제 질문이라
+  // 테마명만으로는 부족하다. 25KB 짜리 정적 자료를 한 번 받아 두고 여기서 찾는다.
+  const { data: idx } = useSWR<{ data: { id: string; names: string[] }[] }>(
+    "/api/theme-index",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 3_600_000 },
+  );
   const [q, setQ] = useState("");
   const [sort, setSort] = useSticky<Sort>("kr.theme.sort", "chg");
   const [filter, setFilter] = useSticky<Filter>("kr.theme.filter", "all");
@@ -74,6 +81,17 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
   const [open, setOpen] = useSticky<string[]>("kr.theme.open", []);
 
   const needle = q.trim().toLowerCase();
+
+  // 종목명이 걸린 테마와, 그 테마에서 걸린 종목 이름
+  const byStock = useMemo(() => {
+    const m = new Map<string, string[]>();
+    if (!needle || !idx?.data) return m;
+    for (const t of idx.data) {
+      const hit = t.names.filter((n) => n.toLowerCase().includes(needle));
+      if (hit.length) m.set(t.id, hit);
+    }
+    return m;
+  }, [idx, needle]);
 
   const { groups, shown, total } = useMemo(() => {
     const all = data?.data ?? [];
@@ -83,6 +101,7 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
             t.name.toLowerCase().includes(needle) ||
             t.hint.toLowerCase().includes(needle) ||
             t.group.toLowerCase().includes(needle) ||
+            byStock.has(t.id) ||
             t.leaders.some((l) => l.name.toLowerCase().includes(needle)),
         )
       : all;
@@ -116,7 +135,7 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
       sort === "name" ? a.name.localeCompare(b.name, "ko") : (b.chg ?? -999) - (a.chg ?? -999),
     );
     return { groups: gs, shown: kept.length, total: all.length };
-  }, [data, needle, sort, filter]);
+  }, [data, needle, sort, filter, byStock]);
 
   // 찾는 중에는 걸린 것이 바로 보여야 한다. 접어 두면 못 찾은 것처럼 보인다.
   const expanded = (name: string) => needle.length > 0 || open.includes(name);
@@ -229,6 +248,13 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
                         >
                           <span className="min-w-0 truncate text-[12.5px]">
                             <Mark text={t.name} q={needle} />
+                            {/* 종목명으로 찾았을 때, 무엇이 걸렸는지 보여 준다 */}
+                            {byStock.has(t.id) && (
+                              <span className="ml-1.5 text-[11px] text-brand">
+                                {byStock.get(t.id)!.slice(0, 2).join(", ")}
+                                {byStock.get(t.id)!.length > 2 && ` 외 ${byStock.get(t.id)!.length - 2}`}
+                              </span>
+                            )}
                           </span>
                           <span className="tnum shrink-0 text-[10.5px] text-muted">{t.count}</span>
                           <span className="ml-auto flex shrink-0 items-center gap-2">

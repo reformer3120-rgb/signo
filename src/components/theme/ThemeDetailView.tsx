@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { Tabs } from "@/components/Tabs";
+import { ThemeChart } from "./ThemeChart";
 import { useSticky } from "@/lib/useSticky";
 import { pct, signColor, won } from "@/lib/format";
 import type { OwnThemeDetail, OwnThemeStock } from "@/lib/ownTheme";
@@ -216,9 +217,14 @@ export function ThemeDetailView({
           {/* 테마를 우리가 정의했으므로, 무엇을 묶은 것인지도 우리 말로 밝힌다 */}
           {d.hint && (
             <p className="mt-2 rounded-lg bg-canvas p-3 text-[12px] leading-relaxed text-muted">
+              <b className="font-medium text-fg">무엇을 묶었나 </b>
               {d.hint}
             </p>
           )}
+
+          <div className="mt-2">
+            <ThemeChart id={d.id} name={d.name} />
+          </div>
 
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {stocks.map((s) => (

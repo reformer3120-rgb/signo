@@ -109,13 +109,29 @@ export function ourSentences(text) {
 }
 
 /**
+ * 표기를 고른다. 같은 뜻인데 회사마다 다르게 적어 그냥은 안 걸린다.
+ *
+ *   삼성SDI  "리튬이온 2차전지를 생산"      낱말은 "이차전지를 생산"
+ *   삼성SDI  "중ㆍ대형전지"                낱말은 "중대형 전지"
+ *   흔한 꼴  "생산/판매하는"                 SELF 가 '생산' 을 못 찾는다
+ *
+ * 이차↔2차를 하나로 맞추고, 가운뎃점을 지우고, 빗금을 띄어쓰기로 바꾼다.
+ * 낱말을 견줄 때는 양쪽 띄어쓰기를 아예 없앤다 — 한국어 사업보고서는
+ * 띄어쓰기가 제각각이라 그대로 두면 낱말을 수십 개로 늘려야 한다.
+ */
+function norm(s) {
+  return s.replace(/이차전지/g, "2차전지").replace(/[ㆍ·]/g, "").replace(/\//g, " ");
+}
+const despace = (s) => s.replace(/\s+/g, "");
+
+/**
  * 한 문장에서 낱말이 자사 행위와 함께 나오는가.
  * 덫이 되는 큰 말은 먼저 지운 뒤에 센다.
  */
 function inSentence(sent, word) {
-  let s = sent;
+  let s = norm(sent);
   for (const t of TRAPS) if (t.includes(word) && t !== word) s = s.split(t).join(" ");
-  if (!s.includes(word)) return false;
+  if (!despace(s).includes(despace(norm(word)))) return false;
   return SELF.test(s);
 }
 
@@ -126,7 +142,7 @@ export function scoreOne(text, rule) {
   // 뜻이 여러 분야에 걸치는 낱말이 있다. CDMO 는 바이오에도 로봇에도 쓰이고
   // (대성하이텍 "로봇 CDMO 사업"), 패키징은 반도체에도 포장에도, 전구체는
   // 전지에도 반도체에도 쓰인다. 그런 테마는 같은 문장에 분야 말이 있어야 센다.
-  if (rule.ctx) sents = sents.filter((s) => rule.ctx.test(s));
+  if (rule.ctx) sents = sents.filter((s) => rule.ctx.test(norm(s)));
   if (!sents.length) return { score: 0, why: [] };
 
   // veto 는 문서 전체에서 본다 — 있으면 그 테마가 아니다
@@ -135,7 +151,7 @@ export function scoreOne(text, rule) {
   // notWith 는 문장 단위다. 소재를 '만드는' 회사와 그 소재의 '제조설비를 대는'
   // 회사를 가르는 데 쓴다. 강원에너지가 "양극재의 전체 제조공정 핵심설비에 대하여
   // 엔지니어링 설계, 제작, 납품" 이라고 적어 양극재 회사로 잡혔다. 설비 회사다.
-  if (rule.notWith) sents = sents.filter((s) => !rule.notWith.test(s));
+  if (rule.notWith) sents = sents.filter((s) => !rule.notWith.test(norm(s)));
   if (!sents.length) return { score: 0, why: [] };
 
   let score = 0;
