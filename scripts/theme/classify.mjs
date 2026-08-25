@@ -84,6 +84,13 @@ const NOT_OURS = [
   // 잡혔다. 동그라미가 셋 이상이거나 표 머리글 꼴이면 표로 본다.
   /[○●◇◆▷▶□■]\s*[\s\S]{0,60}[○●◇◆▷▶□■]\s*[\s\S]{0,60}[○●◇◆▷▶□■]/,
   /구분\s+(사업|분류|품목|내용|주요)|사업부문\s+주요\s?제품|주요\s?제품\s+주요\s?계열/,
+  // 계열사 목록 표. 지주사·금융지주 보고서에 꼭 있고, 계열사 이름이 죽 붙어
+  // 나오는 통에 온갖 낱말이 걸린다. 현대차증권이 태양광·풍력·수소·공작기계·
+  // 자동차부품·여행 일곱 테마에 들어갔던 이유다.
+  /업\s?종\s+회사수|상\s?장\s+비\s?상\s?장|계열회사(의|는)?\s*(현황|명세)|소속\s?회사\s?수/,
+  // 고객이 무엇을 만드는지는 우리 업종이 아니다.
+  // DB하이텍(파운드리)이 "디스플레이 구동IC … OLED 관련 제품" 으로 OLED 에 잡혔다.
+  /(용|향)\s?(제품|부품|소재|칩|IC)|에 (적용|탑재)되는|관련 제품(을|은|에)/,
 ];
 
 // 낱말이 더 큰 말 안에 박혀 뜻이 달라지는 자리 — 세기 전에 지운다.
@@ -178,7 +185,8 @@ export function scoreOne(text, rule) {
 export const MIN_SCORE = 3;
 
 // 직접 실행할 때만 분류를 돈다 (test-classify.mjs 가 판정 함수만 가져다 쓴다)
-if (import.meta.url === `file:///${process.argv[1].split("\\").join("/")}`) {
+// -e 로 부르면 argv[1] 이 없다 — 그때는 본체를 돌리지 않는다
+if (process.argv[1] && import.meta.url === `file:///${process.argv[1].split("\\").join("/")}`) {
   const data = JSON.parse(fs.readFileSync(IN, "utf8"));
   const rows = Object.values(data).filter((r) => r.text);
   console.log(`개요 확보 ${rows.length}종목 · 테마 ${THEMES.length}개\n`);

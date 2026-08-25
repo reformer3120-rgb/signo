@@ -73,6 +73,7 @@ const GROUPS = [
   ["batt", "2차전지"],
   ["semi", "반도체"],
   ["disp", "디스플레이"],
+  ["elec", "전자부품"],
   ["bio", "제약·바이오"],
   ["med", "제약·바이오"],
   ["ind", "산업재"],
@@ -103,7 +104,9 @@ for (const [id, list] of Object.entries(cls)) {
     stocks.push({
       code: s.code,
       name: s.name,
-      why,
+      // 사람이 확인해 적어 준 문장이 있으면 그것을 쓴다. 원문에서 뽑은 발췌보다
+      // 짧고 읽기 쉽다 — "무엇을 만들어 어디에 파는가" 한 문장이다.
+      why: s.manualWhy ?? why,
       tags: s.why,
       growth: f?.growth ?? null,
       opm: f?.opm ?? null,
