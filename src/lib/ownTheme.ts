@@ -32,6 +32,8 @@ interface RawStock {
 interface RawTheme {
   id: string;
   name: string;
+  /** 대분류 — 화면에서 60개를 이 단위로 접는다 */
+  group: string;
   hint: string;
   stocks: RawStock[];
 }
@@ -173,6 +175,7 @@ async function fixedMany(codes: string[]): Promise<Record<string, Fixed>> {
 export interface OwnThemeRow {
   id: string;
   name: string;
+  group: string;
   hint: string;
   /** 구성종목 단순 평균 등락률 (에프앤가이드 테마와 같은 방식) */
   chg: number | null;
@@ -227,6 +230,7 @@ async function buildList(): Promise<{ rows: OwnThemeRow[]; stale: boolean }> {
       return {
         id: t.id,
         name: t.name,
+        group: t.group,
         hint: t.hint,
         chg: avg(chgs) === null ? null : +avg(chgs)!.toFixed(2),
         up: chgs.filter((c) => c > 0).length,

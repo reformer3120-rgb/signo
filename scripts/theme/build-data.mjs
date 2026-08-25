@@ -65,6 +65,26 @@ function pickWhy(text, keywords) {
   return out;
 }
 
+/**
+ * 대분류. id 앞머리로 갈리므로 테마마다 따로 적지 않는다.
+ * 화면에서 60개를 한 판에 늘어놓으면 훑을 수가 없어 이 단위로 접는다.
+ */
+const GROUPS = [
+  ["batt", "2차전지"],
+  ["semi", "반도체"],
+  ["disp", "디스플레이"],
+  ["bio", "제약·바이오"],
+  ["med", "제약·바이오"],
+  ["ind", "산업재"],
+  ["eng", "에너지·전력"],
+  ["mat", "소재"],
+  ["car", "자동차"],
+  ["it", "IT·플랫폼"],
+  ["csm", "소비재"],
+  ["fin", "금융"],
+];
+const groupOf = (id) => GROUPS.find(([p]) => id.startsWith(p + "-"))?.[1] ?? "기타";
+
 const byId = Object.fromEntries(THEMES.map((t) => [t.id, t]));
 const themes = [];
 let withWhy = 0;
@@ -90,7 +110,7 @@ for (const [id, list] of Object.entries(cls)) {
       finYear: f?.year ?? null,
     });
   }
-  themes.push({ id, name: t.name, hint: t.hint, stocks });
+  themes.push({ id, name: t.name, group: groupOf(id), hint: t.hint, stocks });
 }
 
 themes.sort((a, b) => b.stocks.length - a.stocks.length);
