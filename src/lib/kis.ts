@@ -667,42 +667,56 @@ export interface UnQuote {
  */
 export async function unifiedQuotes(codes: string[]): Promise<Map<string, UnQuote>> {
   const map = new Map<string, UnQuote>();
-  for (let i = 0; i < codes.length; i += 30) {
-    const batch = codes.slice(i, i + 30);
-    const params: KisParams = {};
-    batch.forEach((c, k) => {
-      params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "UN";
-      params[`FID_INPUT_ISCD_${k + 1}`] = c;
-    });
-    try {
-      const j = await kisGet(
-        "/uapi/domestic-stock/v1/quotations/intstock-multprice",
-        "FHKST11300006",
-        params,
-      );
-      for (const r of ((j.output as Record<string, string>[]) ?? [])) {
-        const code = r.inter_shrn_iscd;
-        if (!code) continue;
-        const price = n(r.inter2_prpr);
-        const prevClose = n(r.inter2_prdy_clpr);
-        map.set(code, {
-          code,
-          price,
-          // 전일 종가를 알면 그것으로 계산 (시간외 세션에서도 '전일 대비'로 일관)
-          changePct:
-            prevClose > 0 && price > 0
-              ? +(((price - prevClose) / prevClose) * 100).toFixed(2)
-              : Number(r.prdy_ctrt) || 0,
-          volume: n(r.acml_vol),
-          prevClose,
-        });
-      }
-    } catch {
-      /* 배치 실패 시 해당 구간은 원본 값 유지 */
-    }
-    if (i + 30 < codes.length) await new Promise((r) => setTimeout(r, 120));
+
+  // 30종목씩 나눈 묶음을 여럿 동시에 부른다.
+  //
+  // 하나씩 부르고 120ms 씩 쉬면 1,700종목(58묶음)에 20초가 걸린다. 테마 화면
+  // 첫 로딩이 23초였던 이유가 이것이다. 여섯씩 겹쳐 부르면 3초 남짓이다.
+  // KIS 초당 한도(20건)를 넘지 않도록 묶음 사이 쉼은 남겨 둔다.
+  const groups: string[][] = [];
+  for (let i = 0; i < codes.length; i += 30) groups.push(codes.slice(i, i + 30));
+
+  const CONC = 6;
+  for (let g = 0; g < groups.length; g += CONC) {
+    await Promise.all(groups.slice(g, g + CONC).map((batch) => fetchBatch(batch, map)));
+    if (g + CONC < groups.length) await new Promise((r) => setTimeout(r, 120));
   }
   return map;
+}
+
+/** 한 묶음(최대 30종목)을 조회해 결과를 map 에 담는다 */
+async function fetchBatch(batch: string[], map: Map<string, UnQuote>): Promise<void> {
+  const params: KisParams = {};
+  batch.forEach((c, k) => {
+    params[`FID_COND_MRKT_DIV_CODE_${k + 1}`] = "UN";
+    params[`FID_INPUT_ISCD_${k + 1}`] = c;
+  });
+  try {
+    const j = await kisGet(
+      "/uapi/domestic-stock/v1/quotations/intstock-multprice",
+      "FHKST11300006",
+      params,
+    );
+    for (const r of (j.output as Record<string, string>[]) ?? []) {
+      const code = r.inter_shrn_iscd;
+      if (!code) continue;
+      const price = n(r.inter2_prpr);
+      const prevClose = n(r.inter2_prdy_clpr);
+      map.set(code, {
+        code,
+        price,
+        // 전일 종가를 알면 그것으로 계산 (시간외 세션에서도 '전일 대비'로 일관)
+        changePct:
+          prevClose > 0 && price > 0
+            ? +(((price - prevClose) / prevClose) * 100).toFixed(2)
+            : Number(r.prdy_ctrt) || 0,
+        volume: n(r.acml_vol),
+        prevClose,
+      });
+    }
+  } catch {
+    /* 묶음 하나가 실패해도 나머지는 살린다 */
+  }
 }
 
 // ---- 등락률 순위 (거래소별) ----

@@ -14,6 +14,7 @@
 // 응집도(같은 테마 종목이 같이 움직이는 정도)로 재면 에프앤가이드 분류의
 // 98% 수준이다 — 우리 0.500 대 0.508, 무작위는 0.36.
 import { cached, redis } from "./cache";
+import { krSessionNow } from "./session";
 import { dailyBars, dailyIndexBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
 import raw from "@/data/themes.json";
 
@@ -123,7 +124,13 @@ async function quotesAll(): Promise<Quotes> {
   return snap ? { map: snap, stale: true } : { map, stale: false };
 }
 
-const quotes = () => cached<Quotes>("ownTheme:quotes:v3", 300, quotesAll);
+/**
+ * 장중에는 짧게, 마감 뒤에는 길게 잡는다.
+ * 마감 뒤에도 5분마다 비우면 밤새 아무도 안 보는 사이에 캐시가 계속 식어
+ * 다음 사람이 그 값을 다시 채우게 된다.
+ */
+const quotes = () =>
+  cached<Quotes>("ownTheme:quotes:v4", krSessionNow() === "장마감" ? 1800 : 300, quotesAll);
 
 /* ── 종목별 고정 정보 (상장주식수·PER) ────────────────────── */
 
@@ -153,13 +160,18 @@ async function fixedOf(code: string): Promise<Fixed> {
   return { shares: n(o.lstn_stcn), per: Number.isFinite(per) && per !== 0 ? per : null };
 }
 
+/**
+ * 배포가 바뀌어도 상장주식수는 그대로다. 그런데 캐시 키에 커밋 해시가 붙어
+ * 있어서, 새로 올릴 때마다 종목 수천 개를 다시 받고 있었다 — 테마 상세 첫
+ * 로딩이 18초 걸린 이유다. global 로 두면 배포를 넘어 살아남는다.
+ */
 const fixed = (code: string) =>
-  cached<Fixed>(`ownTheme:fixed:v1:${code}`, 7 * 24 * 3600, () => fixedOf(code));
+  cached<Fixed>(`ownTheme:fixed:v1:${code}`, 7 * 24 * 3600, () => fixedOf(code), { global: true });
 
 /** 여러 종목을 한꺼번에. 캐시가 차 있으면 거의 즉시 끝난다. */
 async function fixedMany(codes: string[]): Promise<Record<string, Fixed>> {
   const out: Record<string, Fixed> = {};
-  const CONC = 6;
+  const CONC = 10;
   for (let i = 0; i < codes.length; i += CONC) {
     await Promise.all(
       codes.slice(i, i + CONC).map(async (c) => {
@@ -249,7 +261,11 @@ async function buildList(): Promise<{ rows: OwnThemeRow[]; stale: boolean }> {
 
 /** 테마 목록 (5분 캐시 — 장중 시세라 짧게) */
 export const ownThemeList = () =>
-  cached<{ rows: OwnThemeRow[]; stale: boolean }>("ownTheme:list:v3", 300, buildList);
+  cached<{ rows: OwnThemeRow[]; stale: boolean }>(
+    "ownTheme:list:v4",
+    krSessionNow() === "장마감" ? 1800 : 300,
+    buildList,
+  );
 
 async function buildDetail(id: string): Promise<OwnThemeDetail> {
   const t = DATA.themes.find((x) => x.id === id);
@@ -300,10 +316,23 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
 
 /** 테마 상세 (5분 캐시) */
 export const ownThemeDetail = (id: string) =>
-  cached<OwnThemeDetail>(`ownTheme:detail:v2:${id}`, 300, () => buildDetail(id));
+  cached<OwnThemeDetail>(
+    `ownTheme:detail:v3:${id}`,
+    krSessionNow() === "장마감" ? 1800 : 300,
+    () => buildDetail(id),
+  );
 
-/** 크론 예열용 — 시세만 미리 채워 둔다 */
-export const warmOwnThemes = () => ownThemeList();
+/**
+ * 크론 예열 — 시세와 종목별 고정 정보(상장주식수·PER)를 미리 채운다.
+ *
+ * 고정 정보가 비어 있으면 테마 상세 첫 사람이 종목 수만큼 KIS 를 두드린다.
+ * 의료기기처럼 169종목짜리 테마는 그것만으로 십수 초다.
+ */
+export async function warmOwnThemes(): Promise<{ themes: number; codes: number }> {
+  const list = await ownThemeList();
+  await fixedMany(ALL_CODES);
+  return { themes: list.rows.length, codes: ALL_CODES.length };
+}
 
 /* ── 종목 → 테마 (종목 화면의 비교군) ────────────────────── */
 

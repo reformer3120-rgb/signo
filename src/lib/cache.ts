@@ -26,8 +26,20 @@ const BUILD =
  */
 const inFlight = new Map<string, Promise<unknown>>();
 
-export async function cached<T>(key: string, ttlSec: number, fn: () => Promise<T>): Promise<T> {
-  const k = `${BUILD}:${key}`;
+/**
+ * 배포와 무관한 값은 BUILD 를 붙이지 않는다.
+ *
+ * 상장주식수처럼 코드가 바뀌어도 그대로인 값까지 배포마다 갈리면, 새로 올릴
+ * 때마다 종목 수천 개를 다시 받아야 한다. 실제로 테마 상세 첫 로딩이 18초
+ * 걸린 이유가 이것이었다. 응답 형태가 바뀌는 값에만 BUILD 를 붙인다.
+ */
+export async function cached<T>(
+  key: string,
+  ttlSec: number,
+  fn: () => Promise<T>,
+  opts: { global?: boolean } = {},
+): Promise<T> {
+  const k = opts.global ? `g:${key}` : `${BUILD}:${key}`;
 
   if (redis) {
     const hit = await redis.get<T>(k);
