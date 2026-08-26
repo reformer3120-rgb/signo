@@ -4,7 +4,7 @@ import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { StockBrief, type BriefData } from "@/components/StockBrief";
 
-type Resp = BriefData & { why: string | null };
+type Resp = BriefData;
 
 /**
  * 종목 화면 맨 위의 한 장 소개.
@@ -32,14 +32,6 @@ export function StockBriefCard({ code, name }: { code: string; name: string }) {
   return (
     <Card title={`${name} 개요`}>
       <StockBrief d={d} />
-      {d.why && (
-        <details className="mt-2.5 border-t border-line pt-2">
-          <summary className="cursor-pointer list-none text-[11px] text-muted hover:text-brand">
-            사업보고서에 적힌 대로 보기
-          </summary>
-          <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{d.why}</p>
-        </details>
-      )}
     </Card>
   );
 }

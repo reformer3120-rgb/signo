@@ -23,6 +23,12 @@ import raw from "@/data/themes.json";
 interface RawStock {
   code: string;
   name: string;
+  /**
+   * 사업보고서에서 뽑은 편입 사유 한 문장.
+   * 화면에는 안 쓴다 — 목록에서 아무도 읽지 않아 걷어냈다. 남겨 둔 것은
+   * 작업지 PDF(scripts/theme/doc-all.mjs)가 이 문장을 찍어 사람이 검수하기
+   * 때문이고, 주요사업 낱말도 빌드할 때 이 문장에서 뽑는다.
+   */
   why: string | null;
   /** 주력 제품·서비스 — 문장을 읽지 않아도 무슨 회사인지 잡히도록 낱말로 */
   biz: string[];
@@ -209,12 +215,8 @@ export interface OwnThemeRow {
 export interface OwnThemeStock {
   code: string;
   name: string;
-  /** 편입 사유 — 사업보고서에서 뽑은 근거 문장 */
-  why: string | null;
   /** 주력 제품·서비스 */
   biz: string[];
-  /** 어떤 낱말 때문에 붙었는가 */
-  tags: string[];
   price: number | null;
   chg: number | null;
   /** 억원 */
@@ -306,9 +308,7 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
     return {
       code: s.code,
       name: s.name,
-      why: s.why,
       biz: s.biz ?? [],
-      tags: s.tags ?? [],
       // 점수는 라우트에서 얹는다 — 여기서 부르면 naverApi 와 서로 물린다
       score: null,
       target: f?.target ?? null,
@@ -375,7 +375,6 @@ export async function warmOwnThemes(): Promise<{ themes: number; codes: number }
  */
 export function stockFixed(code: string): {
   biz: string[];
-  why: string | null;
   growth: number | null;
   opm: number | null;
   finYear: number | null;
@@ -385,7 +384,6 @@ export function stockFixed(code: string): {
     if (s) {
       return {
         biz: s.biz ?? [],
-        why: s.why,
         growth: s.growth,
         opm: s.opm,
         finYear: s.finYear,

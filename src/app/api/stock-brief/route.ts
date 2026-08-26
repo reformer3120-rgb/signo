@@ -52,7 +52,6 @@ export async function GET(req: Request) {
       const foreign = dd?.foreignRate ? Number(String(dd.foreignRate).replace(/[^\d.]/g, "")) : NaN;
       return {
         biz: fixed?.biz ?? [],
-        why: fixed?.why ?? null,
         themeName: main?.name ?? null,
         themeCount: main?.codes.length ?? null,
         themeChg: themeRow?.chg ?? null,

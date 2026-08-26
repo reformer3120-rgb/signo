@@ -121,10 +121,9 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
         {d.ret1m !== null && <V k="1개월" v={pct(d.ret1m)} tone={d.ret1m} />}
         {d.cross && d.cross !== "-" && <V v={d.cross} tone={crossTone(d.cross)} />}
         {d.foreign !== null && <V k="외국인" v={`${d.foreign.toFixed(1)}%`} />}
-        {d.themeChg !== null && d.themeChg !== undefined && (
-          <V k="테마" v={pct(d.themeChg)} tone={d.themeChg} />
-        )}
-        {/* 테마를 끌고 있나, 못 따라가고 있나. 지표 크론과 무관하게 늘 나온다 */}
+        {/* 테마 수익률 자체는 뺐다 — 테마 화면 머리와 종목 화면 테마 칩에 이미 있다.
+            남긴 것은 그 테마를 끌고 있나 못 따라가고 있나 하나뿐이고,
+            이건 지표 크론과 무관하게 늘 나온다. */}
         {대비 !== null && <V k="테마대비" v={`${대비 > 0 ? "+" : ""}${대비.toFixed(1)}%p`} tone={대비} />}
       </Row>
     </div>

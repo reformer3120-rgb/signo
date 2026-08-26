@@ -79,16 +79,6 @@ function StockCard({
           }}
         />
       </div>
-
-      {/* 원문 한 문장은 접어 둔다 — 근거를 확인하고 싶은 사람만 편다 */}
-      {s.why && (
-        <details className="mt-1.5">
-          <summary className="cursor-pointer list-none text-[10.5px] text-muted hover:text-brand">
-            편입 사유
-          </summary>
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{s.why}</p>
-        </details>
-      )}
     </li>
   );
 }
