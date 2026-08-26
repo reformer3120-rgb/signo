@@ -179,23 +179,42 @@ const HEAD = /[^가-힣A-Za-z0-9]/; // 낱말 첫머리로 볼 수 있는 앞 �
 const RE = new Map();
 const esc = (s) => s.replace(ESC, "\\$&");
 
+// 로마자·숫자로만 된 낱말은 앞뒤를 막는다. 한글은 조사가 붙으니 못 막지만
+// 로마자는 띄어 쓰므로 막을 수 있다. 안 막았더니
+//   "CJ HOLDINGS" 의 -NGS 로 농심·CJ CGV·스튜디오드래곤이 유전체 테마에
+//   "한익스프레스(EXPRESS)" 의 -ESS 로 물류사가 에너지저장장치에
+//   "KOREIT" 의 -REIT 로 한국토지신탁이, "ENA DRAMA" 의 DRAM- 으로 스카이라이프가
+//   "LPG 유통" 의 -PG 로 삼천리가 결제 테마에 들어와 있었다.
+// 뒤쪽은 글자만 막고 숫자는 연다 — HBM3·HBM4 처럼 세대 숫자가 붙는 말이 많다.
+const 로마자 = /^[A-Za-z0-9.\- ]+$/;
+const 앞울 = "(?<![A-Za-z0-9])";
+const 뒤울 = "(?![A-Za-z])";
+const 울 = (re) => new RegExp(앞울 + re + 뒤울);
+
 function res(word) {
   let pair = RE.get(word);
   if (!pair) {
     const w = norm(word).trim();
+    const 막을까 = 로마자.test(w);
     // 낱말이 품은 띄어쓰기 자리만 열어 둔 자 — "식품을 제조" 는 "식품을제조" 도 잡는다
-    const tight = new RegExp(w.split(/\s+/).map(esc).join("\\s*"));
+    const t = w.split(/\s+/).map(esc).join("\\s*");
+    const tight = 막을까 ? 울(t) : new RegExp(t);
     // 아무 자리나 벌어져도 되는 자 — "카메라모듈" 로 "카메라 모듈" 을 잡는다
-    const loose = new RegExp([...w.replace(/\s+/g, "")].map(esc).join("\\s*"), "g");
+    const l = [...w.replace(/\s+/g, "")].map(esc).join("\\s*");
+    const loose = new RegExp(막을까 ? 앞울 + l + 뒤울 : l, "g");
     pair = { tight, loose };
     RE.set(word, pair);
   }
   return pair;
 }
 
-function hasWord(sent, word) {
+function hasWord(sent, word, 엄격 = false) {
   const { tight, loose } = res(word);
-  if (tight.test(sent)) return true;
+  // 엄격 모드에서는 붙어 있는 짝도 낱말 첫머리에서 시작해야 한다.
+  // 사람이 쓴 짧은 문장을 볼 때 쓴다 — "석유제품 유통업" 이 유"제품" 으로
+  // 음식료에 잡히는 것을 막는다. 사업보고서 본문에는 쓰지 않는다.
+  // 거기서는 "리튬이온 2차전지" 안의 "이온" 처럼 낱말 속 합성어를 잡아야 한다.
+  if (!엄격 && tight.test(sent)) return true;
   // 낱말에 없던 자리가 벌어진 짝이다. 그런 짝은 낱말 첫머리에서 시작할 때만 센다.
   // 첫머리는 띄어쓰기 다음만이 아니다 — "LED(발광 다이오드)" 처럼 괄호 뒤도 첫머리다.
   loose.lastIndex = 0;
@@ -205,6 +224,9 @@ function hasWord(sent, word) {
   }
   return false;
 }
+
+/** 글 안에 낱말이 있는가 — 자사 행위는 따지지 않는다 (작업지 문장 맞추기에 쓴다) */
+export const wordIn = (text, word, 엄격 = false) => hasWord(norm(text), word, 엄격);
 
 /**
  * 한 문장에서 낱말이 자사 행위와 함께 나오는가.
