@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { ownThemeDetail, themeMeta } from "@/lib/ownTheme";
+import { marketBaseline, scoresFor } from "@/lib/baseline";
+import { baselineUniverse } from "@/lib/naverApi";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -11,7 +13,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ no: string }> 
     return NextResponse.json({ error: "테마 이름이 올바르지 않다" }, { status: 400 });
   }
   try {
-    return NextResponse.json({ data: await ownThemeDetail(no), meta: themeMeta() });
+    const data = await ownThemeDetail(no);
+    // 종합점수는 여기서 얹는다. ownTheme 안에서 부르면 naverApi 와 서로 물린다
+    // (naverApi 가 테마를 읽고 테마가 점수를 읽는 꼴이 된다).
+    // 이미 모아 둔 지표로 계산만 하므로 외부 조회가 없다.
+    try {
+      const base = await marketBaseline(await baselineUniverse());
+      const scores = await scoresFor(data.stocks.map((s) => s.code), base);
+      for (const s of data.stocks) s.score = scores[s.code] ?? null;
+    } catch {
+      /* 점수가 없어도 나머지는 보여 준다 */
+    }
+    return NextResponse.json({ data, meta: themeMeta() });
   } catch (e) {
     // 없는 테마와 수집 실패를 가른다. 앞은 다시 불러도 소용없고, 뒤는 소용있다.
     const notFound = String(e).includes("테마 없음");

@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { THEMES } from "./dict.mjs";
 import { ourSentences, SELF } from "./classify.mjs";
+import { 사업항목 } from "./biz.mjs";
 
 const DIR = ".cache/theme";
 const OUT = "src/data/themes.json";
@@ -157,6 +158,8 @@ for (const [id, list] of Object.entries(cls)) {
       // 사람이 확인해 적어 준 문장이 있으면 그것을 쓴다. 원문에서 뽑은 발췌보다
       // 짧고 읽기 쉽다 — "무엇을 만들어 어디에 파는가" 한 문장이다.
       why: s.manualWhy ?? why,
+      // 목록에서는 문장을 읽지 않는다. "무엇을 파는가" 만 낱말로 따로 싣는다.
+      biz: 사업항목(s.manualWhy ?? why, s.why, s.name),
       tags: s.why,
       growth: f?.growth ?? null,
       opm: f?.opm ?? null,
@@ -185,8 +188,10 @@ fs.writeFileSync(
 );
 
 const kb = Math.round(fs.statSync(OUT).size / 1024);
-const withFin = themes.flatMap((t) => t.stocks).filter((s) => s.growth !== null || s.opm !== null).length;
-console.log(`테마 ${themes.length}개 · 종목 ${total} · 편입 사유 ${withWhy} (${((withWhy / total) * 100).toFixed(0)}%) · 재무 ${withFin} (${((withFin / total) * 100).toFixed(0)}%)`);
+const 전부 = themes.flatMap((t) => t.stocks);
+const withFin = 전부.filter((s) => s.growth !== null || s.opm !== null).length;
+const withBiz = 전부.filter((s) => s.biz.length).length;
+console.log(`테마 ${themes.length}개 · 종목 ${total} · 편입 사유 ${withWhy} (${((withWhy / total) * 100).toFixed(0)}%) · 재무 ${withFin} (${((withFin / total) * 100).toFixed(0)}%) · 주요사업 ${withBiz} (${((withBiz / total) * 100).toFixed(0)}%)`);
 console.log(`→ ${OUT}  ${kb}KB`);
 console.log("\n예시");
 for (const t of themes.slice(0, 3)) {

@@ -16,12 +16,16 @@
 import { cached, redis } from "./cache";
 import { krSessionNow } from "./session";
 import { dailyBars, dailyIndexBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
+import { factsFor, type StockFacts } from "./facts";
+import type { MaSignal } from "./score";
 import raw from "@/data/themes.json";
 
 interface RawStock {
   code: string;
   name: string;
   why: string | null;
+  /** 주력 제품·서비스 — 문장을 읽지 않아도 무슨 회사인지 잡히도록 낱말로 */
+  biz: string[];
   tags: string[];
   /** 매출액증가율 % — DART 확정 실적 (수집 시점에 굳혀 둔다) */
   growth: number | null;
@@ -50,6 +54,9 @@ export const THEME_SOURCE = { 표기: "SIGNO 자체 분류 · DART 사업보고�
 export const themeMeta = () => ({ 출처: DATA.출처, 기준: DATA.기준, 만든날: DATA.만든날 });
 
 const ALL_CODES = [...new Set(DATA.themes.flatMap((t) => t.stocks.map((s) => s.code)))];
+
+/** 테마에 편입된 전 종목. 종합평가 지표를 어디까지 모을지 정하는 데 쓴다. */
+export const themeCodes = (): string[] => ALL_CODES;
 
 /* ── 시세 ─────────────────────────────────────────────────── */
 
@@ -204,6 +211,8 @@ export interface OwnThemeStock {
   name: string;
   /** 편입 사유 — 사업보고서에서 뽑은 근거 문장 */
   why: string | null;
+  /** 주력 제품·서비스 */
+  biz: string[];
   /** 어떤 낱말 때문에 붙었는가 */
   tags: string[];
   price: number | null;
@@ -213,6 +222,16 @@ export interface OwnThemeStock {
   per: number | null;
   growth: number | null;
   opm: number | null;
+  /** SIGNO 종합점수 100점 — 크론이 아직 안 훑은 종목은 null */
+  score: number | null;
+  /** 증권가 컨센서스 — 커버리지가 있는 종목만 */
+  target: number | null;
+  upside: number | null;
+  recomm: number | null;
+  /** 측정 신호 — 크론이 훑은 종목만 */
+  ret1m: number | null;
+  cross: MaSignal | null;
+  foreign: number | null;
 }
 
 export interface OwnThemeDetail {
@@ -272,16 +291,32 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
   if (!t) throw new Error(`테마 없음: ${id}`);
 
   const codes = t.stocks.map((s) => s.code);
-  const [{ map: q, stale }, fx] = await Promise.all([quotes(), fixedMany(codes)]);
+  // 점수와 측정 신호는 지표 크론이 미리 모아 둔 것을 한꺼번에 읽는다.
+  // 종목마다 부르면 169종목짜리 테마에서 수백 번을 두드리게 된다.
+  const [{ map: q, stale }, fx, fa] = await Promise.all([
+    quotes(),
+    fixedMany(codes),
+    factsFor(codes).catch(() => ({}) as Record<string, StockFacts>),
+  ]);
 
   const stocks: OwnThemeStock[] = t.stocks.map((s) => {
     const price = q[s.code]?.price ?? null;
     const shares = fx[s.code]?.shares ?? 0;
+    const f = fa[s.code];
     return {
       code: s.code,
       name: s.name,
       why: s.why,
+      biz: s.biz ?? [],
       tags: s.tags ?? [],
+      // 점수는 라우트에서 얹는다 — 여기서 부르면 naverApi 와 서로 물린다
+      score: null,
+      target: f?.target ?? null,
+      upside: f?.upside ?? null,
+      recomm: f?.recomm ?? null,
+      ret1m: f?.ret?.m1 ?? null,
+      cross: f?.cross ?? null,
+      foreign: f?.foreign ?? null,
       price,
       chg: q[s.code]?.chg ?? null,
       // 억원 단위로 맞춘다 (화면이 그 단위를 쓴다)
@@ -332,6 +367,32 @@ export async function warmOwnThemes(): Promise<{ themes: number; codes: number }
   const list = await ownThemeList();
   await fixedMany(ALL_CODES);
   return { themes: list.rows.length, codes: ALL_CODES.length };
+}
+
+/**
+ * 종목 하나의 붙박이 정보 — 주력 제품과 확정 실적.
+ * 데이터 파일에 들어 있는 값이라 조회가 없다.
+ */
+export function stockFixed(code: string): {
+  biz: string[];
+  why: string | null;
+  growth: number | null;
+  opm: number | null;
+  finYear: number | null;
+} | null {
+  for (const t of DATA.themes) {
+    const s = t.stocks.find((x) => x.code === code);
+    if (s) {
+      return {
+        biz: s.biz ?? [],
+        why: s.why,
+        growth: s.growth,
+        opm: s.opm,
+        finYear: s.finYear,
+      };
+    }
+  }
+  return null;
 }
 
 /* ── 종목 → 테마 (종목 화면의 비교군) ────────────────────── */

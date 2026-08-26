@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useSticky } from "@/lib/useSticky";
 import { StockSection } from "@/components/sections/StockSection";
 import { StockStickyBar } from "@/components/stock/StockStickyBar";
+import { StockBriefCard } from "@/components/stock/StockBriefCard";
 import { StockDetailCard } from "@/components/stock/StockDetailCard";
 import { FinancialsCard } from "@/components/stock/FinancialsCard";
 import { SectorRankCard } from "@/components/stock/SectorRankCard";
@@ -53,6 +54,7 @@ export function StockView({
         onTab={setTab}
         onMinUnit={setMinUnit}
       />
+      <StockBriefCard code={code} name={name} />
       <StockDetailCard code={code} />
       <FinancialsCard code={code} />
       <SectorRankCard code={code} onSelect={selectFromSector} />

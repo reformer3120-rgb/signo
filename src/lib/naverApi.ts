@@ -3,7 +3,7 @@
 import { daily } from "./naver";
 import { krSessionNow } from "./session";
 // 테마는 SIGNO 자체 분류를 쓴다 (예전에는 네이버=에프앤가이드 것을 썼다)
-import { themesOfStock, themeById } from "./ownTheme";
+import { themesOfStock, themeById, themeCodes } from "./ownTheme";
 import {
   baselineScaler,
   marketBaseline,
@@ -13,6 +13,7 @@ import {
   type Baseline,
   type StockMetrics,
 } from "./baseline";
+import { saveFacts } from "./facts";
 // 채점 규칙은 미국 증시와 공유한다 (같은 잣대로 점수를 읽을 수 있게)
 import {
   dimScaler,
@@ -871,13 +872,31 @@ export async function baselineUniverse(): Promise<string[]> {
   return BASELINE_UNIVERSE;
 }
 
+/**
+ * 점수를 매길 종목 — 테마에 편입된 전 종목이다.
+ *
+ * 예전에는 시총 상위 600(코스피 350 + 코스닥 250)이었다. 그 안에 드는 종목은
+ * 100% 채워졌지만 테마 화면의 종목 넷 중 셋은 점수가 비어 있었다. 종목마다
+ * 소개를 붙이기로 하면서 그 빈칸이 그대로 드러나므로 대상을 편입 종목 전체로
+ * 넓혔다.
+ *
+ * 시총 큰 것부터 채운다 — 다 채우는 데 며칠이 걸리므로, 사람들이 많이 보는
+ * 쪽이 먼저 차 있어야 한다.
+ */
 export async function gradeUniverse(): Promise<string[]> {
   if (GRADE_UNIVERSE.length) return GRADE_UNIVERSE;
   const [kp, kq] = await Promise.all([
-    stockList("marketValue", "KOSPI", 350).catch(() => []),
-    stockList("marketValue", "KOSDAQ", 250).catch(() => []),
+    stockList("marketValue", "KOSPI", 1000).catch(() => []),
+    stockList("marketValue", "KOSDAQ", 1000).catch(() => []),
   ]);
-  GRADE_UNIVERSE = [...kp, ...kq].map((s) => s.code);
+  const 순서 = [...kp, ...kq].sort((a, b) => (b.capRaw ?? 0) - (a.capRaw ?? 0)).map((s) => s.code);
+  const 편입 = new Set(themeCodes());
+  // 시총을 아는 것부터 큰 순으로, 그다음 나머지 편입 종목
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of 순서) if (편입.has(c) && !seen.has(c)) { seen.add(c); out.push(c); }
+  for (const c of 편입) if (!seen.has(c)) { seen.add(c); out.push(c); }
+  GRADE_UNIVERSE = out;
   return GRADE_UNIVERSE;
 }
 
@@ -919,7 +938,19 @@ async function fillOne(code: string) {
       const fm = finA ? finMetrics(finA) : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
       const closes = bars.map((b) => b.close).filter((c) => c > 0);
       const r = periodReturns(closes);
+      const cross = maCross(closes);
       const pct01 = (v: number) => Math.min(1, Math.max(0, (v + 30) / 80));
+      // 환산 전의 날것도 같이 남긴다 — 화면이 "1개월 +8.2%" 로 적어야 하는데
+      // 지표 쪽에는 0~1 로 뭉갠 값만 있다. 조회는 이미 한 것이라 공짜다.
+      await saveFacts(code, {
+        ret: { w1: r.w1, m1: r.m1, m3: r.m3, m6: r.m6, y1: r.y1 },
+        cross: cross.signal,
+        foreign: Number.isFinite(numSuffix(dd?.foreignRate)) ? numSuffix(dd?.foreignRate) : null,
+        target: dd?.priceTarget && dd.priceTarget > 0 ? dd.priceTarget : null,
+        upside: dd?.priceTarget && dd.priceTarget > 0 ? dd.upside : null,
+        recomm: dd?.recommMean && dd.recommMean > 0 ? dd.recommMean : null,
+        at: new Date().toISOString().slice(0, 10),
+      });
       await saveMetrics(code, {
         ...fm,
         per: dd?.per && dd.per > 0 ? dd.per : NaN,
@@ -936,7 +967,7 @@ async function fillOne(code: string) {
             m6: pct01(r.m6),
             y1: pct01(r.y1),
           },
-          maCross(closes).score,
+          cross.score,
         ),
       });
     } catch {

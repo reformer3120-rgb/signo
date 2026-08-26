@@ -20,6 +20,14 @@ const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** 한글 한 글자에 받침이 있는가 — 종결어미를 "이다"로 할지 "다"로 할지 가른다 */
+function 받침(ch) {
+  if (!ch) return false;
+  const c = ch.charCodeAt(0) - 0xac00;
+  if (c < 0 || c >= 11172) return true; // 한글이 아니면(로마자·숫자) 받침 있는 쪽으로 읽는다
+  return c % 28 !== 0;
+}
+
 /** 문장에서 회사 이름이 군더더기로 붙은 자리를 걷어낸다 */
 function tidy(name, why) {
   if (!name || !why) return why;
@@ -31,8 +39,17 @@ function tidy(name, why) {
   // "…하는 회사명이다." → "…한다."
   s = s.replace(new RegExp("하는\\s*" + n + "(이)?다\\.?$"), "한다.");
   s = s.replace(new RegExp("생산하는\\s*" + n + "(이)?다\\.?$"), "생산한다.");
-  // "…이 회사명이다." 처럼 이름만 남는 꼬리
-  s = s.replace(new RegExp("\\s*" + n + "(이)?다\\.?$"), "다.");
+  // "…이 회사명이다." 처럼 이름만 남는 꼬리.
+  //
+  // 이름을 떼면 앞말이 종결어미를 새로 받아야 한다. 받침이 있으면 "이다",
+  // 없으면 "다" 다. 이걸 안 보고 늘 "다." 를 붙였더니
+  //   "신기술사업금융업을 겸영하는 IT보안기업 SGA솔루션즈다."
+  //   → "…IT보안기업다."   (기업이다 여야 한다)
+  // 처럼 어색한 문장이 남았다.
+  s = s.replace(new RegExp("\\s*" + n + "(이)?다\\.?$"), (_m, _g, i) => {
+    const 앞 = s.slice(0, i).trimEnd();
+    return 받침(앞[앞.length - 1]) ? "이다." : "다.";
+  });
   // 문장 한가운데 이름이 또 나오는 경우는 건드리지 않는다 — 뜻이 달라질 수 있다
   s = s.replace(/\s{2,}/g, " ").trim();
   if (!/[.!?]$/.test(s)) s += ".";

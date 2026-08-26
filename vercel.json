@@ -31,6 +31,38 @@
     {
       "path": "/api/cron/warm-theme",
       "schedule": "45 6 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "40 7 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 8 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "30 8 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 9 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 18 * * 1-5"
+    },
+    {
+      "path": "/api/cron/metrics",
+      "schedule": "0 21 * * 1-5"
     }
   ]
 }

@@ -8,6 +8,7 @@ import { Tabs } from "@/components/Tabs";
 import { ThemeChart } from "./ThemeChart";
 import { useSticky } from "@/lib/useSticky";
 import { pct, signColor, won } from "@/lib/format";
+import { StockBrief } from "@/components/StockBrief";
 import type { OwnThemeDetail, OwnThemeStock } from "@/lib/ownTheme";
 
 type Sort = "chg" | "cap" | "name";
@@ -17,12 +18,6 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: "cap", label: "시총순" },
   { key: "name", label: "이름순" },
 ];
-
-/** 억원 단위로 들어온 시가총액을 조/억으로 */
-function cap(n: number | null): string {
-  if (n === null) return "—";
-  return n >= 10_000 ? `${(n / 10_000).toFixed(2)}조` : `${won(n)}억`;
-}
 
 /** 상승 · 보합 · 하락 구성비를 한 줄 막대로 */
 function Composition({ up, flat, down }: { up: number; flat: number; down: number }) {
@@ -36,27 +31,13 @@ function Composition({ up, flat, down }: { up: number; flat: number; down: numbe
   );
 }
 
-/** 지표 한 개. 이름과 값을 한 줄에 붙여 쓴다 */
-function Metric({ k, v, tone }: { k: string; v: string; tone?: number | null }) {
-  return (
-    <span className="inline-flex items-baseline gap-1.5 rounded-md bg-surface px-2 py-1">
-      <span className="text-[10px] text-muted">{k}</span>
-      <span
-        className={`tnum text-[11.5px] font-medium ${
-          tone === null || tone === undefined ? "" : signColor(tone)
-        }`}
-      >
-        {v}
-      </span>
-    </span>
-  );
-}
-
 function StockCard({
   s,
+  themeChg,
   onPick,
 }: {
   s: OwnThemeStock;
+  themeChg: number | null;
   onPick: (code: string, name: string) => void;
 }) {
   return (
@@ -77,16 +58,37 @@ function StockCard({
         </div>
       </div>
 
-      {s.why && (
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">{s.why}</p>
-      )}
-
-      <div className="mt-2 flex flex-wrap gap-1">
-        <Metric k="시가총액" v={cap(s.cap)} />
-        <Metric k="매출성장" v={s.growth === null ? "—" : pct(s.growth)} tone={s.growth} />
-        <Metric k="영업이익률" v={s.opm === null ? "—" : pct(s.opm)} tone={s.opm} />
-        <Metric k="PER" v={s.per === null ? "—" : `${s.per.toFixed(2)}배`} />
+      <div className="mt-2">
+        <StockBrief
+          dense
+          d={{
+            biz: s.biz ?? [],
+            chg: s.chg,
+            themeChg,
+            cap: s.cap,
+            growth: s.growth,
+            opm: s.opm,
+            per: s.per,
+            score: s.score,
+            target: s.target,
+            upside: s.upside,
+            recomm: s.recomm,
+            ret1m: s.ret1m,
+            cross: s.cross,
+            foreign: s.foreign,
+          }}
+        />
       </div>
+
+      {/* 원문 한 문장은 접어 둔다 — 근거를 확인하고 싶은 사람만 편다 */}
+      {s.why && (
+        <details className="mt-1.5">
+          <summary className="cursor-pointer list-none text-[10.5px] text-muted hover:text-brand">
+            편입 사유
+          </summary>
+          <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{s.why}</p>
+        </details>
+      )}
     </li>
   );
 }
@@ -228,7 +230,7 @@ export function ThemeDetailView({
 
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {stocks.map((s) => (
-              <StockCard key={s.code} s={s} onPick={pick} />
+              <StockCard key={s.code} s={s} themeChg={d?.chg ?? null} onPick={pick} />
             ))}
           </ul>
 
