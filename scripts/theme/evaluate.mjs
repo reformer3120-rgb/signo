@@ -194,5 +194,10 @@ export async function evaluate(log = console.log) {
 }
 
 if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, "/")}`) {
-  await evaluate();
+  const r = await evaluate();
+  // 기준서 PDF(doc-data.mjs)가 이 파일에서 테마별 응집도를 긁어 간다.
+  // 여기서 안 남기면 지난번 측정값이 그대로 인쇄된다 — 테마를 90개에서
+  // 91개로 늘린 날에도 기준서는 "60개 테마" 라고 적혀 있었다.
+  fs.writeFileSync(path.join(DIR, "report-doc.txt"), r.text + "\n");
+  console.log(`\n→ ${path.join(DIR, "report-doc.txt")}`);
 }
