@@ -110,9 +110,36 @@ function sentences(text) {
     .filter((s) => s.length > 8);
 }
 
+/**
+ * 표를 문장인 척 늘어놓은 줄인가.
+ *
+ * NOT_OURS 에 표 머리글을 하나씩 적어 왔는데 끝이 없다. 사업보고서마다 머리글이
+ * 다르기 때문이다. 그런데 표에는 머리글보다 확실한 표시가 있다 — 숫자가 많다.
+ *
+ *   DB하이텍  "매출유형 품 목 구체적용도 매출액 비중 … Wafer 외 1,331,736 95% …
+ *              도급공사 건축 환경플랜드 아파트, 복합건축물 건축공사 … 2,998 0% …"
+ *   반도체 파운드리가 이 한 줄로 건설사가 됐다. 0.2% 짜리 도급공사 칸 때문이다.
+ *
+ * 표를 가리키는 것은 두 가지다.
+ *
+ *   · "(단위 : 백만원)" 을 달고 숫자가 다섯 개 넘게 이어진다
+ *     표 앞에 거의 언제나 붙는 머리다. 일반 문장은 이 말을 쓰지 않는다.
+ *   · 글자의 15% 넘게가 숫자이고 숫자 덩어리가 여덟 개를 넘는다
+ *
+ * 숫자 개수만으로는 못 가른다. 일성건설의 "고속도로, 철도, 지하철 등 토목공사와
+ * 아파트 … 조경공사를 …" 는 뒤에 실적 숫자가 열여덟 개 붙어 있지만 자기 사업을
+ * 밝힌 진짜 문장이다. 자릿수 비율(0.13)로 표(0.26)와 갈린다.
+ */
+function looksTable(s) {
+  const nums = (s.match(/\d[\d,.]*/g) ?? []).length;
+  if (/\(\s*단위\s*[:：]/.test(s) && nums > 5) return true;
+  const digits = (s.match(/\d/g) ?? []).length;
+  return nums > 8 && digits / s.length >= 0.15;
+}
+
 /** 자사 이야기로 볼 수 있는 문장만 남긴다 */
 export function ourSentences(text) {
-  return sentences(text).filter((s) => !NOT_OURS.some((re) => re.test(s)));
+  return sentences(text).filter((s) => !looksTable(s) && !NOT_OURS.some((re) => re.test(s)));
 }
 
 /**
@@ -127,9 +154,57 @@ export function ourSentences(text) {
  * 띄어쓰기가 제각각이라 그대로 두면 낱말을 수십 개로 늘려야 한다.
  */
 function norm(s) {
-  return s.replace(/이차전지/g, "2차전지").replace(/[ㆍ·]/g, "").replace(/\//g, " ");
+  return s.replace(/이차전지/g, "2차전지").replace(/[ㆍ·]/g, " ").replace(/\//g, " ");
 }
-const despace = (s) => s.replace(/\s+/g, "");
+
+/**
+ * 낱말을 찾는 자. 띄어쓰기는 넘나들되, 낱말 한가운데에서는 시작하지 못한다.
+ *
+ * 처음에는 양쪽 띄어쓰기를 통째로 지우고 견줬다(despace). 회사마다 "카메라모듈"
+ * 과 "카메라 모듈" 을 제각각 적으니 그래야 했다. 그런데 그러면 띄어쓰기가
+ * 낱말 경계였던 자리까지 붙어 없던 낱말이 생긴다.
+ *
+ *   "레거시 공정 기술" → "레거시공정기술"  안에 "시공" 이 있다
+ *   DB하이텍(파운드리)이 그래서 건설사로 잡혔다. "전시 공간" 도 마찬가지다.
+ *
+ * 둘을 가르는 것은 시작 자리다.
+ *   카메라 모듈 ← "카메라" 라는 낱말의 첫 글자에서 시작한다   맞다
+ *   레거시 공정 ← "레거시" 의 세 번째 글자에서 시작한다        아니다
+ *
+ * 그래서 띄어쓰기를 넘는 짝은 낱말 첫머리에서 시작할 때만 센다. 띄어쓰기를
+ * 넘지 않으면(리튬이온 안의 "이온") 예전처럼 그냥 센다 — 한국어 합성어다.
+ */
+const ESC = /[.*+?^${}()|[\]\\]/g;
+const HEAD = /[^가-힣A-Za-z0-9]/; // 낱말 첫머리로 볼 수 있는 앞 글자 — 띄어쓰기·괄호·쉼표
+const RE = new Map();
+const esc = (s) => s.replace(ESC, "\\$&");
+
+function res(word) {
+  let pair = RE.get(word);
+  if (!pair) {
+    const w = norm(word).trim();
+    // 낱말이 품은 띄어쓰기 자리만 열어 둔 자 — "식품을 제조" 는 "식품을제조" 도 잡는다
+    const tight = new RegExp(w.split(/\s+/).map(esc).join("\\s*"));
+    // 아무 자리나 벌어져도 되는 자 — "카메라모듈" 로 "카메라 모듈" 을 잡는다
+    const loose = new RegExp([...w.replace(/\s+/g, "")].map(esc).join("\\s*"), "g");
+    pair = { tight, loose };
+    RE.set(word, pair);
+  }
+  return pair;
+}
+
+function hasWord(sent, word) {
+  const { tight, loose } = res(word);
+  if (tight.test(sent)) return true;
+  // 낱말에 없던 자리가 벌어진 짝이다. 그런 짝은 낱말 첫머리에서 시작할 때만 센다.
+  // 첫머리는 띄어쓰기 다음만이 아니다 — "LED(발광 다이오드)" 처럼 괄호 뒤도 첫머리다.
+  loose.lastIndex = 0;
+  for (let m; (m = loose.exec(sent)); ) {
+    loose.lastIndex = m.index + 1; // 겹치는 자리도 본다
+    if (m.index === 0 || HEAD.test(sent[m.index - 1])) return true;
+  }
+  return false;
+}
 
 /**
  * 한 문장에서 낱말이 자사 행위와 함께 나오는가.
@@ -138,7 +213,7 @@ const despace = (s) => s.replace(/\s+/g, "");
 function inSentence(sent, word) {
   let s = norm(sent);
   for (const t of TRAPS) if (t.includes(word) && t !== word) s = s.split(t).join(" ");
-  if (!despace(s).includes(despace(norm(word)))) return false;
+  if (!hasWord(s, word)) return false;
   return SELF.test(s);
 }
 
