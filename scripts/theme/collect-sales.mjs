@@ -63,6 +63,13 @@ export function 매출대목(plain) {
 /** 표 머리글과 괄호를 지운다 — 그 안의 숫자가 부문 값으로 잘못 읽힌다 */
 const 다듬기 = (s) =>
   s
+    // 표 낱말이 칸 안에서 띄어 적히는 일이 아주 흔하다 — "내 수", "수 출".
+    // 이것을 못 알아보면 앞 부문 이름에 붙어 "…디텍터 수 출" 같은 이름이 생기고,
+    // 그 줄의 매출이 엉뚱한 곳으로 간다. 2,212 줄이 이 꼴이었다.
+    .replace(/내\s+수/g, "내수").replace(/수\s+출/g, "수출")
+    .replace(/소\s+계/g, "소계").replace(/합\s+계/g, "합계").replace(/총\s+계/g, "총계")
+    .replace(/구\s+분/g, "구분").replace(/금\s+액/g, "금액").replace(/비\s+율/g, "비율")
+    .replace(/품\s+목/g, "품목").replace(/매\s+출/g, "매출")
     .replace(/\([^)]{0,40}\)/g, " ")
     .replace(/제\s*\d+\s*기/g, " ")
     .replace(/\d{4}\s*년/g, " ")
@@ -92,6 +99,24 @@ function 이름다듬기(말) {
  * 한 줄의 첫 숫자만 센다(올해분). 뒤이어 오는 숫자는 지난해·전전해라 버린다.
  * "내수·수출·소계" 는 제 이름이 아니라 앞 부문에 딸린 줄이므로 앞 이름에 더한다.
  */
+/**
+ * 표 머리의 "(단위 : 백만원)" 을 읽는다.
+ *
+ * 이것이 있어야 부문 값을 실제 매출과 견줄 수 있다. 표에서 더한 합을 분모로
+ * 쓰면 소표가 여럿일 때 3년치가 겹쳐 들어가 모든 비중이 눌린다 — 재어 보니
+ * 453종목에서 분모가 꼭 3.16배 부풀어 있었다.
+ */
+export function 단위읽기(seg) {
+  const m = seg.match(/단위\s*[:：]?\s*([가-힣]*원)/);
+  if (!m) return null;
+  const u = m[1];
+  if (u.includes("억")) return 1e8;
+  if (u.includes("백만")) return 1e6;
+  if (u.includes("천")) return 1e3;
+  if (u === "원") return 1;
+  return null;
+}
+
 export function 부문비중(seg) {
   const 토큰 = 다듬기(seg).split(" ");
   const rows = [];
@@ -175,7 +200,8 @@ async function 한종목({ corp, code, name }) {
     const seg = 매출대목(plain);
     if (!seg) return { code, name, skip: "매출표없음" };
     const rows = 부문비중(seg);
-    return rows ? { code, name, rows } : { code, name, skip: "표를못읽음" };
+    if (!rows) return { code, name, skip: "표를못읽음" };
+    return { code, name, rows, 단위: 단위읽기(seg) };
   }
   return { code, name, skip: "본문없음" };
 }
@@ -207,7 +233,7 @@ if (process.argv[1] && import.meta.url === `file:///${process.argv[1].split("\\"
     for (const r of rs) {
       if (!r) { 실패연속++; continue; }
       실패연속 = 0;
-      if (r.rows) { done[r.code] = r.rows; ok++; } else { done[r.code] = null; 빈것++; }
+      if (r.rows) { done[r.code] = { 단위: r.단위, rows: r.rows }; ok++; } else { done[r.code] = null; 빈것++; }
     }
     if (실패연속 >= 12) {
       console.log("\n연속 실패가 잦다 — 여기서 멈춘다. 다시 실행하면 이어서 받는다.");

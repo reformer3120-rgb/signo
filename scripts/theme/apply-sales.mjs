@@ -64,63 +64,105 @@ function 맞나(label, t) {
 }
 
 /**
- * 이 종목의 표를 믿어도 되나.
+ * 부문 값을 실제 매출로 나눠 비중을 다시 낸다.
  *
- * 파서가 늘 깨끗하게 읽지는 못한다. 표 머리글이 이름 칸으로 새어 들거나
- * ("금액 금액 금액 제품 분리막 내 수"), 한 사업이 여러 소표로 쪼개져
- * 저마다 몇 %씩만 잡히기도 한다. 그런 값으로 테마를 떼면 멀쩡한 것이 날아간다.
+ * 표에서 더한 합을 분모로 쓰면 안 된다. 한 보고서에 매출 표가 여럿 있으면
+ * 3년치나 소표가 겹쳐 들어가 모든 비중이 눌린다 — 재어 보니 453종목에서
+ * 분모가 꼭 3.16배(= 3년) 부풀어 있었다. 그래서 한화솔루션의 큐셀(태양광)이
+ * 5.9% 로 읽혀 떨어질 뻔했다.
  *
- *   더블유씨피  분리막 전문사인데 4.9% 로 읽혀 2차전지 부재료가 떨어졌다
- *   오르비텍    원자력이 실제 46% 인데 6.8% + 2.2% 로 쪼개져 떨어졌다
- *
- * 그래서 다음 중 하나라도 걸리면 그 종목은 손대지 않는다.
+ * 표에는 "(단위 : 백만원)" 이 적혀 있고 재무제표에는 실제 매출액이 있다.
+ * 부문값 × 단위 ÷ 실매출 이 참값이다.
  */
-const 머리글샘 = /금액|비율|원가율|수량|단가|구\s*분|매출액|내\s*수|수\s*출/;
+function 비중내기(rec, 실매출) {
+  if (!rec?.rows?.length || !rec.단위 || !실매출) return null;
+  const rows = rec.rows.map((r) => ({ ...r, 비중: (r.v * rec.단위) / 실매출 }));
+  // 한 부문이 매출의 90% 를 넘을 수는 없다. 그런 줄은 부문이 아니라 합계다.
+  //
+  //   서울반도체    "연결제거 후 순" 100.0% · "연결제거" 92.7%
+  //   심텍홀딩스    "사업 제품 등 PCB제조 판매 및 임가공" 203.0%
+  //
+  // 이런 표에서는 진짜 부문이 자잘하게만 잡혀, 멀쩡한 테마가 곁가지로 몰린다.
+  // 서울반도체의 LED 가 1.0% 로 읽혀 떨어질 뻔했다.
+  if (rows.some((r) => r.비중 >= 0.9)) return null;
 
-/**
- * 표에서 더한 합이 재무제표의 매출액과 맞나.
- *
- * 이것이 가장 확실한 잣대다. 표를 잘못 읽으면 엉뚱한 줄이 분모에 섞여 합이
- * 실제 매출과 크게 어긋난다. 눈으로만 고르던 앞의 잣대들은 절반쯤 놓쳤다.
- *
- * 표는 백만원·천원·억원 중 하나로 적히고 재무제표는 원 단위다. 어느 쪽인지는
- * 굳이 읽지 않는다 — 실매출 ÷ 표합 이 그 셋 중 하나에 가까우면 맞는 것이다.
- */
-const 단위후보 = [1, 1e3, 1e6, 1e8];
-function 단위맞나(표합, 실매출) {
-  if (!표합 || !실매출) return false;
-  const 배 = 실매출 / 표합;
-  return 단위후보.some((u) => 배 >= u * 0.75 && 배 <= u * 1.25);
+  const 합 = rows.reduce((a, r) => a + r.비중, 0);
+  // 합이 조금 넘치는 것은 표가 둘(제품별·지역별)이라 같은 매출이 겹친 것이다.
+  // 그때는 비중이 부풀고, 부풀면 덜 떼게 되니 틀리는 방향이 안전하다.
+  // 크게 넘치거나 모자라면 표를 잘못 읽은 것이다.
+  if (합 < 0.75 || 합 > 1.5) return null;
+  return rows;
 }
 
-function 믿을만한가(rows, 실매출) {
-  if (rows.length > 10) return false;                    // 지나치게 쪼개졌다
-  if (rows.some((r) => 머리글샘.test(r.label))) return false; // 머리글이 샜다
-  if (rows[0].비중 < 0.2) return false;                   // 으뜸 부문이 없다
-  // 표의 분모를 되살린다. 비중 = v / 분모 이므로 분모 = v / 비중.
-  const 분모 = rows[0].비중 ? rows[0].v / rows[0].비중 : 0;
-  return 단위맞나(분모, 실매출);
-}
+/** 이름 칸에 표 머리글이 새어 든 줄은 값이 어긋나 있다 */
+const 머리글샘 = /금액|비율|원가율|수량|단가|구분|매출액/;
 
 let 뗌 = 0;
 let 못믿음 = 0;
-let 살핀종목 = 0;
+let 못알아봄 = 0;
 const 자취 = [];
-const 이름 = {};
+
+// 이 종목에 붙은 테마를 모아 둔다 — 아래에서 "그 회사를 알아봤나" 를 보는 데 쓴다
+const 종목테마 = new Map();
 for (const [id, list] of Object.entries(cls)) {
-  const t = byId[id];
-  if (!t) continue;
-  for (const s of list) 이름[s.code] = s.name;
+  if (!byId[id]) continue;
+  for (const s of list) {
+    if (!종목테마.has(s.code)) 종목테마.set(s.code, []);
+    종목테마.get(s.code).push({ id, manual: !!s.manual });
+  }
+}
+
+/**
+ * 그 회사의 주력을 우리가 알아봤나.
+ *
+ * 붙어 있는 테마 중 하나라도 큰 부문(25% 이상)과 맞아떨어져야 한다. 그래야
+ * "주력은 저것이고 이것은 곁가지" 라고 말할 수 있다.
+ *
+ * 이 빗장이 없으면 넓은 업종 테마가 억울하게 떨어진다. 명문제약의 매출 표는
+ * "순환기·소화기" 같은 약효군으로 나뉘어 있어 "제약" 이라는 말은 자잘한 줄에만
+ * 걸린다. 큰 줄도 다 제약인데 우리 낱말이 그것을 못 알아볼 뿐이다.
+ *
+ *   다산네트웍스  통신장비가 "네트워크" 30.7% 와 맞는다 → 알아봤다 → 물류를 뗀다
+ *   명문제약      어느 테마도 큰 부문과 안 맞는다 → 못 알아봤다 → 손대지 않는다
+ */
+/**
+ * 알아보는 쪽은 느슨하게 본다.
+ *
+ * 뗄지 말지를 가릴 때는 엄격해야 하지만, "이 회사를 알아봤나" 를 볼 때까지
+ * 엄격하면 멀쩡한 짝을 놓친다. 부문 이름은 사전 낱말보다 짧게 적히기 때문이다.
+ *
+ *   부문 "네트워크"  ↔  사전 "네트워크 장비"    같은 것을 가리킨다
+ *   부문 "케미칼"    ↔  사전 "석유화학"        이건 아니다 — 글자가 안 겹친다
+ *
+ * 그래서 사전 낱말이 부문 이름을 품고 있으면 맞는 것으로 본다.
+ */
+function 알아보기(label, t) {
+  if (맞나(label, t)) return true;
+  const d = 정규(label);
+  if (d.length < 3) return false;
+  return [...(t.core ?? []), ...(t.also ?? []), t.name].some((w) => 정규(w).includes(d));
+}
+
+function 알아봤나(code, 잰것) {
+  for (const { id } of 종목테마.get(code) ?? []) {
+    const t = byId[id];
+    if (!t) continue;
+    const 합 = 잰것.filter((r) => 알아보기(r.label, t)).reduce((a, r) => a + r.비중, 0);
+    if (합 >= 0.25) return true;
+  }
+  return false;
 }
 
 for (const [id, list] of Object.entries(cls)) {
   const t = byId[id];
   if (!t) continue;
   cls[id] = list.filter((s) => {
-    const rows = sales[s.code];
-    if (!rows || s.manual) return true; // 근거 없음 · 사람이 정한 것은 그대로
-    if (!믿을만한가(rows, rev[s.code])) { 못믿음++; return true; }
-    const 맞는것 = rows.filter((r) => 맞나(r.label, t));
+    const rec = sales[s.code];
+    if (!rec || s.manual) return true; // 근거 없음 · 사람이 정한 것은 그대로
+    const 잰것 = 비중내기(rec, rev[s.code]);
+    if (!잰것 || 잰것.some((r) => 머리글샘.test(r.label))) { 못믿음++; return true; }
+    if (!알아봤나(s.code, 잰것)) { 못알아봄++; return true; }
+    const 맞는것 = 잰것.filter((r) => 맞나(r.label, t));
     if (!맞는것.length) return true; // 어느 부문과도 안 맞으면 판단 근거가 없다
     // 한 사업이 여러 줄로 나뉘어 적히는 일이 흔하다(내수·수출, 제품·용역).
     // 낱낱이 보지 말고 합쳐서 본다.
@@ -137,7 +179,6 @@ for (const [id, list] of Object.entries(cls)) {
     return false;
   });
 }
-for (const code of new Set(Object.values(cls).flatMap((l) => l.map((s) => s.code)))) 살핀종목++;
 
 fs.writeFileSync(CLS, JSON.stringify(cls, null, 1));
 fs.writeFileSync(path.join(DIR, "sales-dropped.json"), JSON.stringify(자취, null, 1));
@@ -145,6 +186,7 @@ fs.writeFileSync(path.join(DIR, "sales-dropped.json"), JSON.stringify(자취, nu
 const 표있는것 = Object.values(sales).filter(Boolean).length;
 console.log(`매출 표를 읽은 종목 ${표있는것} / ${Object.keys(sales).length}`);
 console.log(`표를 못 믿어 그냥 둔 편입 ${못믿음}건`);
+console.log(`주력을 못 알아봐 그냥 둔 편입 ${못알아봄}건`);
 console.log(`곁가지로 떼어 낸 편입 ${뗌}건 → .cache/theme/sales-dropped.json`);
 for (const d of 자취.slice(0, 8)) {
   console.log(`  ${d.name.padEnd(14)}${d.theme.padEnd(16)}합 ${String(d.합).padStart(4)}%  ${d.부문.join(" · ")}`);
