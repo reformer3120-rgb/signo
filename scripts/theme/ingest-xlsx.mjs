@@ -101,8 +101,15 @@ for (const [sheet, rows] of Object.entries(book)) {
 
     설명[c] = desc.trim();
     const t = String(sub ?? "").replace(/\(재분류\)/g, "").trim();
-    if (t && byName[t]) (배정[c] ??= new Set()).add(t);
-    else unassigned.push({ code: c, name, sheet, desc: desc.trim() });
+    // 작업지의 "서브테마" 칸은 우리 규칙이 채워 넣은 것이지 사람이 고른 것이
+    // 아니다. 사람은 설명만 쓰고 그 칸은 그대로 두었다. 그대로 받으면 규칙이
+    // 틀린 자리가 "사람이 확인함"(99점)으로 굳어, 나중에 규칙을 고쳐도 안 풀린다.
+    //
+    //   오르비텍  설명 "항공·방산 부품 정비를 영위하는 기업이다"
+    //             칸   의료기기 · 핀테크·결제 · 태양광 · 원자력 · 풍력 · 2차전지 장비
+    //
+    // 그래서 칸은 힌트로만 두고, 사람이 쓴 설명이 뒷받침할 때만 받는다.
+    unassigned.push({ code: c, name, sheet, desc: desc.trim(), 적힌: t && byName[t] ? t : null });
   }
 }
 
@@ -155,7 +162,7 @@ function nameWords(name) {
     .filter((w) => w.length >= 2);
 }
 
-let matched = 0, 건너뜀 = 0;
+let matched = 0, 건너뜀 = 0, 적힌대로 = 0, 뒤집음 = 0, 나란함 = 0;
 const 미배정 = [];
 const 울타리밖 = [];
 for (const u of unassigned) {
@@ -191,6 +198,13 @@ for (const u of unassigned) {
     .filter((x) => x.sc > 0)
     .sort((a, b) => b.sc - a.sc);
 
+  // 칸에 적힌 테마부터 본다. 사람이 쓴 설명이 뒷받침하면 그대로 받는다.
+  if (u.적힌) {
+    const [본것] = 채점([byName[u.적힌]]);
+    if (본것) { (배정[u.code] ??= new Set()).add(u.적힌); 적힌대로++; continue; }
+    뒤집음++; // 설명이 다른 곳을 가리킨다 — 아래에서 설명으로 다시 찾는다
+  }
+
   let scored = 채점(themesOfGroup(u.sheet));
 
   // 대분류 안에서 못 찾으면 전체에서 한 번 더 본다.
@@ -217,8 +231,17 @@ for (const u of unassigned) {
   if (scored.length) {
     matched++;
     (배정[u.code] ??= new Set()).add(scored[0].t.name);
-    // 점수가 비등하면 둘 다 넣는다 — 한 종목이 여러 테마에 드는 것은 정상이다
-    if (!밖) for (const x of scored.slice(1)) if (x.sc >= scored[0].sc) 배정[u.code].add(x.t.name);
+    // 점수가 비등하면 둘 다 넣는다 — 한 종목이 여러 테마에 드는 것은 정상이다.
+    // 다만 셋 이상이 나란하면 가려낸 것이 아니라 같은 낱말 하나에 다 걸린 것이다.
+    //   천보 "2차전지 전해질(리튬염) 소재기업이다"
+    //   → 2차전지 라는 말 하나로 양극재·음극재·부재료·셀·장비가 모두 동점
+    // 그럴 때는 아무것도 더하지 않는다. 규칙 쪽이 전해액을 보고 부재료로
+    // 이미 제대로 넣어 두었으므로, 손대지 않는 편이 낫다.
+    if (!밖) {
+      const 나란한것 = scored.filter((x) => x.sc === scored[0].sc);
+      if (나란한것.length >= 3) { 배정[u.code].delete(scored[0].t.name); 나란함++; matched--; }
+      else for (const x of 나란한것.slice(1)) 배정[u.code].add(x.t.name);
+    }
   } else {
     미배정.push(u);
   }
@@ -242,8 +265,10 @@ fs.writeFileSync(path.join(DIR, "manual.json"), JSON.stringify(outObj));
 
 console.log(`수기검증 설명 ${Object.keys(설명).length}종목 · 자동요약 ${auto}행 버림 · 빈칸 ${blank}행`);
 console.log(`테마 배정 ${Object.keys(배정).length}종목`);
-console.log(`  테마가 적혀 있던 것 ${Object.keys(배정).length - matched}`);
-console.log(`  설명으로 찾아낸 것  ${matched} / ${unassigned.length}` +
+console.log(`  칸에 적힌 대로 받은 것 ${적힌대로}  (설명이 뒷받침했다)`);
+console.log(`  칸을 물린 것        ${뒤집음}  (설명이 다른 곳을 가리켰다)`);
+console.log(`  으뜸이 셋 이상 나란해 비워 둔 것 ${나란함}  (규칙 판정에 맡긴다)`);
+console.log(`  설명으로 찾아낸 것   ${matched} / ${unassigned.length}` +
   `  (못 찾은 것은 .cache/theme/manual-unmatched.json)`);
 console.log(`특수목적법인 ${Object.keys(특수).length}종목`);
 const kinds = {};
