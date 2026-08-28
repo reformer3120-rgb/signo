@@ -240,7 +240,7 @@ async function build() {
           .slice(0, 6)
           .map(
             (r) =>
-              `${r.name}(${r.days}일 전${r.gap20 !== null && Math.abs(r.gap20) >= 5 ? ` · 20일선 ${sign(r.gap20)}%` : ""})`,
+              `${r.name}(${r.days}일 전${r.gap20 !== null && Math.abs(r.gap20) >= 5 ? ` · 20일선 ${r.gap20 > 0 ? "+" : ""}${r.gap20}%` : ""})`,
           )
           .join(", ");
         L.push(`    ${theme} ${list.length}종목: ${names}${list.length > 6 ? " 외" : ""}`);
