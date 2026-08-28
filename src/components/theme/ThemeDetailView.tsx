@@ -19,6 +19,23 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: "name", label: "이름순" },
 ];
 
+/**
+ * 이평선으로 걸러 보기.
+ *
+ * 정배열은 "상태" 라 스크리닝 조건에 맞고, 크로스는 "이벤트" 라 그날그날 본다.
+ * 골든크로스는 추세가 받쳐 주는 것만 남긴다 — 교차는 후행 지표라 받쳐 주지
+ * 않는 것까지 세면 지금 장세에서 621건 중 583건이 헛것이다(score.ts 머리말).
+ *
+ * 크론이 아직 안 훑은 종목은 값이 없다. 없는 것을 걸러 낸 것처럼 보이지
+ * 않도록 개수를 같이 적는다.
+ */
+type Screen = "all" | "align" | "golden";
+const match: Record<Screen, (s: OwnThemeStock) => boolean> = {
+  all: () => true,
+  align: (s) => s.align === "정배열",
+  golden: (s) => s.cross === "골든크로스" && s.crossOk === true,
+};
+
 /** 상승 · 보합 · 하락 구성비를 한 줄 막대로 */
 function Composition({ up, flat, down }: { up: number; flat: number; down: number }) {
   const t = up + flat + down || 1;
@@ -75,6 +92,8 @@ function StockCard({
             recomm: s.recomm,
             ret1m: s.ret1m,
             cross: s.cross,
+            crossOk: s.crossOk,
+            gap20: s.gap20,
             foreign: s.foreign,
           }}
         />
@@ -98,17 +117,32 @@ export function ThemeDetailView({
     dedupingInterval: 120_000,
   });
   const [sort, setSort] = useSticky<Sort>("kr.theme.stockSort", "chg");
+  const [screen, setScreen] = useSticky<Screen>("kr.theme.stockScreen", "all");
   const d = data?.data;
 
-  const stocks = useMemo(() => {
+  const { stocks, counts, graded } = useMemo(() => {
     const list = d?.stocks ?? [];
     const by: Record<Sort, (a: OwnThemeStock, b: OwnThemeStock) => number> = {
       chg: (a, b) => (b.chg ?? -999) - (a.chg ?? -999),
       cap: (a, b) => (b.cap ?? -1) - (a.cap ?? -1),
       name: (a, b) => a.name.localeCompare(b.name, "ko"),
     };
-    return [...list].sort(by[sort]);
-  }, [d, sort]);
+    // 이평선 값은 크론이 채운다. 아직 안 훑었으면 걸러 볼 수가 없다 —
+    // 그때 "정배열 0" 을 내걸면 조건에 맞는 종목이 없는 것처럼 보인다.
+    // 아예 감추고, 지난번에 골라 둔 조건도 무시한다.
+    const n = list.filter((s) => s.align !== null).length;
+    const eff: Screen = n ? screen : "all";
+    const kept = list.filter(match[eff]);
+    return {
+      graded: n,
+      stocks: [...kept].sort(by[sort]),
+      counts: {
+        all: list.length,
+        align: list.filter(match.align).length,
+        golden: list.filter(match.golden).length,
+      },
+    };
+  }, [d, sort, screen]);
 
   // 시총 가중과 단순 평균의 차이 — 대형주가 끌었는지 소형주가 끌었는지
   const gap =
@@ -217,6 +251,50 @@ export function ThemeDetailView({
           <div className="mt-2">
             <ThemeChart id={d.id} name={d.name} />
           </div>
+
+          {/* 이평선으로 걸러 보기 — 정배열은 상태, 골든크로스는 이벤트다 */}
+          {graded > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                ["all", `전체 ${counts.all}`],
+                ["align", `정배열 ${counts.align}`],
+                ["golden", `골든크로스 ${counts.golden}`],
+              ] as [Screen, string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setScreen(k)}
+                aria-pressed={screen === k}
+                title={
+                  k === "align"
+                    ? "5 > 20 > 60 > 120일선 순으로 늘어선 종목"
+                    : k === "golden"
+                      ? "20일선이 60일선을 상향 돌파했고, 60일선 방향과 거래량이 뒷받침하는 종목"
+                      : undefined
+                }
+                className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                  screen === k
+                    ? "border-brand/40 bg-brand/10 text-brand"
+                    : "border-line text-muted hover:text-fg"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <span className="ml-auto text-[10.5px] text-muted">
+              직전 정규장 종가 기준
+              {graded < counts.all ? ` · ${counts.all - graded}종목은 아직 지표가 없다` : ""}
+            </span>
+          </div>
+          )}
+
+          {graded > 0 && screen !== "all" && stocks.length === 0 && (
+            <p className="mt-3 rounded-lg bg-canvas p-4 text-center text-[12px] text-muted">
+              이 테마에 조건을 만족하는 종목이 없다.
+            </p>
+          )}
 
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {stocks.map((s) => (

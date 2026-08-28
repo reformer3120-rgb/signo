@@ -17,7 +17,7 @@ import { cached, redis } from "./cache";
 import { krSessionNow } from "./session";
 import { dailyBars, dailyIndexBars, hasKIS, kisGet, unifiedQuotes } from "./kis";
 import { factsFor, type StockFacts } from "./facts";
-import type { MaSignal } from "./score";
+import type { MaAlign, MaSignal } from "./score";
 import raw from "@/data/themes.json";
 
 interface RawStock {
@@ -233,6 +233,12 @@ export interface OwnThemeStock {
   /** 측정 신호 — 크론이 훑은 종목만 */
   ret1m: number | null;
   cross: MaSignal | null;
+  /** 이평선 배열 — 스크리닝(정배열만 보기)에 쓴다 */
+  align: MaAlign | null;
+  /** 크로스가 추세의 뒷받침을 받는가 (크로스가 아니면 null) */
+  crossOk: boolean | null;
+  /** 20일선 이격도 % */
+  gap20: number | null;
   foreign: number | null;
 }
 
@@ -316,6 +322,9 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
       recomm: f?.recomm ?? null,
       ret1m: f?.ret?.m1 ?? null,
       cross: f?.cross ?? null,
+      align: f?.align ?? null,
+      crossOk: f?.crossOk ?? null,
+      gap20: f?.gap20 ?? null,
       foreign: f?.foreign ?? null,
       price,
       chg: q[s.code]?.chg ?? null,

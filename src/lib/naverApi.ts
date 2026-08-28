@@ -957,6 +957,10 @@ async function fillOne(code: string) {
       await saveFacts(code, {
         ret: { w1: r.w1, m1: r.m1, m3: r.m3, m6: r.m6, y1: r.y1 },
         cross: cross.signal,
+        align: cross.align,
+        alignDays: cross.alignDays,
+        crossOk: cross.cross?.confirmed ?? null,
+        gap20: cross.gap20,
         foreign: Number.isFinite(numSuffix(dd?.foreignRate)) ? numSuffix(dd?.foreignRate) : null,
         target: dd?.priceTarget && dd.priceTarget > 0 ? dd.priceTarget : null,
         upside: dd?.priceTarget && dd.priceTarget > 0 ? dd.upside : null,

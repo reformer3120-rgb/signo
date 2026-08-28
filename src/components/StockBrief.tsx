@@ -37,6 +37,10 @@ export interface BriefData {
   recomm: number | null;
   ret1m: number | null;
   cross: string | null;
+  /** 크로스가 추세의 뒷받침을 받는가 — 아니면 값 뒤에 ? 를 붙인다 */
+  crossOk?: boolean | null;
+  /** 20일선 이격도 % */
+  gap20?: number | null;
   foreign: number | null;
 }
 
@@ -74,7 +78,7 @@ function V({ k, v, tone }: { k?: string; v: string; tone?: number | null }) {
   );
 }
 
-/** 골든크로스는 오름, 데드크로스는 내림 색으로 */
+/** 골든크로스는 오름, 데드크로스는 내림 색으로. 혼조는 방향이 없으니 중립. */
 const crossTone = (c: string) =>
   c === "골든크로스" || c === "정배열" ? 1 : c === "데드크로스" || c === "역배열" ? -1 : 0;
 
@@ -119,7 +123,17 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
 
       <Row k="모멘텀">
         {d.ret1m !== null && <V k="1개월" v={pct(d.ret1m)} tone={d.ret1m} />}
-        {d.cross && d.cross !== "-" && <V v={d.cross} tone={crossTone(d.cross)} />}
+        {d.cross && d.cross !== "-" && (
+          <V
+            v={d.cross + (d.crossOk === false ? "?" : "")}
+            tone={d.crossOk === false ? 0 : crossTone(d.cross)}
+          />
+        )}
+        {/* 이격도 — 정배열이어도 20일선에서 크게 떠 있으면 따라 사는 것은 다른 얘기다.
+            5% 안쪽은 굳이 적지 않는다. 늘 붙어 있어 눈에 걸리기만 한다. */}
+        {d.gap20 !== null && d.gap20 !== undefined && Math.abs(d.gap20) >= 5 && (
+          <V k="20일선" v={`${d.gap20 > 0 ? "+" : ""}${d.gap20}%`} tone={null} />
+        )}
         {d.foreign !== null && <V k="외국인" v={`${d.foreign.toFixed(1)}%`} />}
         {/* 테마 수익률 자체는 뺐다 — 테마 화면 머리와 종목 화면 테마 칩에 이미 있다.
             남긴 것은 그 테마를 끌고 있나 못 따라가고 있나 하나뿐이고,

@@ -11,13 +11,21 @@
 //
 // 없을 수 있다. 크론이 아직 안 훑은 종목은 비어 있고, 화면은 그 칸을 지운다.
 import { redis } from "./cache";
-import type { MaSignal } from "./score";
+import type { MaAlign, MaSignal } from "./score";
 
 export interface StockFacts {
   /** 기간 수익률 % */
   ret: { w1: number; m1: number; m3: number; m6: number; y1: number };
-  /** 20일선과 60일선의 자리 */
+  /** 배지에 적는 값 — 최근 크로스가 있으면 그것, 없으면 배열 상태 */
   cross: MaSignal;
+  /** 이평선 배열 (5>20>60>120). 크로스가 겹쳐 있어도 상태는 따로 봐야 한다 */
+  align?: MaAlign;
+  /** 그 배열이 며칠째 */
+  alignDays?: number;
+  /** 크로스가 추세의 뒷받침을 받는가. 크로스가 아니면 null */
+  crossOk?: boolean | null;
+  /** 20일선 이격도 % */
+  gap20?: number | null;
   /** 외국인 보유비중 % */
   foreign: number | null;
   /** 애널리스트 목표주가 평균 (커버리지가 있는 종목만) */
