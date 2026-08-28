@@ -226,7 +226,7 @@ async function build() {
   // 오늘의 이평선 신호 — 크로스는 상태가 아니라 사건이라 리포트 자리가 맞다.
   // 추세가 받쳐 주는 것만 싣는다 (확인 규칙은 lib/score.ts 머리말).
   if (sig && (sig.golden.length || sig.dead.length)) {
-    L.push("[ 오늘의 이평선 신호 ]");
+    L.push("[ 최근 5거래일 이평선 신호 ]");
     L.push("  20일선이 60일선을 지난 종목 가운데, 60일선 방향과 거래량이 뒷받침하는 것만");
     const block = (title: string, rows: typeof sig.golden) => {
       if (!rows.length) return;
@@ -238,7 +238,10 @@ async function build() {
       for (const [theme, list] of sorted.slice(0, 8)) {
         const names = list
           .slice(0, 6)
-          .map((r) => `${r.name}${r.gap20 !== null && Math.abs(r.gap20) >= 5 ? `(20일선 ${sign(r.gap20)}%)` : ""}`)
+          .map(
+            (r) =>
+              `${r.name}(${r.days}일 전${r.gap20 !== null && Math.abs(r.gap20) >= 5 ? ` · 20일선 ${sign(r.gap20)}%` : ""})`,
+          )
           .join(", ");
         L.push(`    ${theme} ${list.length}종목: ${names}${list.length > 6 ? " 외" : ""}`);
       }

@@ -82,7 +82,7 @@ function SignalStrip({
   return (
     <div className="mb-3 rounded-lg border border-up/25 bg-up/5 px-3 py-2.5">
       <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="text-[11px] font-semibold text-up">오늘의 골든크로스</span>
+        <span className="text-[11px] font-semibold text-up">최근 5거래일 골든크로스</span>
         <span className="tnum text-[11px] text-muted">
           {rows.length}종목 · {byTheme.length}개 테마
         </span>
@@ -108,7 +108,7 @@ function SignalStrip({
               )}
               <span className="tnum shrink-0 text-[10.5px] text-muted">{list.length}</span>
               <span className="min-w-0 truncate text-[11.5px] text-muted">
-                {list.slice(0, 5).map((r) => r.name).join(", ")}
+                {list.slice(0, 5).map((r) => `${r.name} ${r.days}일 전`).join(", ")}
                 {list.length > 5 && ` 외 ${list.length - 5}`}
               </span>
             </li>

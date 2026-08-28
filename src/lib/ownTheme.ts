@@ -582,7 +582,7 @@ export interface DailySignal {
 }
 
 /**
- * 직전 정규장에 난 이평선 신호.
+ * 최근 며칠 사이 난 이평선 신호.
  *
  * 크로스는 상태가 아니라 사건이라 그날그날 보는 것이 맞다. 다만 그냥 뽑으면
  * 쓸 수가 없다 — 지금 장세에서 최근 20일 내 골든크로스가 621건인데 추세가
@@ -590,6 +590,10 @@ export interface DailySignal {
  *
  * 종목만 늘어놓지 않고 테마를 붙인다. 신호가 한 테마에 몰렸는지가 종목 하나가
  * 신호를 냈다는 사실보다 값어치 있다 — 남이 못 하는 자리이기도 하다.
+ *
+ * 창은 5거래일이다. 확인까지 통과하는 것이 하루 한 건꼴이라(실측: 당일 1건 ·
+ * 이틀 내 2건 · 닷새 내 5건) "오늘" 만 보면 대부분의 날이 빈칸이 된다.
+ * 대신 며칠 전인지 같이 내서 갓 난 것과 묵은 것을 가릴 수 있게 한다.
  *
  * 지표는 크론이 채운다. 아직 안 훑은 종목은 애초에 여기 안 걸린다.
  */
@@ -621,10 +625,10 @@ async function buildSignals(maxDays: number): Promise<{ golden: DailySignal[]; d
   return { golden: golden.sort(byGap), dead: dead.sort(byGap) };
 }
 
-/** 오늘(직전 정규장)의 확인된 이평선 신호 */
-export const dailySignals = (maxDays = 1) =>
+/** 최근 5거래일의 확인된 이평선 신호 */
+export const dailySignals = (maxDays = 5) =>
   cached<{ golden: DailySignal[]; dead: DailySignal[] }>(
-    `ownTheme:signals:v1:${maxDays}`,
+    `ownTheme:signals:v2:${maxDays}`,
     30 * 60,
     () => buildSignals(maxDays),
   );
