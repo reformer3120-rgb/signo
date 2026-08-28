@@ -100,16 +100,29 @@ export async function marketBaseline(universe: string[]): Promise<Baseline> {
   return { bounds, samples: rows.length };
 }
 
-/** 아직 지표를 모아두지 않은 종목 — 호출마다 조금씩 채우기 위해 */
+/**
+ * 아직 지표를 모아두지 않은 종목 — 호출마다 조금씩 채우기 위해.
+ *
+ * 지표(mx:)가 있어도 같이 저장하는 facts(sx:)의 모양이 바뀌었으면 다시 채워야
+ * 한다. 예전에는 mx: 가 있으면 건너뛰어서, 항목을 늘려도 TTL(7일)이 지나기
+ * 전까지 새 항목이 영영 안 붙었다. 이평선 배열(align)을 더했을 때 걸린 자리다.
+ * 새 항목을 더하면 아래 FACT_MARK 를 그 항목 이름으로 바꾼다.
+ */
+const FACT_MARK = "align";
+
 export async function missingFrom(universe: string[], limit: number): Promise<string[]> {
   if (!redis) return [];
   const out: string[] = [];
   for (let i = 0; i < universe.length && out.length < limit; i += 50) {
     const part = universe.slice(i, i + 50);
-    const hit = await redis.mget<(StockMetrics | null)[]>(...part.map(KEY)).catch(() => null);
+    const [hit, facts] = await Promise.all([
+      redis.mget<(StockMetrics | null)[]>(...part.map(KEY)).catch(() => null),
+      redis.mget<(Record<string, unknown> | null)[]>(...part.map((c) => `sx:${c}`)).catch(() => null),
+    ]);
     if (!hit) continue;
     part.forEach((c, k) => {
-      if (!hit[k] && out.length < limit) out.push(c);
+      const stale = !hit[k] || (facts ? !facts[k] || facts[k]![FACT_MARK] === undefined : false);
+      if (stale && out.length < limit) out.push(c);
     });
   }
   return out;

@@ -564,3 +564,67 @@ async function buildChart(id: string, days: number): Promise<ThemeChart> {
 /** 테마 등락률 시계열 (12시간 캐시 — 하루 한 점씩 늘어난다) */
 export const ownThemeChart = (id: string, days = 60) =>
   cached<ThemeChart>(`ownTheme:chart:v5:${id}:${days}`, 12 * 3600, () => buildChart(id, days));
+
+/* ── 오늘의 이평선 신호 ─────────────────────────────────────── */
+
+export interface DailySignal {
+  code: string;
+  name: string;
+  /** 그 종목이 든 테마 — 신호가 한 테마에 몰렸는지 보려고 같이 낸다 */
+  theme: string;
+  group: string;
+  type: "골든크로스" | "데드크로스";
+  /** 며칠 전 (0 이면 직전 정규장) */
+  days: number;
+  /** 20일선 이격도 % */
+  gap20: number | null;
+  align: MaAlign | null;
+}
+
+/**
+ * 직전 정규장에 난 이평선 신호.
+ *
+ * 크로스는 상태가 아니라 사건이라 그날그날 보는 것이 맞다. 다만 그냥 뽑으면
+ * 쓸 수가 없다 — 지금 장세에서 최근 20일 내 골든크로스가 621건인데 추세가
+ * 받쳐 주는 것은 38건뿐이다(score.ts 머리말). 그래서 확인된 것만 낸다.
+ *
+ * 종목만 늘어놓지 않고 테마를 붙인다. 신호가 한 테마에 몰렸는지가 종목 하나가
+ * 신호를 냈다는 사실보다 값어치 있다 — 남이 못 하는 자리이기도 하다.
+ *
+ * 지표는 크론이 채운다. 아직 안 훑은 종목은 애초에 여기 안 걸린다.
+ */
+async function buildSignals(maxDays: number): Promise<{ golden: DailySignal[]; dead: DailySignal[] }> {
+  const fa = await factsFor(ALL_CODES).catch(() => ({}) as Record<string, StockFacts>);
+  // 한 종목은 한 테마에만 든다(배타 분류)므로 먼저 걸린 것을 쓴다
+  const where = new Map<string, { theme: string; group: string; name: string }>();
+  for (const t of DATA.themes)
+    for (const s of t.stocks)
+      if (!where.has(s.code)) where.set(s.code, { theme: t.name, group: t.group, name: s.name });
+
+  const golden: DailySignal[] = [];
+  const dead: DailySignal[] = [];
+  for (const [code, f] of Object.entries(fa)) {
+    const w = where.get(code);
+    if (!w || f.crossOk !== true) continue;
+    const days = f.crossDays ?? -1;
+    if (days < 0 || days > maxDays) continue;
+    if (f.cross !== "골든크로스" && f.cross !== "데드크로스") continue;
+    const row: DailySignal = {
+      code, name: w.name, theme: w.theme, group: w.group,
+      type: f.cross, days, gap20: f.gap20 ?? null, align: f.align ?? null,
+    };
+    (f.cross === "골든크로스" ? golden : dead).push(row);
+  }
+  // 이격이 작은 것을 앞에 — 갓 돌아선 것이 따라가기에 낫다
+  const byGap = (a: DailySignal, b: DailySignal) =>
+    a.days - b.days || Math.abs(a.gap20 ?? 99) - Math.abs(b.gap20 ?? 99);
+  return { golden: golden.sort(byGap), dead: dead.sort(byGap) };
+}
+
+/** 오늘(직전 정규장)의 확인된 이평선 신호 */
+export const dailySignals = (maxDays = 1) =>
+  cached<{ golden: DailySignal[]; dead: DailySignal[] }>(
+    `ownTheme:signals:v1:${maxDays}`,
+    30 * 60,
+    () => buildSignals(maxDays),
+  );

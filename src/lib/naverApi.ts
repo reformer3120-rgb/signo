@@ -960,6 +960,7 @@ async function fillOne(code: string) {
         align: cross.align,
         alignDays: cross.alignDays,
         crossOk: cross.cross?.confirmed ?? null,
+        crossDays: cross.days,
         gap20: cross.gap20,
         foreign: Number.isFinite(numSuffix(dd?.foreignRate)) ? numSuffix(dd?.foreignRate) : null,
         target: dd?.priceTarget && dd.priceTarget > 0 ? dd.priceTarget : null,

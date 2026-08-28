@@ -24,6 +24,8 @@ export interface StockFacts {
   alignDays?: number;
   /** 크로스가 추세의 뒷받침을 받는가. 크로스가 아니면 null */
   crossOk?: boolean | null;
+  /** 크로스가 며칠 전인가 — 0 이면 직전 정규장에 났다 (없으면 -1) */
+  crossDays?: number;
   /** 20일선 이격도 % */
   gap20?: number | null;
   /** 외국인 보유비중 % */

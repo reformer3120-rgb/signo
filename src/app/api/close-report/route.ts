@@ -18,6 +18,7 @@ import { minute } from "@/lib/naver";
 import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
 import { marketDeposit } from "@/lib/deposit";
 import { futuresInvestorFlow } from "@/lib/flow";
+import { dailySignals } from "@/lib/ownTheme";
 
 export const revalidate = 0;
 export const maxDuration = 60;
@@ -77,6 +78,10 @@ async function build() {
       highLow(m, "low", 200).catch(() => []),
     ]),
   ]);
+  // 위 Promise.all 은 자리로 풀어 쓰므로 끼워 넣으면 순서가 어긋난다. 따로 받는다.
+  // 캐시(30분)를 타므로 리포트마다 다시 계산하지 않는다.
+  const sig = await dailySignals().catch(() => null);
+
   const per = 7;
   const byMarket = (["KOSPI", "KOSDAQ"] as Market[]).map((m, i) => ({
     market: m,
@@ -217,6 +222,31 @@ async function build() {
   if (notes.length) L.push(...notes.map((x) => `  · ${x}`));
   else L.push("  특이사항 없음");
   L.push("");
+
+  // 오늘의 이평선 신호 — 크로스는 상태가 아니라 사건이라 리포트 자리가 맞다.
+  // 추세가 받쳐 주는 것만 싣는다 (확인 규칙은 lib/score.ts 머리말).
+  if (sig && (sig.golden.length || sig.dead.length)) {
+    L.push("[ 오늘의 이평선 신호 ]");
+    L.push("  20일선이 60일선을 지난 종목 가운데, 60일선 방향과 거래량이 뒷받침하는 것만");
+    const block = (title: string, rows: typeof sig.golden) => {
+      if (!rows.length) return;
+      // 어느 테마에 몰렸는지가 종목 하나보다 값어치 있다
+      const byTheme = new Map<string, typeof rows>();
+      for (const r of rows) byTheme.set(r.theme, [...(byTheme.get(r.theme) ?? []), r]);
+      const sorted = [...byTheme.entries()].sort((a, b) => b[1].length - a[1].length);
+      L.push(`  ${title} ${rows.length}종목 · ${sorted.length}개 테마`);
+      for (const [theme, list] of sorted.slice(0, 8)) {
+        const names = list
+          .slice(0, 6)
+          .map((r) => `${r.name}${r.gap20 !== null && Math.abs(r.gap20) >= 5 ? `(20일선 ${sign(r.gap20)}%)` : ""}`)
+          .join(", ");
+        L.push(`    ${theme} ${list.length}종목: ${names}${list.length > 6 ? " 외" : ""}`);
+      }
+    };
+    block("골든크로스", sig.golden);
+    block("데드크로스", sig.dead);
+    L.push("");
+  }
 
   if (fi.length) {
     L.push("[ 시장 수급 · 외국인·기관 순매수 상위 ]");

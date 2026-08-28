@@ -6,7 +6,7 @@ import { Card } from "@/components/Card";
 import { Tabs } from "@/components/Tabs";
 import { useSticky } from "@/lib/useSticky";
 import { pct, signColor } from "@/lib/format";
-import type { OwnThemeRow } from "@/lib/ownTheme";
+import type { DailySignal, OwnThemeRow } from "@/lib/ownTheme";
 
 type Sort = "chg" | "size" | "name";
 type Filter = "all" | "up" | "down";
@@ -52,6 +52,76 @@ function Mark({ text, q }: { text: string; q: string }) {
   );
 }
 
+/**
+ * 오늘의 신호 띠.
+ *
+ * 크로스는 상태가 아니라 사건이라 목록 위에 따로 세운다. 종목 이름만 늘어놓지
+ * 않고 테마로 묶는다 — 신호가 한 테마에 몰렸는지가 종목 하나가 신호를 냈다는
+ * 사실보다 값어치 있다.
+ *
+ * 추세가 받쳐 주는 것만 센다. 그러지 않으면 지금 장세에서 621건이 걸려
+ * 아무것도 못 고른다 (lib/score.ts 머리말).
+ */
+function SignalStrip({
+  rows,
+  onOpen,
+  themes,
+}: {
+  rows: DailySignal[];
+  themes: OwnThemeRow[];
+  onOpen: (no: string, name: string) => void;
+}) {
+  const byTheme = useMemo(() => {
+    const m = new Map<string, DailySignal[]>();
+    for (const r of rows) m.set(r.theme, [...(m.get(r.theme) ?? []), r]);
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [rows]);
+  if (!rows.length) return null;
+  const idOf = (name: string) => themes.find((t) => t.name === name)?.id;
+
+  return (
+    <div className="mb-3 rounded-lg border border-up/25 bg-up/5 px-3 py-2.5">
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <span className="text-[11px] font-semibold text-up">오늘의 골든크로스</span>
+        <span className="tnum text-[11px] text-muted">
+          {rows.length}종목 · {byTheme.length}개 테마
+        </span>
+        <span className="ml-auto hidden text-[10px] text-muted sm:inline">
+          60일선 방향과 거래량이 뒷받침하는 것만
+        </span>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {byTheme.slice(0, 5).map(([theme, list]) => {
+          const id = idOf(theme);
+          return (
+            <li key={theme} className="flex items-baseline gap-2 text-[12px]">
+              {id ? (
+                <button
+                  type="button"
+                  onClick={() => onOpen(id, theme)}
+                  className="shrink-0 font-medium hover:text-brand hover:underline"
+                >
+                  {theme}
+                </button>
+              ) : (
+                <span className="shrink-0 font-medium">{theme}</span>
+              )}
+              <span className="tnum shrink-0 text-[10.5px] text-muted">{list.length}</span>
+              <span className="min-w-0 truncate text-[11.5px] text-muted">
+                {list.slice(0, 5).map((r) => r.name).join(", ")}
+                {list.length > 5 && ` 외 ${list.length - 5}`}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {byTheme.length > 5 && (
+        <p className="mt-1 text-[10.5px] text-muted">외 {byTheme.length - 5}개 테마</p>
+      )}
+    </div>
+  );
+}
+
 interface Group {
   name: string;
   themes: OwnThemeRow[];
@@ -80,6 +150,12 @@ export function ThemeBoard({
     "/api/theme-index",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 3_600_000 },
+  );
+  // 오늘의 신호 — 목록과 따로 받는다. 없으면 띠가 안 뜰 뿐이라 화면은 그대로다.
+  const { data: sig } = useSWR<{ data: { golden: DailySignal[]; dead: DailySignal[] } }>(
+    "/api/theme-signals",
+    fetcher,
+    { revalidateOnFocus: false, dedupingInterval: 600_000 },
   );
   const [q, setQ] = useState("");
   const [sort, setSort] = useSticky<Sort>("kr.theme.sort", "chg");
@@ -177,6 +253,10 @@ export function ThemeBoard({
         </div>
       }
     >
+      {!needle && sig?.data?.golden?.length ? (
+        <SignalStrip rows={sig.data.golden} themes={data?.data ?? []} onOpen={onOpen} />
+      ) : null}
+
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2">
         <svg
           width="14"
