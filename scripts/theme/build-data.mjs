@@ -12,13 +12,27 @@ import path from "node:path";
 import { THEMES } from "./dict.mjs";
 import { ourSentences, SELF } from "./classify.mjs";
 import { 사업항목 } from "./biz.mjs";
+import { makeExclusive } from "./exclusive.mjs";
 
 const DIR = ".cache/theme";
 const OUT = "src/data/themes.json";
 const MAX_WHY = 220; // 화면에서 두 줄쯤
 
 const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
-const cls = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
+const raw = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
+
+// 아래층은 배타 분류다 — 한 종목은 한 칸에만 든다. 규칙과 근거는 exclusive.mjs.
+// 견줘 볼 일이 있으면 --overlap 으로 예전(겹침 허용) 데이터를 낼 수 있다.
+const KEEP_OVERLAP = process.argv.includes("--overlap");
+let cls = raw;
+if (!KEEP_OVERLAP) {
+  const sales = JSON.parse(fs.readFileSync(path.join(DIR, "sales.json"), "utf8"));
+  const r = makeExclusive(raw, sales);
+  cls = r.cls;
+  fs.writeFileSync(path.join(DIR, "exclusive-review.json"), JSON.stringify(r.review, null, 1));
+  const before = Object.values(raw).reduce((a, x) => a + x.length, 0);
+  console.log(`배타화 ${before} → ${Object.values(cls).reduce((a, x) => a + x.length, 0)}배치 · 사람이 볼 것 ${r.review.length}건`);
+}
 
 // 재무는 분기에 한 번 바뀐다. 요청 때마다 DART 를 부를 이유가 없어 여기서 싣는다
 // (scripts/theme/collect-fin.mjs 가 모아 둔다).

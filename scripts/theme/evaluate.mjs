@@ -18,6 +18,7 @@
 // 실행
 //   node scripts/theme/evaluate.mjs
 import fs from "node:fs";
+import { makeExclusive } from "./exclusive.mjs";
 import path from "node:path";
 import { THEMES } from "./dict.mjs";
 import { ensureCaps } from "./caps.mjs";
@@ -83,7 +84,11 @@ function cohesion(codes, R) {
 }
 
 export async function evaluate(log = console.log) {
-  const cls = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
+  // 화면에 나가는 것과 같은 것을 재야 한다 — 아래층은 배타 분류다(exclusive.mjs).
+  // 예전에는 classified.json 을 그대로 재서 지주회사를 58종목으로 세고 있었다.
+  const raw = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
+  const sales = JSON.parse(fs.readFileSync(path.join(DIR, "sales.json"), "utf8"));
+  const cls = makeExclusive(raw, sales).cls;
   const named = Object.fromEntries(THEMES.map((t) => [t.id, t.name]));
 
   // 시총을 채우고, 테마마다 시총 상위 TOP_N 을 고른다
