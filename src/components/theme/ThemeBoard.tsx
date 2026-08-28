@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
@@ -61,7 +61,14 @@ interface Group {
   stocks: number;
 }
 
-export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => void }) {
+export function ThemeBoard({
+  focus,
+  onOpen,
+}: {
+  /** 상세에서 돌아왔을 때 펼쳐 둘 테마 — 그 테마가 든 대분류를 연다 */
+  focus?: string;
+  onOpen: (no: string, name: string) => void;
+}) {
   const { data, isLoading, error } = useSWR<{ data: OwnThemeRow[]; stale?: boolean }>(
     "/api/themes",
     fetcher,
@@ -136,6 +143,16 @@ export function ThemeBoard({ onOpen }: { onOpen: (no: string, name: string) => v
     );
     return { groups: gs, shown: kept.length, total: all.length };
   }, [data, needle, sort, filter, byStock]);
+
+  // 상세에서 돌아오면 그 테마가 든 대분류를 펼쳐 둔다. 접힌 목록만 덩그러니
+  // 보이면 어디에 있었는지 알 수가 없다. 펼치기만 하고 접지는 않는다.
+  const focused = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focus || !data?.data || focused.current === focus) return;
+    const g = data.data.find((t) => t.id === focus)?.group;
+    focused.current = focus;
+    if (g && !open.includes(g)) setOpen([...open, g]);
+  }, [focus, data, open, setOpen]);
 
   // 찾는 중에는 걸린 것이 바로 보여야 한다. 접어 두면 못 찾은 것처럼 보인다.
   const expanded = (name: string) => needle.length > 0 || open.includes(name);
