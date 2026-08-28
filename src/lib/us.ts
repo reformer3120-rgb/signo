@@ -11,7 +11,7 @@ import {
   dimScaler,
   finScore,
   gradeOf,
-  maCross,
+  maRead,
   periodReturns,
   totalScore,
   trendScore,
@@ -561,6 +561,11 @@ export interface UsScored {
   y1: number;
   maSignal: MaSignal;
   crossDays: number;
+  // 크로스가 추세의 뒷받침을 받는가. 야후의 dailyCloses 는 종가만 주므로
+  // 미국은 거래량 항 없이 60일선 방향만으로 판정한다.
+  maConfirmed: boolean | null;
+  maWhy: string | null;
+  maGap: number | null;
   trendScore: number;
   trendGrade: string;
   score: number;
@@ -601,7 +606,7 @@ async function usPeerStats(sym: string) {
     opMargin: nOr(fd.operatingMargins) * 100,
     growth: nOr(fd.revenueGrowth) * 100,
     held: nOr(ks.heldPercentInstitutions) * 100,
-    cross: maCross(closes),
+    cross: maRead(closes),
     ...periodReturns(closes),
   };
 }
@@ -683,6 +688,9 @@ export async function usSectorRank(symbol: string): Promise<UsSectorRank> {
       y1: e.y1,
       maSignal: e.cross.signal,
       crossDays: e.cross.days,
+      maConfirmed: e.cross.cross?.confirmed ?? null,
+      maWhy: e.cross.cross?.why ?? null,
+      maGap: e.cross.gap20,
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
       score: totalScore({ 재무, 밸류, 성장, 시총, 모멘텀, 기관, 배당 }),

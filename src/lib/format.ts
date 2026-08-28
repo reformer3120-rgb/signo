@@ -33,10 +33,15 @@ export function gradeColor(g?: string) {
   return "bg-down/15 text-down border-down/30";
 }
 
-/** 이동평균 교차 신호 배지 색 */
+/**
+ * 이평선 배지 색.
+ * 혼조는 중립색이어야 한다 — 예전에는 걸리지 않은 값이 모두 하락색으로 떨어져
+ * 방향이 없는 상태까지 빨갛게 보였다.
+ */
 export function maColor(s?: string) {
   if (s === "골든크로스") return "bg-up/20 text-up border-up/40";
   if (s === "정배열") return "bg-up/10 text-up border-up/25";
   if (s === "데드크로스") return "bg-down/20 text-down border-down/40";
-  return "bg-down/10 text-down border-down/25";
+  if (s === "역배열") return "bg-down/10 text-down border-down/25";
+  return "bg-muted/10 text-muted border-line";
 }

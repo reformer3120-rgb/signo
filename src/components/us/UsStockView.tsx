@@ -344,12 +344,37 @@ function SectorCard({
                       className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
                         r.target.maSignal,
                       )}`}
-                      title="20일선 vs 60일선"
+                      title={
+                        r.target.maConfirmed === null
+                          ? "정배열 5>20>60>120 · 역배열 그 반대 · 어느 쪽도 아니면 혼조"
+                          : `20일선 ↔ 60일선 · ${r.target.maWhy ?? ""}`
+                      }
                     >
                       {r.target.maSignal}
-                      {(r.target.maSignal === "골든크로스" || r.target.maSignal === "데드크로스") &&
+                      {r.target.maConfirmed !== null &&
                         r.target.crossDays >= 0 &&
                         ` ${r.target.crossDays}일`}
+                    </span>
+                  )}
+                  {r.target.maConfirmed !== null && (
+                    <span
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                        r.target.maConfirmed
+                          ? "border-up/40 bg-up/10 text-up"
+                          : "border-line bg-muted/10 text-muted"
+                      }`}
+                      title={r.target.maWhy ?? ""}
+                    >
+                      {r.target.maConfirmed ? "추세 확인" : "추세 미확인"}
+                    </span>
+                  )}
+                  {r.target.maGap !== null && r.target.maGap !== undefined && (
+                    <span
+                      className="tnum text-[10px] text-muted"
+                      title="20일선에서 얼마나 떨어져 있나 (이격도)"
+                    >
+                      20일선 {r.target.maGap > 0 ? "+" : ""}
+                      {r.target.maGap}%
                     </span>
                   )}
                   <span className="ml-auto hidden text-[10px] text-muted sm:inline">

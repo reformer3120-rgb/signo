@@ -4,7 +4,7 @@ import { stockFixed, themesOfStock, ownThemeList } from "@/lib/ownTheme";
 import { stockDetail, baselineUniverse } from "@/lib/naverApi";
 import { daily } from "@/lib/naver";
 import { marketBaseline, scoresFor } from "@/lib/baseline";
-import { maCross, periodReturns } from "@/lib/score";
+import { maRead, periodReturns } from "@/lib/score";
 
 export const revalidate = 0;
 export const maxDuration = 30;
@@ -31,9 +31,12 @@ export async function GET(req: Request) {
         ownThemeList().catch(() => null),
       ]);
 
-      const closes = bars.map((b) => b.close).filter((c) => c > 0);
+      // 거래량을 같이 넘겨야 휩쏘를 거를 수 있다. 종가만 걸러 내면 인덱스가
+      // 어긋나므로 봉 단위로 거른다.
+      const rows = bars.filter((b) => b.close > 0);
+      const closes = rows.map((b) => b.close);
       const r = closes.length > 1 ? periodReturns(closes) : null;
-      const cross = closes.length ? maCross(closes).signal : null;
+      const cross = closes.length ? maRead(closes, rows.map((b) => b.volume)).signal : null;
 
       // 가장 좁은 테마를 대표로 삼는다 — 넓은 테마보다 그 종목을 잘 가리킨다
       const main = themes.length

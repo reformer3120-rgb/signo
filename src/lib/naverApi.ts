@@ -19,7 +19,7 @@ import {
   dimScaler,
   finScore,
   gradeOf,
-  maCross,
+  maRead,
   periodReturns,
   totalScore,
   trendScore,
@@ -500,8 +500,13 @@ export interface ScoredStock {
   m3: number;
   m6: number;
   y1: number;
-  maSignal: MaSignal; // 골든크로스 / 정배열 / 역배열 / 데드크로스
+  maSignal: MaSignal; // 골든/데드크로스 · 정배열 · 역배열 · 혼조
   crossDays: number; // 최근 교차 이후 경과 거래일 (없으면 -1)
+  // 크로스가 추세의 뒷받침을 받는가 (60일선 방향 + 교차 무렵 거래량).
+  // 크로스가 아니면 null. 교차는 후행 지표라 이것 없이는 휩쏘를 못 가린다.
+  maConfirmed: boolean | null;
+  maWhy: string | null; // 확인 판정의 근거 한 줄 (배지 툴팁)
+  maGap: number | null; // 20일선 이격도 % — 정배열이어도 크면 따라 사기 부담
   rank: number; // 비교군 내 순위
   trendScore: number; // 최근 주가흐름 성적 (0~100)
   trendGrade: string; // A+ ~ D
@@ -686,8 +691,11 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
         : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
       // 평가는 '직전 정규장 종가' 기준으로 고정한다.
       // 장중 현재가를 쓰면 같은 종목의 점수가 하루 종일 출렁인다.
-      const all = bars.map((b) => b.close).filter((c) => c > 0);
-      const closes = krSessionNow() === "정규장" ? all.slice(0, -1) : all;
+      // 거래량도 같이 쓴다(휩쏘 거르기). 종가만 걸러 내면 거래량과 인덱스가
+      // 어긋나므로 봉 단위로 거른다.
+      const rows = bars.filter((b) => b.close > 0);
+      const use = krSessionNow() === "정규장" ? rows.slice(0, -1) : rows;
+      const closes = use.map((b) => b.close);
       const sr = periodReturns(closes);
       const ref = closes[closes.length - 1] ?? 0; // 기준 종가
       const cur = dd?.price ?? ref; // 상세가 주는 값(현재가)
@@ -695,7 +703,7 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       // 테마 그룹은 시총/3개월수익률이 비어 있으므로 상세·일봉에서 보완
       const cap = (m.cap || (dd?.marketCap ?? 0) * 1e8) * adj;
       const threeMo = m.threeMo || sr.m3;
-      const cross = maCross(closes);
+      const cross = maRead(closes, use.map((b) => b.volume));
       return {
         ...m,
         cap,
@@ -815,6 +823,9 @@ export async function sectorRank(code: string, groupKey = "industry"): Promise<S
       y1: e.y1,
       maSignal: e.cross.signal,
       crossDays: e.cross.days,
+      maConfirmed: e.cross.cross?.confirmed ?? null,
+      maWhy: e.cross.cross?.why ?? null,
+      maGap: e.cross.gap20,
       rank: 0, // 정렬 후 채움
       trendScore: Math.round(trend[i] * 100),
       trendGrade: gradeOf(trend[i] * 100),
@@ -936,9 +947,10 @@ async function fillOne(code: string) {
         daily(code, 270).catch(() => []),
       ]);
       const fm = finA ? finMetrics(finA) : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
-      const closes = bars.map((b) => b.close).filter((c) => c > 0);
+      const rows = bars.filter((b) => b.close > 0);
+      const closes = rows.map((b) => b.close);
       const r = periodReturns(closes);
-      const cross = maCross(closes);
+      const cross = maRead(closes, rows.map((b) => b.volume));
       const pct01 = (v: number) => Math.min(1, Math.max(0, (v + 30) / 80));
       // 환산 전의 날것도 같이 남긴다 — 화면이 "1개월 +8.2%" 로 적어야 하는데
       // 지표 쪽에는 0~1 로 뭉갠 값만 있다. 조회는 이미 한 것이라 공짜다.

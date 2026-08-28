@@ -129,12 +129,39 @@ export function SectorRankCard({
                       className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${maColor(
                         r.target.maSignal,
                       )}`}
-                      title="20일선 vs 60일선"
+                      title={
+                        r.target.maConfirmed === null
+                          ? "정배열 5>20>60>120 · 역배열 그 반대 · 어느 쪽도 아니면 혼조"
+                          : `20일선 ↔ 60일선 · ${r.target.maWhy ?? ""}`
+                      }
                     >
                       {r.target.maSignal}
-                      {(r.target.maSignal === "골든크로스" || r.target.maSignal === "데드크로스") &&
+                      {r.target.maConfirmed !== null &&
                         r.target.crossDays >= 0 &&
                         ` ${r.target.crossDays}일`}
+                    </span>
+                  )}
+                  {/* 교차는 후행 지표라 횡보장에서 오신호가 잦다. 추세가 받쳐 주는
+                      크로스인지 따로 적어 준다 — 이것 없이는 다 같아 보인다. */}
+                  {r.target.maConfirmed !== null && (
+                    <span
+                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
+                        r.target.maConfirmed
+                          ? "border-up/40 bg-up/10 text-up"
+                          : "border-line bg-muted/10 text-muted"
+                      }`}
+                      title={r.target.maWhy ?? ""}
+                    >
+                      {r.target.maConfirmed ? "추세 확인" : "추세 미확인"}
+                    </span>
+                  )}
+                  {r.target.maGap !== null && (
+                    <span
+                      className="tnum text-[10px] text-muted"
+                      title="20일선에서 얼마나 떨어져 있나 (이격도). 크게 떠 있으면 그 자리에서 따라 사는 것은 다른 이야기다."
+                    >
+                      20일선 {r.target.maGap > 0 ? "+" : ""}
+                      {r.target.maGap}%
                     </span>
                   )}
                   <span className="text-[10px] text-muted ml-auto hidden sm:inline">섹터 내 상대성적</span>
@@ -187,12 +214,18 @@ export function SectorRankCard({
                 >
                   <span className="tnum text-xs text-muted w-6 shrink-0">{s.rank}</span>
                   <span className="font-medium flex-1 truncate min-w-0">{s.name}</span>
+                  {/* 목록에서는 추세가 받쳐 주는 골든크로스만 굵게 세운다.
+                      받쳐 주지 않는 것까지 같은 배지를 달면 고를 수가 없다. */}
                   {s.maSignal === "골든크로스" && (
                     <span
-                      className="rounded border border-up/40 bg-up/20 px-1 text-[10px] font-bold text-up shrink-0"
-                      title={`20일선이 60일선 상향돌파 (${s.crossDays}일 전)`}
+                      className={`rounded border px-1 text-[10px] font-bold shrink-0 ${
+                        s.maConfirmed
+                          ? "border-up/40 bg-up/20 text-up"
+                          : "border-line bg-muted/10 text-muted"
+                      }`}
+                      title={`20일선이 60일선 상향돌파 (${s.crossDays}일 전)${s.maWhy ? ` · ${s.maWhy}` : ""}`}
                     >
-                      골든
+                      {s.maConfirmed ? "골든" : "골든?"}
                     </span>
                   )}
                   {/* 주가흐름은 등급 없이 점수만 — 종합평가 등급과 헷갈리지 않게 */}
