@@ -6,12 +6,31 @@ SIGNO 의 국내 종목 화면(UI + 데이터 배치)을 다른 프로젝트에 
 읽는 순서 — §1 무엇을 복사하나 → §2 데이터 계약 → §3 코스콤 매핑 →
 §4 빈칸 메우기(DART) → §5 라이선스 → §6 환경변수 → §7 작업 순서.
 
+> **먼저 알아 둘 것 — `src/lib/providers/` 는 SIGNO 본체에 연결되어 있지 않다.**
+>
+> SIGNO 의 API 라우트는 지금도 `lib/kis.ts` · `lib/naverApi.ts` 를 직접 부른다.
+> `providers/` 는 **옮겨 심을 쪽에서 쓰라고 미리 뽑아 둔 계약층**이다.
+> SIGNO 에서 `DATA_PROVIDER=koscom` 을 켜도 아무 일도 일어나지 않는다.
+>
+> 옮겨 심는 쪽에서는 라우트가 `provider.quote()` 를 부르도록 바꾸면 된다.
+> 바꿔야 할 라우트는 열둘이다.
+>
+> ```
+> quote  ohlcv  stock-brief  stock-detail  financials  investor
+> investor-frgn  investor-estimate  sector-rank  stock-news  search  grades
+> ```
+>
+> `stock-themes` 는 시세를 안 쓰므로 그대로 둔다.
+
 ---
 
 ## 1. 무엇을 복사하나
 
-종목탭이 실제로 쓰는 파일은 **29개**다. `src/components/stock/StockView.tsx` 에서
+종목탭이 실제로 쓰는 파일은 **40개**다. `src/components/stock/StockView.tsx` 에서
 import 를 따라가면 나오는 전부이며, 이 목록 밖의 파일은 필요 없다.
+
+> 2026-08 에 29개였다. 종목 개요(세 칸 틀)와 테마 칩이 붙으면서 늘었다.
+> 다시 셀 때는 `StockView.tsx` 부터 import 를 따라가면 된다.
 
 ```
 src/components/
@@ -27,9 +46,13 @@ src/components/
     WatchButton.tsx        관심종목 담기
 src/components/sections/
     StockSection.tsx       시세줄 + 차트 카드
+src/components/
+    StockBrief.tsx         종목 개요 — 주요사업 · 평가 · 모멘텀 세 칸  (2026-08 추가)
 src/components/stock/
     StockView.tsx          ★ 진입점 — 카드 배치 순서가 여기 있다
     StockStickyBar.tsx     상단 고정 검색 바
+    StockBriefCard.tsx     종목 개요 카드                              (2026-08 추가)
+    StockThemeChips.tsx    종목명 옆 테마 칩 + 테마 등락률              (2026-08 추가)
     StockDetailCard.tsx    종합평가
     FinancialsCard.tsx     재무제표
     SectorRankCard.tsx     업종 내 순위
@@ -45,6 +68,16 @@ src/lib/
     useSticky.ts           화면 상태 저장 (localStorage)
     useStickyOffset.ts     고정 요소 높이를 CSS 변수로 알림
     watchlist.ts           관심종목
+    baseline.ts            지표 크론이 모아 둔 값 (외국인·이평선·기간수익률)
+    cache.ts               응답 캐시 — 배포와 무관한 값은 { global: true }
+    chartDraw.ts           차트 그리기 보조
+    facts.ts               종목 사실 조각
+    sectorGroup.ts         업종 묶기
+    score.ts               ★ 종합평가 채점 규칙
+    ownTheme.ts            테마 데이터 층                              (2026-08 추가)
+src/data/
+    themes.json            테마 분류 결과 1.5MB                        (2026-08 추가)
+src/lib/
     kis.ts   naverApi.ts   ← 타입만 참조된다. §2 대로 바꿔치울 대상
 ```
 
@@ -52,6 +85,8 @@ src/lib/
 
 ```
 StockStickyBar     검색 + 관심종목            (상단 고정)
+StockThemeChips    종목명 옆 — 이 종목이 든 테마와 그 테마의 등락률
+StockBriefCard     종목 개요 — 주요사업 · 평가 · 모멘텀 세 칸
 StockSection       시세줄(고정) · 차트 · 봉주기 · 지표 · 거래소
 InvestorPanel      투자자 수급 (당일 / 일별 / 추이)
 StockDetailCard    종합평가 — 등급 + 점수 분해
@@ -93,6 +128,14 @@ NewsCard           뉴스
 | `financials` | 재무제표 | `naverApi.financials` |
 | `news` | 뉴스 | `naverApi.stockNews` |
 | `search` | 검색창 | 네이버 통합검색 |
+
+계약에 없지만 화면이 부르는 것이 셋 더 있다 (2026-08 추가).
+
+| 라우트 | 채우는 화면 | 무엇이 필요한가 |
+|---|---|---|
+| `/api/stock-brief` | 종목 개요 세 칸 | quote + detail + DART + themes.json |
+| `/api/stock-themes` | 테마 칩 | themes.json 만 (시세 불필요) |
+| `/api/investor-estimate` | 수급 '당일 실시간' | 코스콤에 없다 — 카드에서 뺀다 |
 
 **빈 값 규칙** — 출처가 못 주는 항목은 `[]` 나 빈 값을 준다. 카드가 스스로 숨는다.
 **없는 값을 0 으로 채우지 말 것.** 0 은 화면에 "0" 으로 표시되어, 데이터가 없는
@@ -156,6 +199,46 @@ OAuth2       POST /auth/oauth/v3/token
 ```
 
 배당수익률은 **주는 쪽**이다 (`master.divYd`).
+
+### 나중에 붙은 두 카드 — 테마 칩과 종목 개요
+
+2026-08 에 붙었고 위 표에 없다. 출처가 다르므로 따로 적는다.
+
+**테마 칩** (`StockThemeChips` · `/api/stock-themes`)
+
+코스콤과 무관하다. 테마 분류는 SIGNO 가 DART 사업보고서로 직접 만든 것이고,
+결과가 `src/data/themes.json` 에 통째로 들어 있다. 파일만 옮기면 그대로 돈다.
+테마 등락률만 시세가 필요한데, 그것은 구성종목 등락률의 평균이므로 `quote`
+계약으로 충분하다.
+
+  · 만드는 법과 파이프라인은 `docs/테마탭-인계.md` 를 볼 것
+  · 분류를 다시 돌릴 생각이 없다면 `themes.json` 한 파일만 가져가면 된다
+
+**종목 개요** (`StockBrief` · `/api/stock-brief`) — 세 칸이다.
+
+```
+주요사업  인쇄용지 · 산업용지 · 특수지    제지·펄프 18종목  시총 1,780억
+평가      SIGNO 62점 · 매출 +3.4% · 이익률 2.2% · PER 8.1 · 증권가목표 +46.7%
+모멘텀    1개월 +12.3% · 골든크로스 · 외국인 5.6% · 테마대비 +0.9%p
+```
+
+| 칸 | 무엇으로 채우나 | 코스콤 |
+|---|---|---|
+| 주요사업 | `themes.json` 의 `biz` — 편입 사유 문장에서 품목만 뽑아 둔 것 | 필요 없음 |
+| 평가 · PER | `master.per` | ✓ |
+| 평가 · 매출성장 · 이익률 | DART | ✗ → DART |
+| 평가 · 증권가목표 | 컨센서스 — 무료 출처가 없다 | ✗ 빼는 편이 낫다 |
+| 모멘텀 · 1개월 수익률 · 이평선 | 일봉에서 계산 (`history`) | ✓ |
+| 모멘텀 · 외국인 | `foreignhistory` | ✓ |
+| 모멘텀 · 테마대비 | 오늘 등락 − 테마 등락 | ✓ (quote 로 충분) |
+
+빈 칸은 "—" 로 채우지 말고 줄째로 지운다. 빈 칸이 늘어선 화면은 고장난 것처럼
+보인다. `StockBrief.tsx` 가 이미 그렇게 되어 있다.
+
+**이평선 판정** (`score.ts` 의 `maRead`) 은 2026-08 에 한 번 바로잡았다.
+20일선과 60일선 둘만 보고 정배열이라 적던 것을 고쳤고, 크로스는 휩쏘를 걸러
+확인된 것만 센다. 주가흐름 10점 안에서 기간수익률 75% · 이평선 25% 로 들어간다.
+일봉만 있으면 계산되므로 코스콤으로 그대로 된다.
 
 ### 종합평가 점수는 어디까지 채워지나
 
@@ -246,13 +329,14 @@ DART_API_KEY=                 # https://opendart.fss.or.kr 무료 발급
 ## 7. 작업 순서
 
 ```
-1  파일 29개 + globals.css @theme + 글꼴 설정 복사
+1  파일 40개 + src/data/themes.json + globals.css @theme + 글꼴 설정 복사
 2  KOSCOM_API_BASE / KOSCOM_API_KEY 를 넣고 quote · candles · detail 확인
    → 차트 카드가 뜨면 절반은 된 것
 3  DART_API_KEY 를 넣고 FinancialsCard 확인
    corpCode.xml 이 ZIP 이라 첫 호출이 몇 초 걸린다 (7일 캐시)
 4  sectorRank 구현 — 아래 주의사항 참고
-5  못 주는 것(뉴스·분봉·장중수급)은 빈 값으로 두어 카드가 스스로 숨게 한다
+5  라우트 열둘이 provider 를 부르도록 바꾼다 (머리말 참고)
+6  못 주는 것(뉴스·분봉·장중수급)은 빈 값으로 두어 카드가 스스로 숨게 한다
 ```
 
 ### sectorRank 를 만들 때
