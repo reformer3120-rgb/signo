@@ -77,11 +77,18 @@ function StockCard({
         </div>
       </div>
 
+      {/* 사업설명 — 편입 사유 문장. 낱말 칩만으로는 무슨 회사인지 덜 잡힌다.
+          문장이 없는 종목이 있어(사업보고서에서 쓸 만한 줄을 못 뽑은 경우)
+          그때는 아래 StockBrief 의 낱말 칩이 그 자리를 맡는다. */}
+      {s.why && (
+        <p className="mt-2 text-[12px] leading-relaxed text-muted">{s.why}</p>
+      )}
+
       <div className="mt-2">
         <StockBrief
           dense
           d={{
-            biz: s.biz ?? [],
+            biz: s.why ? [] : (s.biz ?? []),
             chg: s.chg,
             themeChg,
             cap: s.cap,
@@ -96,6 +103,7 @@ function StockCard({
             cross: s.cross,
             gap20: s.gap20,
             foreign: s.foreign,
+            bias: s.bias,
           }}
         />
       </div>

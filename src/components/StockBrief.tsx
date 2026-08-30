@@ -41,6 +41,8 @@ export interface BriefData {
   /** 20일선 이격도 % */
   gap20?: number | null;
   foreign: number | null;
+  /** 최근 5거래일 매수 우위 주체 — 지표 크론이 훑은 종목만 */
+  bias?: "개인" | "외국인" | "기관" | "-" | null;
 }
 
 /** 억원 단위로 들어온 시가총액을 조/억으로 */
@@ -51,7 +53,11 @@ function cap(n: number | null): string | null {
 
 /** 라벨 한 줄. 값이 하나도 없으면 줄째로 사라진다. */
 function Row({ k, children }: { k: string; children: React.ReactNode }) {
-  const has = Array.isArray(children) ? children.some(Boolean) : Boolean(children);
+  // 빈 배열은 참이다(Boolean([]) === true). 낱말이 하나도 없을 때 map 이
+  // 빈 배열을 내놓으므로, 그것까지 비어 있는 것으로 봐야 라벨만 남지 않는다.
+  const 찼나 = (c: React.ReactNode): boolean =>
+    Array.isArray(c) ? c.some(찼나) : Boolean(c);
+  const has = 찼나(children);
   if (!has) return null;
   return (
     <div className="flex gap-2">
@@ -83,6 +89,9 @@ const crossTone = (c: string) =>
 
 export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean }) {
   const 사업 = d.biz.slice(0, dense ? 3 : 4);
+  // 주요사업 줄이 성립하려면 낱말이나 테마 이름이 있어야 한다. 둘 다 없으면
+  // 시총만 남아 라벨이 내용과 어긋나므로, 시총을 평가 줄로 옮긴다.
+  const 머리에시총 = 사업.length > 0 || Boolean(d.themeName);
   const 대비 =
     d.chg !== null && d.chg !== undefined && d.themeChg !== null && d.themeChg !== undefined
       ? d.chg - d.themeChg
@@ -92,6 +101,7 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
   return (
     <div className={`flex flex-col ${dense ? "gap-1" : "gap-1.5"}`}>
       <Row k="주요사업">
+        {/* 낱말이나 테마 이름이 있어야 이 줄이 성립한다 — 낱말이나 테마 이름이 있어야 이 줄이 성립한다 */}
         {사업.map((b) => (
           <span
             key={b}
@@ -106,10 +116,14 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
             {d.themeCount ? ` ${d.themeCount}종목` : ""}
           </span>
         )}
-        {cap(d.cap) && <V k="시총" v={cap(d.cap) as string} />}
+        {머리에시총 && cap(d.cap) && <V k="시총" v={cap(d.cap) as string} />}
       </Row>
 
       <Row k="평가">
+        {/* 주요사업 낱말이 없으면 그 줄이 "주요사업 · 시총 2.13조" 만 남아
+            라벨이 내용과 어긋난다. 그럴 때는 시총을 이 줄 앞으로 옮긴다.
+            (테마 화면은 카드 위에 사업설명 문장이 따로 있어 낱말을 안 쓴다) */}
+        {!머리에시총 && cap(d.cap) && <V k="시총" v={cap(d.cap) as string} />}
         {d.score !== null && <V k="SIGNO" v={`${d.score}점`} />}
         {d.growth !== null && <V k={`매출${실적해}`} v={pct(d.growth)} tone={d.growth} />}
         {d.opm !== null && <V k="이익률" v={pct(d.opm)} tone={d.opm} />}
@@ -131,6 +145,9 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
           <V k="20일선" v={`${d.gap20 > 0 ? "+" : ""}${d.gap20}%`} tone={null} />
         )}
         {d.foreign !== null && <V k="외국인" v={`${d.foreign.toFixed(1)}%`} />}
+        {/* 최근 5거래일 누가 사고 있나. "-" 는 셋 다 순매도라 우위가 없다는 뜻이라
+            적지 않는다 — 없는 것과 구분이 안 되지만 화면에 쓸 말도 아니다. */}
+        {d.bias && d.bias !== "-" && <V v={`${d.bias} 매수우위`} />}
         {/* 테마 수익률 자체는 뺐다 — 테마 화면 머리와 종목 화면 테마 칩에 이미 있다.
             남긴 것은 그 테마를 끌고 있나 못 따라가고 있나 하나뿐이고,
             이건 지표 크론과 무관하게 늘 나온다. */}

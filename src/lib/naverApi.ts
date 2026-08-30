@@ -941,10 +941,13 @@ async function fillBaseline(perCall = 6) {
 async function fillOne(code: string) {
   {
     try {
-      const [dd, finA, bars] = await Promise.all([
+      // 수급도 같이 받는다. 테마 화면이 종목마다 부르면 74종목짜리 테마에서
+      // 수십 번을 두드리게 되므로, 이평선·외국인비중과 같은 자리에 모아 둔다.
+      const [dd, finA, bars, bi] = await Promise.all([
         stockDetail(code).catch(() => null),
         financials(code, "annual").catch(() => null),
         daily(code, 270).catch(() => []),
+        investorBias(code, 5).catch(() => null),
       ]);
       const fm = finA ? finMetrics(finA) : { roe: NaN, debt: NaN, opMargin: NaN, growth: NaN };
       const rows = bars.filter((b) => b.close > 0);
@@ -963,6 +966,7 @@ async function fillOne(code: string) {
         crossDays: cross.days,
         gap20: cross.gap20,
         foreign: Number.isFinite(numSuffix(dd?.foreignRate)) ? numSuffix(dd?.foreignRate) : null,
+        bias: bi?.leader ?? null,
         target: dd?.priceTarget && dd.priceTarget > 0 ? dd.priceTarget : null,
         upside: dd?.priceTarget && dd.priceTarget > 0 ? dd.upside : null,
         recomm: dd?.recommMean && dd.recommMean > 0 ? dd.recommMean : null,

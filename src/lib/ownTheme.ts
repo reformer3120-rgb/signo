@@ -217,6 +217,8 @@ export interface OwnThemeStock {
   name: string;
   /** 주력 제품·서비스 */
   biz: string[];
+  /** 편입 사유 — 그 종목 사업보고서에서 뽑은 문장 (없는 종목이 있다) */
+  why: string | null;
   price: number | null;
   chg: number | null;
   /** 억원 */
@@ -240,6 +242,8 @@ export interface OwnThemeStock {
   /** 20일선 이격도 % */
   gap20: number | null;
   foreign: number | null;
+  /** 최근 5거래일 매수 우위 주체 — 크론이 훑은 종목만 */
+  bias: "개인" | "외국인" | "기관" | "-" | null;
 }
 
 export interface OwnThemeDetail {
@@ -315,6 +319,7 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
       code: s.code,
       name: s.name,
       biz: s.biz ?? [],
+      why: s.why ?? null,
       // 점수는 라우트에서 얹는다 — 여기서 부르면 naverApi 와 서로 물린다
       score: null,
       target: f?.target ?? null,
@@ -326,6 +331,7 @@ async function buildDetail(id: string): Promise<OwnThemeDetail> {
       crossOk: f?.crossOk ?? null,
       gap20: f?.gap20 ?? null,
       foreign: f?.foreign ?? null,
+      bias: f?.bias ?? null,
       price,
       chg: q[s.code]?.chg ?? null,
       // 억원 단위로 맞춘다 (화면이 그 단위를 쓴다)

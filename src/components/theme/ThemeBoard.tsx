@@ -139,7 +139,11 @@ export function ThemeBoard({
   focus?: string;
   onOpen: (no: string, name: string) => void;
 }) {
-  const { data, isLoading, error } = useSWR<{ data: OwnThemeRow[]; stale?: boolean }>(
+  const { data, isLoading, error } = useSWR<{
+    data: OwnThemeRow[];
+    stale?: boolean;
+    meta?: { 만든날?: string };
+  }>(
     "/api/themes",
     fetcher,
     { revalidateOnFocus: false, dedupingInterval: 120_000 },
@@ -253,6 +257,15 @@ export function ThemeBoard({
         </div>
       }
     >
+      {/* 규칙을 머리에 둔다. 아래 각주에 있을 때는 아무도 읽지 않았는데,
+          "한 종목은 한 테마에만" 은 이 화면을 처음 보는 사람이 가장 먼저
+          알아야 하는 것이다. 기준일도 같이 적는다 — 분류는 분기에 한 번
+          바뀌므로 언제 자료인지 밝혀야 한다. */}
+      <p className="mb-2 text-[11px] leading-relaxed text-muted">
+        사업보고서를 읽어 만든 분류다. <b className="font-medium text-fg">한 종목은 한 테마에만</b> 들어간다.
+        {data?.meta?.만든날 && <span className="tnum"> · {data.meta.만든날} 기준</span>}
+      </p>
+
       {!needle && sig?.data?.golden?.length ? (
         <SignalStrip rows={sig.data.golden} themes={data?.data ?? []} onOpen={onOpen} />
       ) : null}
@@ -343,8 +356,16 @@ export function ThemeBoard({
                           onClick={() => onOpen(t.id, t.name)}
                           className="flex w-full items-center gap-2.5 px-3 py-2 pl-8 text-left transition-colors hover:bg-canvas"
                         >
-                          <span className="min-w-0 truncate text-[12.5px]">
+                          <span className="min-w-0 text-[12.5px]">
                             <Mark text={t.name} q={needle} />
+                            {/* 이름만으로 애매한 테마가 있다 — 무엇을 묶었는지 한 줄.
+                                줄을 새로 만들지 않고 이름 뒤에 작게 붙여 목록을
+                                훑는 속도를 지킨다. */}
+                            {t.hint && !needle && (
+                              <span className="ml-1.5 hidden text-[11px] font-normal text-muted md:inline">
+                                {t.hint}
+                              </span>
+                            )}
                             {/* 종목명으로 찾았을 때, 무엇이 걸렸는지 보여 준다 */}
                             {byStock.has(t.id) && (
                               <span className="ml-1.5 text-[11px] text-brand">
@@ -355,8 +376,19 @@ export function ThemeBoard({
                           </span>
                           <span className="tnum shrink-0 text-[10.5px] text-muted">{t.count}</span>
                           <span className="ml-auto flex shrink-0 items-center gap-2">
-                            <span className="hidden max-w-[9rem] truncate text-[11px] text-muted sm:block">
-                              {t.leaders.map((l) => l.name).join(", ")}
+                            {/* 대장주는 등락률까지 적는다 — 테마는 올랐는데 한 종목이
+                                혼자 끌었나를 펼치지 않고도 본다. 셋을 넘기면 줄이
+                                길어져 훑기 어렵다. */}
+                            <span className="hidden max-w-[16rem] truncate text-[11px] text-muted sm:block">
+                              {t.leaders.slice(0, 3).map((l, i) => (
+                                <span key={l.code}>
+                                  {i > 0 && " · "}
+                                  {l.name}
+                                  <span className={`tnum ml-0.5 ${signColor(l.chg ?? 0)}`}>
+                                    {l.chg === null ? "" : pct(l.chg)}
+                                  </span>
+                                </span>
+                              ))}
                             </span>
                             <UpDown up={t.up} down={t.down} w={40} />
                             <span
@@ -377,9 +409,8 @@ export function ThemeBoard({
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-muted">
-        테마 분류와 편입 사유는{" "}
-        <b className="font-medium text-fg">SIGNO 가 DART 사업보고서로 직접 만든 것</b>이다.
-        등락률은 편입 종목의 단순 평균이고, 막대는 상승 대 하락 비율이다.
+        테마 분류와 편입 사유는 SIGNO 가 직접 만든 것이다. 등락률은 편입 종목의
+        단순 평균이고, 막대는 상승 대 하락 비율이다.
         {data?.stale && <span className="text-signal"> · 장 시작 전이라 직전 거래일 기준</span>}
       </p>
     </Card>
