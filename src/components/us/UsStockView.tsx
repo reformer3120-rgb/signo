@@ -12,7 +12,7 @@ import { CandleChart, type Indicators } from "@/components/CandleChart";
 import { IndicatorBar } from "@/components/IndicatorBar";
 import { MaLegend } from "@/components/MaLegend";
 import { maColor, num, pct, signColor } from "@/lib/format";
-import { scoreGrade, scoreGradeTone } from "@/lib/score";
+import { scoreGrade, scoreGradeTone, WEIGHT_NOTE } from "@/lib/score";
 import type { Candle } from "@/lib/types";
 import { useCur, CurrencyToggle, StockName, ExtQuote } from "@/components/us/UsCurrency";
 import { koName } from "@/lib/usKo";
@@ -356,18 +356,9 @@ function SectorCard({
                         ` ${r.target.crossDays}일`}
                     </span>
                   )}
-                  {r.target.maConfirmed !== null && (
-                    <span
-                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
-                        r.target.maConfirmed
-                          ? "border-up/40 bg-up/10 text-up"
-                          : "border-line bg-muted/10 text-muted"
-                      }`}
-                      title={r.target.maWhy ?? ""}
-                    >
-                      {r.target.maConfirmed ? "추세 확인" : "추세 미확인"}
-                    </span>
-                  )}
+                  {/* "추세 확인" 배지가 여기 있었다. 이제 확인된 교차만 크로스로
+                      내보내므로 늘 켜져 있는 배지가 되어 걷어냈다. 무엇을 보고
+                      확인했는지(maWhy)는 위 배지 툴팁에 그대로 들어 있다. */}
                   {r.target.maGap !== null && r.target.maGap !== undefined && (
                     <span
                       className="tnum text-[10px] text-muted"
@@ -450,8 +441,7 @@ function SectorCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] leading-relaxed text-muted">
-            점수 = 재무건전성(ROE·부채·이익률) 28 + 밸류(PER·PBR·EPS) 22 + 성장성 15 +
-            기관보유비중 12 + 시가총액 10 + 주가흐름(기간수익률·골든크로스) 10 + 배당 3
+            점수 = {WEIGHT_NOTE.replace("%HOLDER%", "기관보유비중")}
             (섹터 내 상대평가, 100점) · 한국 증시와 동일 기준
           </div>
         </>

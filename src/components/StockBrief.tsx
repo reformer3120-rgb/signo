@@ -38,7 +38,6 @@ export interface BriefData {
   ret1m: number | null;
   cross: string | null;
   /** 크로스가 추세의 뒷받침을 받는가 — 아니면 값 뒤에 ? 를 붙인다 */
-  crossOk?: boolean | null;
   /** 20일선 이격도 % */
   gap20?: number | null;
   foreign: number | null;
@@ -123,12 +122,9 @@ export function StockBrief({ d, dense = false }: { d: BriefData; dense?: boolean
 
       <Row k="모멘텀">
         {d.ret1m !== null && <V k="1개월" v={pct(d.ret1m)} tone={d.ret1m} />}
-        {d.cross && d.cross !== "-" && (
-          <V
-            v={d.cross + (d.crossOk === false ? "?" : "")}
-            tone={d.crossOk === false ? 0 : crossTone(d.cross)}
-          />
-        )}
+        {/* 확인되지 않은 교차는 maRead 가 애초에 크로스로 내보내지 않는다.
+            여기 오는 것은 배열 상태이거나 근거가 받쳐 주는 크로스뿐이다. */}
+        {d.cross && d.cross !== "-" && <V v={d.cross} tone={crossTone(d.cross)} />}
         {/* 이격도 — 정배열이어도 20일선에서 크게 떠 있으면 따라 사는 것은 다른 얘기다.
             5% 안쪽은 굳이 적지 않는다. 늘 붙어 있어 눈에 걸리기만 한다. */}
         {d.gap20 !== null && d.gap20 !== undefined && Math.abs(d.gap20) >= 5 && (

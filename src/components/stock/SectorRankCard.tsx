@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { maColor, signColor } from "@/lib/format";
-import { scoreGrade, scoreGradeTone } from "@/lib/score";
+import { scoreGrade, scoreGradeTone, WEIGHT_NOTE } from "@/lib/score";
 import type { SectorRank } from "@/lib/naverApi";
 
 function scoreColor(s: number) {
@@ -141,20 +141,9 @@ export function SectorRankCard({
                         ` ${r.target.crossDays}일`}
                     </span>
                   )}
-                  {/* 교차는 후행 지표라 횡보장에서 오신호가 잦다. 추세가 받쳐 주는
-                      크로스인지 따로 적어 준다 — 이것 없이는 다 같아 보인다. */}
-                  {r.target.maConfirmed !== null && (
-                    <span
-                      className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${
-                        r.target.maConfirmed
-                          ? "border-up/40 bg-up/10 text-up"
-                          : "border-line bg-muted/10 text-muted"
-                      }`}
-                      title={r.target.maWhy ?? ""}
-                    >
-                      {r.target.maConfirmed ? "추세 확인" : "추세 미확인"}
-                    </span>
-                  )}
+                  {/* "추세 확인" 배지가 여기 있었다. 이제 확인된 교차만 크로스로
+                      내보내므로 늘 켜져 있는 배지가 되어 걷어냈다. 무엇을 보고
+                      확인했는지(maWhy)는 위 배지 툴팁에 그대로 들어 있다. */}
                   {r.target.maGap !== null && (
                     <span
                       className="tnum text-[10px] text-muted"
@@ -214,18 +203,14 @@ export function SectorRankCard({
                 >
                   <span className="tnum text-xs text-muted w-6 shrink-0">{s.rank}</span>
                   <span className="font-medium flex-1 truncate min-w-0">{s.name}</span>
-                  {/* 목록에서는 추세가 받쳐 주는 골든크로스만 굵게 세운다.
-                      받쳐 주지 않는 것까지 같은 배지를 달면 고를 수가 없다. */}
+                  {/* 여기 오는 골든크로스는 이미 추세가 받쳐 주는 것뿐이다.
+                      maRead 가 확인 안 된 교차를 크로스로 내보내지 않는다. */}
                   {s.maSignal === "골든크로스" && (
                     <span
-                      className={`rounded border px-1 text-[10px] font-bold shrink-0 ${
-                        s.maConfirmed
-                          ? "border-up/40 bg-up/20 text-up"
-                          : "border-line bg-muted/10 text-muted"
-                      }`}
+                      className="rounded border border-up/40 bg-up/20 px-1 text-[10px] font-bold text-up shrink-0"
                       title={`20일선이 60일선 상향돌파 (${s.crossDays}일 전)${s.maWhy ? ` · ${s.maWhy}` : ""}`}
                     >
-                      {s.maConfirmed ? "골든" : "골든?"}
+                      골든
                     </span>
                   )}
                   {/* 주가흐름은 등급 없이 점수만 — 종합평가 등급과 헷갈리지 않게 */}
@@ -255,8 +240,7 @@ export function SectorRankCard({
             })}
           </ol>
           <div className="mt-2 text-[11px] text-muted leading-relaxed">
-            점수 = 재무건전성(ROE·부채·이익률) 28 + 밸류(PER·PBR·EPS) 22 + 성장성 15 +
-            외국인보유비중 12 + 시가총액 10 + 주가흐름(기간수익률·골든크로스) 10 + 배당 3
+            점수 = {WEIGHT_NOTE.replace("%HOLDER%", "외국인보유비중")}
             <br />
             점수는 <b>시장 전체(시총 상위 100종목) 분포 기준</b>이라 비교군을 바꿔도
             변하지 않습니다. 비교군은 누구와 견줄지(순위)를 정할 뿐입니다.

@@ -33,6 +33,8 @@ type Screen = "all" | "align" | "golden";
 const match: Record<Screen, (s: OwnThemeStock) => boolean> = {
   all: () => true,
   align: (s) => s.align === "정배열",
+  // crossOk 검사는 이제 늘 참이다(maRead 가 미확인 교차를 안 내보낸다).
+  // 예열 전 옛 캐시가 남아 있을 수 있어 그대로 둔다.
   golden: (s) => s.cross === "골든크로스" && s.crossOk === true,
 };
 
@@ -92,7 +94,6 @@ function StockCard({
             recomm: s.recomm,
             ret1m: s.ret1m,
             cross: s.cross,
-            crossOk: s.crossOk,
             gap20: s.gap20,
             foreign: s.foreign,
           }}
