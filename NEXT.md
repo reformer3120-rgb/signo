@@ -135,8 +135,9 @@ PDF               SIGNO-전종목-테마작업지.pdf (287쪽) · SIGNO-테마�
    케이비아이동국실업은 자동차부품사인데 아직 건설·건축에 있다(사업보고서에
    토목시설물 부문이 매출 24억으로 적혀 있다). 작업지에서 손대는 편이 맞다.
 
-6. **윗층(이야기 테마)** — 실험은 끝났고 붙이는 일만 남았다.
-   `scripts/research/theme-upper-board.mjs` · `theme-upper-backtest.mjs`
+6. **윗층(이야기 테마)** — 붙였다(2026-08-31). 테마 화면 맨 위의 "지금 움직이는
+   테마" 가 그것이다. 남은 것은 갱신을 자동으로 돌리는 일 — 지금은 손으로
+   `theme-upper-board.mjs` → `build-upper.mjs` 를 주 1회 돌려야 한다.
    자세한 내용은 아래 "윗층" 절.
 
 ## 윗층 — 재 봤고, 될 물건이다 (2026-08-28)
@@ -237,6 +238,10 @@ build-data.mjs    화면용 데이터            → src/data/themes.json
 evaluate.mjs      응집도 재기              → report-doc.txt  ← 배타화한 것을 잰다
 separation.mjs    테마끼리 갈라지는가        → report-separation.txt  ← 따로 돌려도 된다
                                             (일봉은 bars.json 에 그날치를 남긴다)
+
+윗층(이야기 테마) — 주 1회
+theme-upper-board.mjs  잔차상관 × 상대거래대금으로 판을 만든다 → upper/board.json
+build-upper.mjs        화면용으로 굳힌다              → src/data/upper.json
 
 PDF 2종 (반드시 evaluate 를 먼저 돌린다 — 기준서가 응집도를 거기서 긁어 간다)
 doc-data.mjs → make-pdf.py       기준서    SIGNO-테마분류기준.pdf

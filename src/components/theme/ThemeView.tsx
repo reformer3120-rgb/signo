@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ThemeBoard } from "./ThemeBoard";
 import { ThemeDetailView } from "./ThemeDetailView";
+import { UpperBoard } from "./UpperBoard";
+import { UpperDetailView } from "./UpperDetailView";
 
 /**
  * 테마 화면. 보드에서 고르면 상세로 바뀐다.
@@ -32,6 +34,9 @@ export function ThemeView({ initialNo }: { initialNo?: string }) {
   // 우리가 쌓은 히스토리 칸 수. 공유 링크로 바로 들어온 사람은 0 이라
   // 뒤로가기를 부르면 사이트 밖으로 나가 버린다. 그때는 주소만 갈아치운다.
   const depth = useRef(0);
+  // 윗층은 아래층과 판정 근거가 달라 상세도 따로 연다. 주소에 남기지 않는 것은
+  // 주 1회 갈리는 회전 목록이라 링크가 며칠이면 가리키는 것이 달라지기 때문이다.
+  const [upper, setUpper] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     const onPop = () => {
@@ -55,11 +60,18 @@ export function ThemeView({ initialNo }: { initialNo?: string }) {
     setOpen(null);
   }, []);
 
+  if (upper) {
+    return (
+      <UpperDetailView id={upper.id} fallbackName={upper.name} onBack={() => setUpper(null)} />
+    );
+  }
   if (open) {
     return <ThemeDetailView no={open.no} fallbackName={open.name} onBack={back} />;
   }
   return (
-    <ThemeBoard
+    <>
+      <UpperBoard onOpen={(id, name) => setUpper({ id, name })} />
+      <ThemeBoard
       focus={focus}
       onOpen={(no, name) => {
         setOpen({ no, name });
@@ -67,6 +79,7 @@ export function ThemeView({ initialNo }: { initialNo?: string }) {
         window.history.pushState(null, "", `/theme?no=${no}`);
         depth.current += 1;
       }}
-    />
+      />
+    </>
   );
 }

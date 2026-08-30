@@ -258,6 +258,9 @@ async function main() {
     board: board.map((r) => ({
       src: r.src, name: r.name, n: r.n, w: +r.w.toFixed(3), su: +r.su.toFixed(2), score: +r.score.toFixed(3),
       top: r.top.map((c) => ({ code: c, name: names.get(c) })),
+      // 화면이 구성종목을 다 그려야 하므로 전부 남긴다. 위의 top 은 재는 데
+      // 쓴 시총 상위 12종목이라 그것만으로는 목록을 못 만든다.
+      codes: [...r.set],
     })),
   });
 
