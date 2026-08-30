@@ -33,6 +33,12 @@ import { krSessionNow } from "@/lib/session";
 interface RawUpper {
   id: string;
   name: string;
+  /** 지금 판에 올라 있나 — false 면 쉬는 중이다 */
+  active: boolean;
+  /** 마지막으로 판에 오른 날 */
+  lastSeen: string;
+  /** 판에 오른 횟수 */
+  seen: number;
   src: string;
   w: number;
   su: number;
@@ -54,6 +60,9 @@ const LIMIT = 30.5;
 export interface UpperRow {
   id: string;
   name: string;
+  active: boolean;
+  lastSeen: string;
+  seen: number;
   src: string;
   /** 잔차 상관 — 시장 몫을 걷어낸 뒤 저희끼리 얼마나 같이 움직이나 */
   w: number;
@@ -120,6 +129,9 @@ export async function upperList(): Promise<UpperRow[]> {
     return {
       id: t.id,
       name: t.name,
+      active: t.active ?? true,
+      lastSeen: t.lastSeen ?? "",
+      seen: t.seen ?? 1,
       src: t.src,
       w: t.w,
       su: t.su,
@@ -154,6 +166,9 @@ export async function upperDetail(id: string): Promise<UpperDetail> {
   return {
     id: t.id,
     name: t.name,
+    active: t.active ?? true,
+    lastSeen: t.lastSeen ?? "",
+    seen: t.seen ?? 1,
     src: t.src,
     w: t.w,
     su: t.su,
@@ -166,7 +181,15 @@ export async function upperDetail(id: string): Promise<UpperDetail> {
   };
 }
 
-/** 이 종목이 든 윗층 테마 — 종목 화면 칩에 쓴다 (중복을 허용하므로 여럿일 수 있다) */
-export function upperOfStock(code: string): { id: string; name: string }[] {
-  return DATA.themes.filter((t) => t.codes.includes(code)).map((t) => ({ id: t.id, name: t.name }));
+/**
+ * 이 종목이 든 윗층 테마 — 종목 화면 칩에 쓴다 (중복을 허용하므로 여럿일 수 있다).
+ *
+ * 쉬는 테마도 돌려준다. "이 종목이 지역화폐였다" 는 사실은 그 테마가 식어도
+ * 그대로다 — 테마는 죽었다 살아나고, 돌아왔을 때 처음부터 다시 찾을 이유가 없다.
+ * 지금 판에 있는지는 active 로 가른다.
+ */
+export function upperOfStock(code: string): { id: string; name: string; active: boolean }[] {
+  return DATA.themes
+    .filter((t) => t.codes.includes(code))
+    .map((t) => ({ id: t.id, name: t.name, active: t.active ?? true }));
 }

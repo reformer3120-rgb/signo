@@ -19,6 +19,7 @@ import type { UpperRow } from "@/lib/upperTheme";
 export function UpperBoard({ onOpen }: { onOpen: (id: string, name: string) => void }) {
   const [open, setOpen] = useSticky<boolean>("kr.theme.upperOpen", true);
   const [all, setAll] = useState(false);
+  const [rest, setRest] = useState(false);
   const { data } = useSWR<{ data: UpperRow[]; meta?: { 만든날?: string } }>(
     "/api/upper",
     fetcher,
@@ -26,7 +27,12 @@ export function UpperBoard({ onOpen }: { onOpen: (id: string, name: string) => v
   );
   const rows = data?.data ?? [];
   if (!rows.length) return null;
-  const 보일것 = all ? rows : rows.slice(0, 8);
+  // 판은 지금 돈이 들어온 것만. 쉬는 것은 아래에 따로 접어 둔다 —
+  // 테마는 죽었다 살아나므로 명단을 버리지 않지만, 판에 섞으면
+  // "지금 움직이는 테마" 라는 이름이 거짓이 된다.
+  const 판 = rows.filter((t) => t.active);
+  const 쉬는것 = rows.filter((t) => !t.active);
+  const 보일것 = all ? 판 : 판.slice(0, 8);
 
   return (
     <div className="mb-3 rounded-lg border border-line bg-canvas">
@@ -37,7 +43,7 @@ export function UpperBoard({ onOpen }: { onOpen: (id: string, name: string) => v
       >
         <span className="text-[11px] text-muted">{open ? "▼" : "▶"}</span>
         <span className="text-[13px] font-medium">지금 움직이는 테마</span>
-        <span className="tnum text-[11px] text-muted">{rows.length}</span>
+        <span className="tnum text-[11px] text-muted">{판.length}</span>
         {data?.meta?.만든날 && (
           <span className="tnum ml-auto text-[10.5px] text-muted">{data.meta.만든날} 기준</span>
         )}
@@ -80,20 +86,52 @@ export function UpperBoard({ onOpen }: { onOpen: (id: string, name: string) => v
             ))}
           </ul>
 
-          {rows.length > 8 && (
+          {판.length > 8 && (
             <button
               type="button"
               onClick={() => setAll(!all)}
               className="w-full border-t border-line py-1.5 text-[11px] text-muted hover:text-fg"
             >
-              {all ? "접기" : `더보기 (+${rows.length - 8})`}
+              {all ? "접기" : `더보기 (+${판.length - 8})`}
             </button>
+          )}
+
+          {/* 쉬는 테마 — 명단은 그대로 두고 판에서만 내린 것들이다.
+              돌아오면 다시 위로 올라온다. */}
+          {쉬는것.length > 0 && (
+            <div className="border-t border-line px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setRest(!rest)}
+                className="text-[11px] text-muted hover:text-fg"
+              >
+                {rest ? "▼" : "▶"} 쉬는 테마 {쉬는것.length}
+              </button>
+              {rest && (
+                <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                  {쉬는것.map((t) => (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        onClick={() => onOpen(t.id, t.name)}
+                        className="rounded border border-line px-1.5 py-0.5 text-[11px] text-muted hover:text-fg"
+                        title={`마지막으로 판에 오른 날 ${t.lastSeen} · ${t.seen}번 올랐다`}
+                      >
+                        {t.name}
+                        <span className="tnum ml-1 text-[10px]">{t.lastSeen.slice(5)}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
 
           <p className="border-t border-line px-3 py-2 text-[11px] leading-relaxed text-muted">
             사업 분류가 아니라 <b className="font-medium text-fg">지금 같이 움직이는 묶음</b>이다.
             시장 몫을 걷어낸 상관과 거래대금으로 골랐고, 주에 한 번 갈린다.
             <span className="tnum"> ×</span>는 최근 거래대금이 평소의 몇 배인가다.
+            판에서 내려간 테마도 명단은 그대로 두었다 — 테마는 식었다가 돌아온다.
           </p>
         </>
       )}

@@ -14,6 +14,18 @@
 // 실을 수는 없다. themes.json 과 같은 방식으로, 만든 결과만 작은 파일로
 // 굳혀 커밋한다.
 //
+// ── 판에서 빠져도 명단은 남긴다 ────────────────────────────
+// 테마는 죽었다 살아난다. 지역화폐가 이번 달 뜨고 두 달 쉬었다가 또 뜬다.
+// 판에서 빠질 때 구성종목까지 버리면, 돌아왔을 때 처음부터 다시 찾아야 하고
+// 그 사이 "이 종목이 지역화폐였다" 는 사실을 화면 어디에서도 못 본다.
+//
+// 그래서 둘을 가른다.
+//   판(active)   지금 돈이 들어온 것만. 회전한다.
+//   사전         한 번이라도 판에 올랐던 것 전부. 쌓기만 한다.
+//
+// 쉬는 테마의 명단은 마지막으로 판에 있던 날의 것이다. 시간이 지나면 낡으므로
+// 화면에 그 날짜를 같이 적는다.
+//
 // 실행 (theme-upper-board.mjs 뒤)
 //   node scripts/research/theme-upper-board.mjs   판 만들기 (주 1회)
 //   node scripts/theme/build-upper.mjs            → src/data/upper.json
@@ -35,14 +47,27 @@ const 아래층 = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 const 이름 = new Map();
 for (const t of 아래층.themes) for (const s of t.stocks) 이름.set(s.code, s.name);
 
+// 지난번 결과 — 판에서 빠진 것을 여기서 건져 낸다
+const 이전 = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, "utf8")) : { themes: [] };
+const 이전맵 = new Map((이전.themes ?? []).map((t) => [t.name, t]));
+
 let 이름없음 = 0;
 const themes = b.board.map((r, i) => {
   const codes = (r.codes ?? r.top.map((x) => x.code)).filter((c) => /^\d{6}$/.test(c));
   for (const c of codes) if (!이름.has(c)) 이름없음++;
+  const 옛것 = 이전맵.get(r.name);
   return {
-    // 화면 주소에 쓸 id — 이름은 한글이라 그대로 못 쓴다
-    id: `u${String(i + 1).padStart(2, "0")}`,
+    // 화면 주소에 쓸 id — 이름은 한글이라 그대로 못 쓴다.
+    // 한 번 준 id 는 그대로 둔다. 순위가 바뀔 때마다 id 가 달라지면
+    // 열어 둔 화면이 엉뚱한 테마를 가리킨다.
+    id: 옛것?.id ?? `u${String(i + 1).padStart(2, "0")}`,
     name: r.name,
+    /** 지금 판에 올라 있나 */
+    active: true,
+    /** 마지막으로 판에 오른 날 */
+    lastSeen: b.asOf,
+    /** 판에 오른 횟수 — 자주 도는 테마인지 본다 */
+    seen: (옛것?.seen ?? 0) + 1,
     /** 어디서 온 후보인가 — SIGNO(아래층) · 네이버 */
     src: r.src,
     /** 잔차 상관 — 시장 공통분을 걷어낸 뒤에도 저희끼리 같이 움직이는가 */
@@ -57,6 +82,15 @@ const themes = b.board.map((r, i) => {
   };
 });
 
+// 이번에 빠진 것 — 명단과 마지막 날짜를 그대로 들고 쉰다
+const 이번이름 = new Set(themes.map((t) => t.name));
+let 새id = themes.length;
+const 쉬는것 = (이전.themes ?? [])
+  .filter((t) => !이번이름.has(t.name))
+  .map((t) => ({ ...t, id: t.id ?? `u${String(++새id).padStart(2, "0")}`, active: false }));
+
+const 모두 = [...themes, ...쉬는것];
+
 fs.writeFileSync(
   OUT,
   JSON.stringify({
@@ -64,12 +98,12 @@ fs.writeFileSync(
     기준: `잔차 > 무작위 상위 5%(${b.p95.toFixed(3)}) · 상대 거래대금 > ×1.00 · 종목 5~40`,
     만든날: b.asOf,
     시장거래대금배수: b.mktSurge,
-    themes,
+    themes: 모두,
   }),
 );
 
-const 종목 = new Set(themes.flatMap((t) => t.codes));
-console.log(`윗층 ${themes.length}개 · 고유 종목 ${종목.size} · ${b.asOf} 기준`);
+const 종목 = new Set(모두.flatMap((t) => t.codes));
+console.log(`윗층 판 ${themes.length}개 · 쉬는 것 ${쉬는것.length}개 · 고유 종목 ${종목.size} · ${b.asOf} 기준`);
 console.log(`  아래층에 이름이 없는 종목 ${이름없음}건 (네이버 표기를 그대로 쓴다)`);
 console.log(`  → ${OUT}  ${(fs.statSync(OUT).size / 1024).toFixed(0)}KB`);
 for (const t of themes.slice(0, 5)) {
