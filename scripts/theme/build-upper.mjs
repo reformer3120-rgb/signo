@@ -23,8 +23,15 @@
 //   판(active)   지금 돈이 들어온 것만. 회전한다.
 //   사전         한 번이라도 판에 올랐던 것 전부. 쌓기만 한다.
 //
-// 쉬는 테마의 명단은 마지막으로 판에 있던 날의 것이다. 시간이 지나면 낡으므로
-// 화면에 그 날짜를 같이 적는다.
+// 쉬는 테마의 명단은 마지막으로 판에 있던 날의 것이다. 시간이 지나면 낡는다.
+// 그래서 반년 넘게 안 올라온 것은 걷어낸다 — 상장폐지가 아닌 한 테마는 돌고
+// 도는데, 반년을 못 도는 것은 명단이 낡았다고 보는 편이 맞다.
+//
+// 상장폐지된 종목을 명단에서 빼는 필터는 넣지 않았다. 쓸 만한 목록이 없다 —
+// .cache/theme/listed.json 은 2,758건인데 리츠 일부가 빠져 있어, 그것으로
+// 거르면 오늘도 거래되는 종목이 지워진다(204210 은 971원에 65만주가 거래되는데
+// 그 목록에 없다). 반년 규칙이 그 일을 대신한다. 종목이 없어진 테마는 애초에
+// 판으로 돌아오지 못하므로 반년 뒤 사라진다.
 //
 // 실행 (theme-upper-board.mjs 뒤)
 //   node scripts/research/theme-upper-board.mjs   판 만들기 (주 1회)
@@ -82,12 +89,20 @@ const themes = b.board.map((r, i) => {
   };
 });
 
-// 이번에 빠진 것 — 명단과 마지막 날짜를 그대로 들고 쉰다
+// 이번에 빠진 것 — 명단과 마지막 날짜를 그대로 들고 쉰다.
+// 반년 넘게 안 올라온 것은 여기서 걷어낸다.
+const 반년 = 180 * 24 * 3600 * 1000;
+const 오늘 = new Date(b.asOf).getTime();
 const 이번이름 = new Set(themes.map((t) => t.name));
 let 새id = themes.length;
-const 쉬는것 = (이전.themes ?? [])
-  .filter((t) => !이번이름.has(t.name))
+const 지난것 = (이전.themes ?? []).filter((t) => !이번이름.has(t.name));
+const 쉬는것 = 지난것
+  .filter((t) => {
+    const 마지막 = new Date(t.lastSeen ?? b.asOf).getTime();
+    return !Number.isFinite(마지막) || 오늘 - 마지막 <= 반년;
+  })
   .map((t) => ({ ...t, id: t.id ?? `u${String(++새id).padStart(2, "0")}`, active: false }));
+const 걷어낸것 = 지난것.length - 쉬는것.length;
 
 const 모두 = [...themes, ...쉬는것];
 
@@ -104,6 +119,7 @@ fs.writeFileSync(
 
 const 종목 = new Set(모두.flatMap((t) => t.codes));
 console.log(`윗층 판 ${themes.length}개 · 쉬는 것 ${쉬는것.length}개 · 고유 종목 ${종목.size} · ${b.asOf} 기준`);
+if (걷어낸것) console.log(`  반년 넘게 안 올라와 걷어낸 것 ${걷어낸것}개`);
 console.log(`  아래층에 이름이 없는 종목 ${이름없음}건 (네이버 표기를 그대로 쓴다)`);
 console.log(`  → ${OUT}  ${(fs.statSync(OUT).size / 1024).toFixed(0)}KB`);
 for (const t of themes.slice(0, 5)) {
