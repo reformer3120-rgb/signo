@@ -122,9 +122,39 @@ function SignalStrip({
   );
 }
 
+/**
+ * 기간 수익률 넉 줄 — 1D · 1W · 1M · 1Y.
+ *
+ * 오늘 등락률만 보면 테마가 계속 오르고 있는지 오늘만 튄 것인지 못 가른다.
+ * 넷을 나란히 놓으면 그게 갈린다 — 1D 만 붉고 나머지가 파라면 오늘 반등한
+ * 것이고, 넷이 다 붉으면 추세다.
+ *
+ * 크론이 절반도 안 훑은 테마는 기간 값이 없다. 그때는 1D 만 적고 나머지 자리를
+ * 비워 둔다 — 자리를 지우면 아래 줄과 칸이 어긋나 훑기가 나빠진다.
+ */
+function Spans({ d, r }: { d: number | null; r: OwnThemeRow["ret"] }) {
+  const 칸 = (k: string, v: number | null) => (
+    <span key={k} className="w-[3.6rem] text-right">
+      <span className="text-[9px] text-muted">{k}</span>
+      <span className={`tnum ml-1 ${v === null ? "text-muted" : signColor(v)}`}>
+        {v === null ? "·" : pct(v)}
+      </span>
+    </span>
+  );
+  return (
+    <span className="hidden items-center gap-1 text-[10.5px] lg:flex">
+      {칸("1D", d)}
+      {칸("1W", r?.w1 ?? null)}
+      {칸("1M", r?.m1 ?? null)}
+      {칸("1Y", r?.y1 ?? null)}
+    </span>
+  );
+}
+
 interface Group {
   name: string;
   themes: OwnThemeRow[];
+  ret: OwnThemeRow["ret"];
   chg: number | null;
   up: number;
   down: number;
@@ -208,9 +238,14 @@ export function ThemeBoard({
     const gs: Group[] = [...map.entries()].map(([name, themes]) => {
       const sorted = [...themes].sort(by[sort]);
       const chgs = themes.map((t) => t.chg).filter((c): c is number => c !== null);
+      // 대분류 기간수익률 — 그 안 테마들의 평균. 절반도 안 나오면 비운다.
+      const rs = themes.map((t) => t.ret).filter(Boolean) as NonNullable<OwnThemeRow["ret"]>[];
+      const 평균 = (f: (r: NonNullable<OwnThemeRow["ret"]>) => number) =>
+        +(rs.reduce((a, r) => a + f(r), 0) / rs.length).toFixed(2);
       return {
         name,
         themes: sorted,
+        ret: rs.length >= themes.length / 2 ? { w1: 평균((r) => r.w1), m1: 평균((r) => r.m1), y1: 평균((r) => r.y1) } : null,
         chg: chgs.length ? +(chgs.reduce((a, b) => a + b, 0) / chgs.length).toFixed(2) : null,
         up: themes.reduce((a, t) => a + t.up, 0),
         down: themes.reduce((a, t) => a + t.down, 0),
@@ -340,6 +375,7 @@ export function ThemeBoard({
                     테마 {g.themes.length} · {g.stocks}종목
                   </span>
                   <span className="ml-auto flex shrink-0 items-center gap-2">
+                    <Spans d={g.chg} r={g.ret} />
                     <UpDown up={g.up} down={g.down} />
                     <span className={`tnum w-14 text-right text-sm font-bold ${signColor(g.chg ?? 0)}`}>
                       {g.chg === null ? "—" : pct(g.chg)}
@@ -390,6 +426,7 @@ export function ThemeBoard({
                                 </span>
                               ))}
                             </span>
+                            <Spans d={t.chg} r={t.ret} />
                             <UpDown up={t.up} down={t.down} w={40} />
                             <span
                               className={`tnum w-14 text-right text-[12.5px] font-medium ${signColor(t.chg ?? 0)}`}

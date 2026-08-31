@@ -208,6 +208,14 @@ export interface OwnThemeRow {
   flat: number;
   down: number;
   count: number;
+  /**
+   * 기간 수익률 — 구성종목 평균. 오늘(chg)만 보면 테마가 계속 오르고 있는지
+   * 오늘만 튄 것인지 못 가른다.
+   *
+   * 지표 크론이 훑은 종목만으로 낸다. 절반도 안 훑였으면 평균이 튀므로 null 을
+   * 준다 — 몇 종목으로 낸 값을 테마 수익률이라고 적을 수는 없다.
+   */
+  ret: { w1: number; m1: number; y1: number } | null;
   /** 오늘 가장 많이 오른 두 종목 */
   leaders: { code: string; name: string; chg: number }[];
 }
@@ -266,10 +274,23 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.le
 
 async function buildList(): Promise<{ rows: OwnThemeRow[]; stale: boolean }> {
   const { map: q, stale } = await quotes();
+  // 기간 수익률은 지표 크론이 종목별로 모아 둔 것을 평균 낸다. 여기서 일봉을
+  // 받으면 91개 테마 × 수십 종목이라 화면이 서지 않는다.
+  const fa = await factsFor(ALL_CODES).catch(() => ({}) as Record<string, StockFacts>);
   const rows = DATA.themes
     .map((t) => {
       const live = t.stocks.map((s) => ({ ...s, q: q[s.code] })).filter((s) => s.q);
       const chgs = live.map((s) => s.q!.chg);
+      const rs = t.stocks.map((s) => fa[s.code]?.ret).filter(Boolean) as StockFacts["ret"][];
+      // 절반은 훑여 있어야 평균이 선다
+      const ret =
+        rs.length >= Math.max(3, t.stocks.length / 2)
+          ? {
+              w1: +(rs.reduce((a, r) => a + r.w1, 0) / rs.length).toFixed(2),
+              m1: +(rs.reduce((a, r) => a + r.m1, 0) / rs.length).toFixed(2),
+              y1: +(rs.reduce((a, r) => a + r.y1, 0) / rs.length).toFixed(2),
+            }
+          : null;
       return {
         id: t.id,
         name: t.name,
@@ -280,6 +301,7 @@ async function buildList(): Promise<{ rows: OwnThemeRow[]; stale: boolean }> {
         flat: chgs.filter((c) => c === 0).length,
         down: chgs.filter((c) => c < 0).length,
         count: live.length || t.stocks.length,
+        ret,
         leaders: [...live]
           .sort((a, b) => b.q!.chg - a.q!.chg)
           .slice(0, 2)
