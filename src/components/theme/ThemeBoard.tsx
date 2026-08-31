@@ -134,19 +134,29 @@ function SignalStrip({
  */
 function Spans({ d, r }: { d: number | null; r: OwnThemeRow["ret"] }) {
   const 칸 = (k: string, v: number | null) => (
-    <span key={k} className="w-[3.6rem] text-right">
+    <span className="w-[3.6rem] text-right">
       <span className="text-[9px] text-muted">{k}</span>
       <span className={`tnum ml-1 ${v === null ? "text-muted" : signColor(v)}`}>
         {v === null ? "·" : pct(v)}
       </span>
     </span>
   );
+  const 값 = [
+    ["1D", d],
+    ["1W", r?.w1 ?? null],
+    ["1M", r?.m1 ?? null],
+    ["1Y", r?.y1 ?? null],
+  ] as const;
+  // 넷이 붙어 있으면 어디까지가 한 칸인지 안 읽힌다. 빗금으로 끊고,
+  // 막대와는 한 칸 더 띄운다 — 성격이 다른 것끼리 붙어 있으면 눈이 헷갈린다.
   return (
-    <span className="hidden items-center gap-1 text-[10.5px] lg:flex">
-      {칸("1D", d)}
-      {칸("1W", r?.w1 ?? null)}
-      {칸("1M", r?.m1 ?? null)}
-      {칸("1Y", r?.y1 ?? null)}
+    <span className="mr-3 hidden items-center gap-1.5 text-[10.5px] lg:flex">
+      {값.map(([k, v], i) => (
+        <span key={k} className="flex items-center gap-1.5">
+          {i > 0 && <span className="text-muted/50">/</span>}
+          {칸(k, v)}
+        </span>
+      ))}
     </span>
   );
 }
@@ -426,7 +436,8 @@ export function ThemeBoard({
                                 </span>
                               ))}
                             </span>
-                            <Spans d={t.chg} r={t.ret} />
+                            {/* 기간 수익률은 대분류 줄에만 둔다. 테마 줄까지 넣으면
+                                한 화면에 숫자가 너무 많아 대표종목이 안 읽힌다. */}
                             <UpDown up={t.up} down={t.down} w={40} />
                             <span
                               className={`tnum w-14 text-right text-[12.5px] font-medium ${signColor(t.chg ?? 0)}`}
