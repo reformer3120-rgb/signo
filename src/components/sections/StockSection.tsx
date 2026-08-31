@@ -30,15 +30,20 @@ export function StockSection({
   name: nameProp,
   tab: tabProp,
   minUnit: minUnitProp,
+  exch: exchProp,
   onTab,
   onMinUnit,
+  onExch,
 }: {
   code?: string;
   name?: string;
   tab?: string;
   minUnit?: Interval;
+  /** 거래소 선택 — 종목상세의 1일 수익률도 이것을 따라간다 */
+  exch?: Exch;
   onTab?: (tab: string) => void;
   onMinUnit?: (u: Interval) => void;
+  onExch?: (e: Exch) => void;
 }) {
   const code = codeProp ?? "005930";
   const name = nameProp ?? "삼성전자";
@@ -53,7 +58,12 @@ export function StockSection({
   const chartH = useChartHeight();
   // 접어두면 아래 자료를 볼 자리가 넓어진다. 선택은 저장된다.
   const [folded, setFolded] = useSticky("kr.chart.folded", false);
-  const [exch, setExch] = useState<Exch>("KRX");
+  // 거래소는 위(StockView)에서 잡는다. 머리의 등락률과 종목상세의 1일
+  // 수익률이 같은 거래소를 봐야 하는데, 여기 갇혀 있으면 아래 카드가 알 수
+  // 없어 KRX 로만 세다가 값이 어긋났다.
+  const [exchState, setExchState] = useState<Exch>("KRX");
+  const exch = exchProp ?? exchState;
+  const setExch = (e: Exch) => (onExch ? onExch(e) : setExchState(e));
   const interval: Interval = tab === "min" ? minUnit : (tab as Interval);
 
   const { data: ohlcv, isLoading } = useSWR<{ data: Candle[] }>(

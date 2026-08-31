@@ -4,6 +4,7 @@ import { fetcher } from "@/lib/swr";
 import { Card } from "@/components/Card";
 import { num, signColor } from "@/lib/format";
 import type { StockDetail, Returns, InvestorBias } from "@/lib/naverApi";
+import type { Exch } from "@/components/ExchangeSelect";
 
 interface DetailResp {
   detail: StockDetail;
@@ -26,7 +27,9 @@ function Ret({ label, v }: { label: string; v?: number }) {
     <div className="min-w-0 rounded-lg border border-line bg-canvas/40 px-1 py-2 text-center">
       <div className="text-[11px] text-muted">{label}</div>
       <div className={`tnum mt-0.5 text-xs sm:text-sm font-bold truncate ${has ? signColor(v!) : "text-muted"}`}>
-        {has ? `${v! > 0 ? "+" : ""}${v!.toFixed(1)}%` : "-"}
+        {/* 두 자리로 적는다. 한 자리로 줄였더니 머리의 -0.94% 와 카드의
+            -0.9% 가 서로 다른 값처럼 보였다. 자리는 좁지만 그 대가가 크다. */}
+        {has ? `${v! > 0 ? "+" : ""}${v!.toFixed(2)}%` : "-"}
       </div>
     </div>
   );
@@ -41,10 +44,14 @@ const LEADER_STYLE: Record<string, string> = {
   기관: "bg-down/10 text-down border-down/30",
 };
 
-export function StockDetailCard({ code }: { code: string }) {
-  const { data } = useSWR<{ data: DetailResp }>(`/api/stock-detail?code=${code}`, fetcher, {
-    refreshInterval: 60_000,
-  });
+export function StockDetailCard({ code, exch = "KRX" }: { code: string; exch?: Exch }) {
+  // 거래소를 같이 넘긴다. 1일 수익률은 화면 머리의 등락률과 같은 시세에서
+  // 나와야 한다 — 다르면 한 화면에 같은 이름의 값이 둘 뜬다.
+  const { data } = useSWR<{ data: DetailResp }>(
+    `/api/stock-detail?code=${code}&exchange=${exch}`,
+    fetcher,
+    { refreshInterval: 60_000, keepPreviousData: true },
+  );
   const d = data?.data?.detail;
   const r = data?.data?.returns;
   const b = data?.data?.bias;

@@ -11,6 +11,7 @@ import { FinancialsCard } from "@/components/stock/FinancialsCard";
 import { SectorRankCard } from "@/components/stock/SectorRankCard";
 import { NewsCard } from "@/components/stock/NewsCard";
 import type { Interval } from "@/lib/types";
+import type { Exch } from "@/components/ExchangeSelect";
 
 export function StockView({
   initialCode,
@@ -40,6 +41,9 @@ export function StockView({
   const name = 적힌이름 === code ? (받은이름 ?? code) : 적힌이름;
   const [tab, setTab] = useSticky("kr.stock.tab", "1D");
   const [minUnit, setMinUnit] = useSticky<Interval>("kr.stock.min", "5");
+  // 거래소는 차트와 종목상세가 같이 본다 — 머리의 등락률과 카드의 1일
+  // 수익률이 다른 거래소를 보면 한 화면에 같은 이름의 값이 둘 뜬다.
+  const [exch, setExch] = useSticky<Exch>("kr.stock.exch", "KRX");
 
   const select = (c: string, n: string) => {
     setPicked({ code: c, name: n });
@@ -74,11 +78,13 @@ export function StockView({
         name={name}
         tab={tab}
         minUnit={minUnit}
+        exch={exch}
         onTab={setTab}
         onMinUnit={setMinUnit}
+        onExch={setExch}
       />
       <StockBriefCard code={code} name={name} />
-      <StockDetailCard code={code} />
+      <StockDetailCard code={code} exch={exch} />
       <FinancialsCard code={code} />
       <SectorRankCard code={code} onSelect={selectFromSector} />
       <NewsCard code={code} />
