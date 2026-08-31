@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cached } from "@/lib/cache";
-import { stockFixed, themesOfStock, ownThemeList } from "@/lib/ownTheme";
+import { stockFixed, themesOfStock, ownThemeList, nameOf } from "@/lib/ownTheme";
 import { aboutOf } from "@/lib/about";
 import { stockDetail, baselineUniverse } from "@/lib/naverApi";
 import { daily } from "@/lib/naver";
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "종목코드가 올바르지 않다" }, { status: 400 });
   }
   try {
-    const data = await cached(`brief:v2:${code}`, 300, async () => {
+    const data = await cached(`brief:v3:${code}`, 300, async () => {
       const fixed = stockFixed(code);
       const [dd, bars, themes, list] = await Promise.all([
         stockDetail(code).catch(() => null),
@@ -55,6 +55,9 @@ export async function GET(req: Request) {
 
       const foreign = dd?.foreignRate ? Number(String(dd.foreignRate).replace(/[^\d.]/g, "")) : NaN;
       return {
+        // 종목 이름. 주소에 name 없이 들어온 화면이 제목을 채우는 데 쓴다 —
+        // 우리 분류표에 없는 종목(약 300개)은 서버에서 못 채워 여기로 온다.
+        name: nameOf(code) ?? dd?.name ?? null,
         // 개요 카드의 본문 — 이 회사가 무슨 일을 하는가.
         // 사업보고서 '사업의 개요' 에서 옮긴 문장이라 숫자가 아니라 설명이다.
         about: aboutOf(code),

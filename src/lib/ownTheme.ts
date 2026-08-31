@@ -410,6 +410,19 @@ export async function warmOwnThemes(): Promise<{ themes: number; codes: number }
  * 종목 하나의 붙박이 정보 — 주력 제품과 확정 실적.
  * 데이터 파일에 들어 있는 값이라 조회가 없다.
  */
+/**
+ * 종목코드 → 이름. themes.json 에 든 2,497종목을 덮는다.
+ *
+ * 주소로 바로 들어오는 화면(/stock?code=068270)이 이름 없이 열릴 때 쓴다.
+ * 시세를 받아 이름을 알아낼 수도 있지만 그러면 카드 제목이 잠깐 "068270"
+ * 이었다가 "셀트리온" 으로 바뀐다. 이 표는 배포에 실려 있어 그릴 때 바로
+ * 읽힌다 — 깜빡임이 없다.
+ */
+const NAMES: Record<string, string> = {};
+for (const t of DATA.themes) for (const s of t.stocks) NAMES[s.code] ??= s.name;
+
+export const nameOf = (code: string): string | null => NAMES[code] ?? null;
+
 export function stockFixed(code: string): {
   /** 사업 설명 — 사업보고서 '사업의 개요' 에서 뽑은 문장 */
   why: string | null;
