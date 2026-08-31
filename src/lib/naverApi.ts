@@ -589,7 +589,7 @@ async function groupMembers(
   code: string,
   detail: StockDetail,
   groupKey: string,
-): Promise<{ name: string; raw: Record<string, string>[] }> {
+): Promise<{ name: string; raw: Record<string, string>[]; 업종수?: number }> {
   if (groupKey.startsWith("theme:")) {
     const g = themeById(groupKey.slice(6));
     if (g) {
@@ -626,24 +626,32 @@ async function groupMembers(
     ),
   );
   const raw = [first, ...rest].flatMap((p) => (p.stocks ?? []) as Record<string, string>[]);
-  return { name: first.groupInfo?.name ?? "", raw };
+  return { name: first.groupInfo?.name ?? "", raw, 업종수: total };
 }
 
 export async function sectorRank(code: string, groupKey = "industry"): Promise<SectorRank> {
   const detail = await stockDetail(code);
-  const [{ name: groupName, raw }, themes] = await Promise.all([
+  const [{ name: groupName, raw, 업종수 }, themes] = await Promise.all([
     groupMembers(code, detail, groupKey),
     Promise.resolve(themesOfStock(code)).catch(() => []),
   ]);
   // 선택 가능한 그룹: 업종(기본) + 소속 테마(더 세분화된 섹터)
-  const industryName =
+  //
+  // 테마를 고른 상태에서는 업종 목록을 받지 않았으므로 이름과 종목 수를
+  // 따로 물어 온다. 한 건만 받으면 groupInfo 에 둘 다 들어 있다.
+  const 업종 =
     groupKey === "industry"
-      ? groupName
-      : ((await getJson(
+      ? { name: groupName, count: 업종수 ?? raw.length }
+      : await getJson(
           `https://m.stock.naver.com/api/stocks/industry/${detail.industryCode}?page=1&pageSize=1`,
-        ).then((d) => d.groupInfo?.name ?? "")) as string);
+        )
+          .then((d) => ({ name: (d.groupInfo?.name ?? "") as string, count: Number(d.groupInfo?.totalCount) || 0 }))
+          .catch(() => ({ name: "", count: 0 }));
+  const industryName = 업종.name;
   const groups: SectorGroupOption[] = [
-    { key: "industry", name: industryName || "업종", count: 0 },
+    // 칩에 붙는 수는 "그 비교군에 몇 종목이 있나" 다. 실제 등수는 시총 상위
+    // 15 안에서 매기므로 목록 길이와는 다를 수 있다.
+    { key: "industry", name: industryName || "업종", count: 업종.count },
     ...themes.slice(0, 8).map((t) => ({ key: `theme:${t.id}`, name: t.name, count: t.codes.length })),
   ];
   // 다른 종목에서 고른 비교군을 그대로 유지할 수 있게, 현재 선택된 그룹이 목록에 없으면 추가
