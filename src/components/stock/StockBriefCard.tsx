@@ -43,7 +43,8 @@ export function StockBriefCard({ code, name }: { code: string; name: string }) {
   if (isLoading && !d) {
     return (
       <Card title={`${name} 개요`}>
-        <div className="h-16 animate-pulse rounded-lg bg-surface" />
+        {/* 카드도 bg-surface 라 뼈대를 같은 색으로 두면 아무것도 안 보인다 */}
+        <div className="h-16 animate-pulse rounded-lg bg-line/60" />
       </Card>
     );
   }
