@@ -22,8 +22,8 @@ type Resp = BriefData & { about?: string[]; why?: string | null };
  *   1개월 · 외국인                  → 종목 상세
  *
  * 같은 숫자를 두 번 보여 줄 이유가 없고, 그러느라 정작 "무슨 회사인가" 가
- * 숫자에 묻혔다. 그래서 겹치지 않는 셋만 남긴다 —
- * 사업 설명 · 주요사업 낱말 · 테마.
+ * 숫자에 묻혔다. 그래서 겹치지 않는 둘만 남긴다 — 사업 설명과 주요사업 낱말.
+ * 테마도 처음에는 달았다가 뺐다. 차트 위 StockThemeChips 에 이미 있다.
  *
  * 문장은 사업보고서 '사업의 내용 — 사업의 개요' 에서 옮긴 것이다(지어내지
  * 않는다). 2,497종목 중 2,367종목(94.8%)에 서고, 못 세운 종목은 테마 편입
@@ -70,19 +70,14 @@ export function StockBriefCard({ code, name }: { code: string; name: string }) {
         </ul>
       )}
 
-      {(낱말.length > 0 || d.themeName) && (
+      {/* 테마는 여기 달지 않는다 — 차트 위 StockThemeChips 에 이미 있다 */}
+      {낱말.length > 0 && (
         <div className={`flex flex-wrap items-center gap-1.5 ${문장.length ? "mt-2.5" : ""}`}>
           {낱말.map((b) => (
             <span key={b} className="rounded bg-surface px-1.5 py-0.5 text-[11.5px] font-medium">
               {b}
             </span>
           ))}
-          {d.themeName && (
-            <span className="text-[11px] text-muted">
-              {d.themeName}
-              {d.themeCount ? ` ${d.themeCount}종목` : ""}
-            </span>
-          )}
         </div>
       )}
     </Card>

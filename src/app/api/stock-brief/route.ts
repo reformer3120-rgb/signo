@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { stockFixed, themesOfStock, nameOf } from "@/lib/ownTheme";
+import { stockFixed, nameOf } from "@/lib/ownTheme";
 import { aboutOf } from "@/lib/about";
 
 export const revalidate = 0;
@@ -26,12 +26,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "종목코드가 올바르지 않다" }, { status: 400 });
   }
 
+  // 테마는 여기서 안 내려보낸다 — 차트 위 테마 칩이 stock-themes 로 따로 받는다
   const fixed = stockFixed(code);
-  const themes = themesOfStock(code);
-  // 가장 좁은 테마를 대표로 삼는다 — 넓은 테마보다 그 종목을 잘 가리킨다
-  const main = themes.length
-    ? [...themes].sort((a, b) => a.codes.length - b.codes.length)[0]
-    : null;
 
   return NextResponse.json({
     data: {
@@ -43,8 +39,6 @@ export async function GET(req: Request) {
       // about 이 빈 종목(5%)에서 개요 대신 쓰는 테마 편입 사유
       why: fixed?.why ?? null,
       biz: fixed?.biz ?? [],
-      themeName: main?.name ?? null,
-      themeCount: main?.codes.length ?? null,
     },
   });
 }
