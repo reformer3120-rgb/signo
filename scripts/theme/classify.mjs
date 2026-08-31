@@ -103,7 +103,7 @@ const TRAPS = [
 ];
 
 /** 개요를 문장으로 쪼갠다 */
-function sentences(text) {
+export function sentences(text) {
   return text
     .split(/(?<=[다요음]\.)\s+|(?<=\.)\s+(?=[가-힣A-Z])/)
     .map((s) => s.trim())
@@ -130,7 +130,7 @@ function sentences(text) {
  * 아파트 … 조경공사를 …" 는 뒤에 실적 숫자가 열여덟 개 붙어 있지만 자기 사업을
  * 밝힌 진짜 문장이다. 자릿수 비율(0.13)로 표(0.26)와 갈린다.
  */
-function looksTable(s) {
+export function looksTable(s) {
   const nums = (s.match(/\d[\d,.]*/g) ?? []).length;
   if (/\(\s*단위\s*[:：]/.test(s) && nums > 5) return true;
   const digits = (s.match(/\d/g) ?? []).length;

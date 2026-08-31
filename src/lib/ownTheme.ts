@@ -411,6 +411,8 @@ export async function warmOwnThemes(): Promise<{ themes: number; codes: number }
  * 데이터 파일에 들어 있는 값이라 조회가 없다.
  */
 export function stockFixed(code: string): {
+  /** 사업 설명 — 사업보고서 '사업의 개요' 에서 뽑은 문장 */
+  why: string | null;
   biz: string[];
   growth: number | null;
   opm: number | null;
@@ -420,6 +422,7 @@ export function stockFixed(code: string): {
     const s = t.stocks.find((x) => x.code === code);
     if (s) {
       return {
+        why: s.why ?? null,
         biz: s.biz ?? [],
         growth: s.growth,
         opm: s.opm,

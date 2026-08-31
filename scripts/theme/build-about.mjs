@@ -1,0 +1,237 @@
+// 기업 개요 — "이 회사가 무슨 일을 하는가" 를 두세 문장으로 굳힌다.
+//
+// ── 왜 따로 만드나 ────────────────────────────────────────
+// themes.json 의 why 는 "왜 이 테마에 넣었나" 다. 분류 근거라서 한 문장이고,
+// 사람이 손본 것은 중앙값이 30자밖에 안 된다("디지털 인쇄솔루션을 제공한다.").
+// 테마 카드에서는 그만하면 되지만 종목 화면 맨 위의 개요로는 얇다.
+//
+// 그리고 개요 카드에 있던 숫자(시총·PER·매출성장·이익률·점수)는 아래 카드에
+// 그대로 또 있었다. 그것을 걷어내고 나니 남는 것이 저 한 문장뿐이었다.
+//
+// ── 무엇을 고르나 ─────────────────────────────────────────
+// 지어내지 않는다. 사업보고서 '사업의 내용 — 사업의 개요' 원문에서 문장을
+// 골라 옮길 뿐이다. 고르는 잣대는 셋이다.
+//
+//   무엇을 하는 회사인가   본업·주력 제품·설립 연혁
+//   자기 얘기인가          당사·연결회사가 주어인 문장 (산업 전망은 버린다)
+//   딴 데 없는 얘기인가    실적 숫자는 재무제표 카드에 있으므로 뺀다
+//
+// 원문 순서를 지킨다. 사업보고서는 대개 "무슨 회사다 → 무엇을 만든다 →
+// 어디에 판다" 순으로 적혀 있어서, 점수순으로 다시 늘어놓으면 오히려 읽기가
+// 나빠진다.
+//
+// 실행
+//   node scripts/theme/build-about.mjs          몇 건이 서는지 본다
+//   node scripts/theme/build-about.mjs --write  → src/data/about.json
+import fs from "node:fs";
+import path from "node:path";
+import { sentences, looksTable, SELF } from "./classify.mjs";
+import { 평서문 } from "./sent.mjs";
+
+const DIR = ".cache/theme";
+const OUT = "src/data/about.json";
+const WRITE = process.argv.includes("--write");
+
+const MAX_문장 = 3;    // 증권플러스 개요도 셋이다. 넷을 넘으면 안 읽는다.
+const MAX_길이 = 130;  // 한 문장이 화면에서 두 줄
+const MIN_길이 = 25;   // 이보다 짧으면 토막이지 문장이 아니다
+
+const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
+const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
+
+/** code → 사업보고서 원문 */
+const 원문 = new Map();
+for (const r of Object.values(ov)) if (r?.code && r.text) 원문.set(r.code, r);
+
+/**
+ * 문장 앞에 붙어 온 찌꺼기를 뗀다.
+ *
+ * 사업보고서 원문은 소제목과 본문이 한 줄로 붙어 있는 일이 잦다.
+ *   "업계의 현황 당사는 커피 생두의 수입부터 …"
+ *   "패키징 사업 (주)연우는 화장품 용기를 제조 …"
+ *   "해외 진출 본격화당사가 보유한 어학 콘텐츠 …"
+ * 소제목을 그대로 두면 문장이 아니라 목차처럼 읽힌다.
+ */
+function 머리떼기(s) {
+  let t = s.trim();
+  // 번호·글머리
+  t = t.replace(/^[(（]?\d+[)）.]?\s*/, "").replace(/^[가-힣][.)]\s*/, "");
+  // 흔한 소제목이 통째로 앞에 붙은 것
+  t = t.replace(/^(업계의? 현황|회사의? 현황|사업의? 개요|영업 ?개황|주요 ?사업의? 내용|개요)\s+/, "");
+  // "…본격화당사가" 처럼 붙어 버린 것 — 주어 앞에서 자른다
+  const m = t.match(/^(.{0,14}?)(당사|자사|회사)(는|가|의)\s/);
+  if (m && m[1] && !/[.,]$/.test(m[1])) t = t.slice(m[1].length);
+  // "패키징 사업 (주)연우는 …" — 주어가 계열사 이름이라 위에서 못 걸린 것
+  t = t.replace(/^[가-힣A-Za-z]{1,8} ?(사업|부문)\s+(?=[(㈜]|[가-힣]{2,}(는|은|이|가)\s)/, "");
+  return t.trim();
+}
+
+/**
+ * 원문에는 마침표 뒤에 띄어쓰기가 없는 곳이 많다.
+ *   "…입지를 강화하고 있습니다.한편, 2014년 미얀마 양곤에…"
+ * 그대로 두면 두 문장이 한 덩어리로 뽑힌다.
+ */
+const 쪼개기 = (s) => s.split(/(?<=[다요][.])(?=[가-힣])/);
+
+/**
+ * 개요에 실을 문장이 아닌 것.
+ *
+ * 분류에 쓰는 ourSentences() 를 그대로 쓰지 않는다. 그쪽은 "이 문장이 분류
+ * 근거가 되는가" 를 보느라 잣대가 훨씬 빡빡해서, 정작 개요로 가장 좋은
+ * 첫 문장이 걸러졌다.
+ *
+ *   셀트리온  "당사는 생명공학기술을 기반으로 … 글로벌 생명공학기업입니다."
+ *
+ * 그래서 여기서는 문장만 받아 와 개요 잣대로 다시 거른다.
+ */
+function 버린다(s) {
+  if (s.length < MIN_길이) return true;
+  // 앞 문장에 매달린 토막 — 떼어 놓으면 뜻이 서지 않는다
+  if (/^(또한|더불어|이에|그리고|한편|이러한|이와|아울러|반면|다만|따라서|특히|이를|그러나|이 중|그중)/.test(s)) return true;
+  if (/^[를을은는이가와과의도에로]\s/.test(s)) return true;
+  // 문장 앞이 잘려 나간 것 — "년에는 프리미엄 …" (앞의 2016 이 떨어졌다)
+  if (/^(년|월|일|개|억|만|천)(에|은|는|을|이|부터|까지|가)/.test(s)) return true;
+  // 하려는 일이지 하고 있는 일이 아니다
+  if (/할 예정|추진 중|계획(이다|입니다|하고)|목표로 하|검토 중|노력하고 있|기대(됩니다|된다|하고)/.test(s)) return true;
+  // 표를 한 줄로 풀어 놓은 것, 또는 표를 가리키는 말
+  if ((s.match(/[,·]/g) ?? []).length > 6) return true;
+  if ((s.match(/\//g) ?? []).length >= 3) return true;
+  if (/대분류\s*중분류|사업부문\s*주요|구분\s*(품목|내용|주요)/.test(s)) return true;
+  if (/다음과 같|아래와 같|하기와 같|참조하시기|기재를 생략|해당 사항 ?없/.test(s)) return true;
+  // 사업보고서의 상투구 — 아무 회사에나 그대로 적혀 있어 개요가 되지 못한다
+  if (/판매전략|영업전략|마케팅 전략|영업활동을 (진행|수행)|수익성 확보/.test(s)) return true;
+  if (/^(지역별|부문별|사업부별|제품별|구분별)/.test(s)) return true;
+  // 실적 — 재무제표 카드에 있다
+  if (/매출액\s*[\d(]|영업이익\s*[\d(]|당기순이익|억\s?원(을|의)? ?(기록|달성)|조\s*[\d,]+\s*억|매출 ?비중은/.test(s)) return true;
+  // 지분·주주·공시 절차 — 개요가 아니라 공시다
+  if (/지분(을|율은|율이)\s|주주총회|이사회\s?결의|공시(하였|했)|정관|기업집단|공정거래법/.test(s)) return true;
+  if (/사업의 중단|중단을 결정|영업정지|감사의견/.test(s)) return true;
+  // 내 얘기가 아니라 업계 얘기
+  if (/전방산업|후방산업|시장 ?규모|업황|시황|경쟁(사|업체)|점유율은|산업은|산업이 |전망(됩니다|된다|이다|을 살펴|이 밝)/.test(s)) return true;
+  // 업종 일반론
+  if (/^(지주회사|리츠|이 산업|해당 산업|본 산업)(는|은|이란)/.test(s)) return true;
+  return false;
+}
+
+/** 개요다운 문장일수록 높다 */
+function 점수(s, i) {
+  let v = 0;
+  // 본업을 말하는 문장
+  if (/주요 ?(목적 )?사업|주된 사업|영위하|주력(은|으로|제품)|본업|주요 제품/.test(s)) v += 4;
+  // 종속회사 소개는 모회사가 무엇을 하는지가 아니다 — 달리 쓸 것이 없을 때만 쓴다
+  if (/종속(회사|기업)(인|는|의)|자회사(인|는)/.test(s)) v -= 3;
+  // 종속회사 이름이 주어인 문장 — 이 종목이 무엇을 하는지가 아니다
+  if (/(LLP|유한공사|Inc\.|Corp\.|Co\.,? ?Ltd)/.test(s)) v -= 3;
+  if (/설립(되|하|된|일)|창립|합병(하|되|을|하여)|상장(하|되)/.test(s)) v += 3;
+  if (/제품|서비스|솔루션|생산|제조|개발|공급|판매/.test(s)) v += 2;
+  if (/당사(는|의|가)|연결회사|자사/.test(s)) v += 2;
+  // 사업보고서는 앞에서 자기 소개를 하고 뒤로 갈수록 곁가지로 샌다
+  v += i < 3 ? 2 : i < 8 ? 1 : 0;
+  // 너무 짧으면 알맹이가 없고, 너무 길면 잘라야 한다
+  v += s.length < 40 ? -2 : s.length <= MAX_길이 ? 1 : -1;
+  const 쉼표 = (s.match(/[,·]/g) ?? []).length;
+  if (쉼표 > 3) v -= 2;
+  return v;
+}
+
+/**
+ * 같은 말을 두 번 하지 않게 한다.
+ *
+ * 사업보고서는 한 단락 안에서 같은 문구를 되풀이하는 일이 잦다. 낱말을 견줘
+ * 절반 넘게 겹치면 뒤엣것을 버린다.
+ */
+function 겹치나(a, b) {
+  const A = new Set(a.replace(/[^가-힣0-9a-zA-Z ]/g, " ").split(/\s+/).filter((w) => w.length > 1));
+  const B = a === b ? A : new Set(b.replace(/[^가-힣0-9a-zA-Z ]/g, " ").split(/\s+/).filter((w) => w.length > 1));
+  if (!A.size || !B.size) return false;
+  let n = 0;
+  for (const w of B) if (A.has(w)) n++;
+  return n / Math.min(A.size, B.size) > 0.5;
+}
+
+function 개요(text, name, why) {
+  const 후보 = sentences(text)
+    .flatMap(쪼개기)
+    .filter((s) => !looksTable(s))
+    .map(머리떼기)
+    .filter((s) => SELF.test(s) && !버린다(s));
+  if (!후보.length) return [];
+
+  // 점수로 고르되, 늘어놓는 것은 원문 순서다
+  const 매김 = 후보.map((s, i) => ({ s, i, v: 점수(s, i) }));
+
+  // 테마 편입 사유는 후보에 얹어 둔다.
+  //
+  // 그것이 사람이 손본 문장이면 원문 어느 것보다 짧고 분명하다 —
+  // "선박·해양플랜트를 건조한다" 한 줄이 종속회사 열거보다 낫다. 원문에서
+  // 뽑힌 것이면 아래 겹치기 검사에 걸려 저절로 빠진다.
+  if (why) {
+    // 첫 문장만 쓴다. 편입 사유는 뒤로 갈수록 시황·수급 이야기로 새는데
+    // ("…최근 실적과 주가를 견인해왔다"), 그것은 종목상세 카드에 있다.
+    const 첫문장 = why.split(/(?<=[.!?])\s+/)[0].trim();
+    if (첫문장.length >= MIN_길이) 매김.unshift({ s: 첫문장, i: -1, v: 점수(첫문장, 0) + 3 });
+  }
+  const 뽑은것 = [];
+  for (const c of [...매김].sort((a, b) => b.v - a.v || a.i - b.i)) {
+    if (c.v <= 0) break;
+    if (뽑은것.some((x) => 겹치나(x.s, c.s))) continue;
+    뽑은것.push(c);
+    if (뽑은것.length >= MAX_문장) break;
+  }
+  return 뽑은것
+    .sort((a, b) => a.i - b.i)
+    .map(({ s, i }) => {
+      let t = 평서문(s);
+      // 화면에는 종목명이 바로 위에 있다. "당사는" 은 군더더기다.
+      // 화면에는 종목명이 바로 위에 있다. 문장 머리의 "당사는" 은 군더더기다.
+      t = t.replace(/^당사(는|의 경우|가)\s*/, "");
+      // 문장 가운데 남은 것은 지운다고 뜻이 서지 않으므로 "회사" 로 바꾼다
+      t = t.replace(/당사/g, "회사").replace(/회사 및 회사의\s+/g, "회사와 그 ");
+      if (name && t.startsWith(name)) t = t.slice(name.length).replace(/^(는|은|이|가)\s*/, "");
+      // 원문 발췌만 자른다. 사람이 손본 편입 사유(i === -1)는 이미 다듬은 것이라
+      // 거기에 말줄임표를 붙이면 오히려 잘린 문장처럼 보인다.
+      // 사람이 손본 편입 사유(i === -1)는 이미 다듬은 것이라 웬만하면 자르지
+      // 않는다. 그래도 한 문단을 넘기면 카드가 아니라 글이 되므로 한계는 둔다.
+      const 한계 = i >= 0 ? MAX_길이 : MAX_길이 + 60;
+      if (t.length > 한계) t = t.slice(0, 한계).replace(/\s+\S*$/, "") + "…";
+      return t;
+    })
+    .filter((t) => t.length >= MIN_길이);
+}
+
+const out = {};
+let 있음 = 0, 없음 = 0, 문장수 = 0;
+const 없는것 = [];
+for (const t of themes.themes) {
+  for (const s of t.stocks) {
+    const r = 원문.get(s.code);
+    const a = r?.text ? 개요(r.text, s.name, s.why) : [];
+    if (a.length) {
+      out[s.code] = a;
+      있음++;
+      문장수 += a.length;
+    } else {
+      없음++;
+      if (없는것.length < 12) 없는것.push(`${s.name}(${s.code})`);
+    }
+  }
+}
+
+console.log(`개요 ${있음}종목 · 못 세운 것 ${없음}종목 (${((100 * 있음) / (있음 + 없음)).toFixed(1)}%)`);
+console.log(`  종목당 평균 ${(문장수 / 있음).toFixed(2)}문장`);
+if (없는것.length) console.log(`  원문에 쓸 문장이 없던 것: ${없는것.join(" · ")}`);
+
+const 볼것 = process.env.SAMPLE ? process.env.SAMPLE.split(",") : ["068270", "005930", "000660", "042660"];
+for (const c of 볼것) {
+  const s = themes.themes.flatMap((t) => t.stocks).find((x) => x.code === c);
+  if (!s) continue;
+  console.log(`\n── ${s.name}`);
+  for (const l of out[c] ?? ["(없음)"]) console.log(`   · ${l}`);
+}
+
+if (WRITE) {
+  fs.writeFileSync(OUT, JSON.stringify(out));
+  console.log(`\n→ ${OUT}  ${(fs.statSync(OUT).size / 1024).toFixed(0)}KB`);
+} else {
+  console.log("\n--write 를 주면 파일로 굳힌다.");
+}

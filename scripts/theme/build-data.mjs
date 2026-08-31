@@ -12,6 +12,7 @@ import path from "node:path";
 import { THEMES } from "./dict.mjs";
 import { ourSentences, SELF } from "./classify.mjs";
 import { 사업항목 } from "./biz.mjs";
+import { 평서문 } from "./sent.mjs";
 import { makeExclusive } from "./exclusive.mjs";
 
 const DIR = ".cache/theme";
@@ -103,31 +104,6 @@ function 거른다(s) {
   // 업종 일반론 (자기 회사 얘기가 아니다)
   if (/^(지주회사|리츠|이 산업|해당 산업|본 산업)(는|은|이란)/.test(s)) return true;
   return false;
-}
-
-/**
- * 사람이 적어 준 문장은 "…생산한다" 인데 원문 발췌는 "…생산합니다" 다.
- * 한 화면에 섞이면 눈에 걸리므로 어미만 맞춘다. 뜻은 건드리지 않는다.
- */
-const 어미 = [
-  [/하였습니다\.?$/, "했다."], [/되었습니다\.?$/, "됐다."],
-  [/있습니다\.?$/, "있다."], [/없습니다\.?$/, "없다."],
-  [/습니다\.?$/, "다."],
-  [/합니다\.?$/, "한다."], [/됩니다\.?$/, "된다."],
-];
-function 평서문(s) {
-  // "…영위하고 있습니다.3) 건설업" — 다음 절 머리가 붙어 온 것을 떼어 낸다
-  let t = s.trim().replace(/([다요])\.\s*\d+[).]?\s*\S*$/, "$1.").trim();
-  // "…입니다" 는 받침을 봐야 한다. 기업입니다→기업이다 · 회사입니다→회사다
-  const m = t.match(/^(.*?)입니다\.?$/);
-  if (m) {
-    const h = m[1].trim();
-    const c = h.charCodeAt(h.length - 1) - 0xac00;
-    const 받침 = c >= 0 && c < 11172 && c % 28 !== 0;
-    return h + (받침 ? "이다." : "다.");
-  }
-  for (const [re, to] of 어미) if (re.test(t)) return t.replace(re, to);
-  return /[.!?…]$/.test(t) ? t : t + ".";
 }
 
 /**
