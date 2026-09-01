@@ -66,7 +66,10 @@ interface Acnt {
   fs_div?: string; // CFS 연결 / OFS 별도
   sj_div?: string; // BS 재무상태표 / IS 손익계산서
   account_nm?: string;
+  /** 당기 금액. 분기·반기 보고서에서는 그 분기 3개월치다(누적이 아니다). */
   thstrm_amount?: string;
+  /** 당기 누적. 분기·반기 보고서에만 있다. */
+  thstrm_add_amount?: string;
 }
 
 const won = (v?: string) => {
@@ -74,20 +77,34 @@ const won = (v?: string) => {
   return Number.isFinite(x) ? x : NaN;
 };
 
-/** 한 보고서에서 필요한 계정만 뽑는다. 연결(CFS) 우선, 없으면 별도(OFS). */
-function pick(rows: Acnt[]): Record<string, number> {
+/**
+ * 한 보고서에서 필요한 계정만 뽑는다. 연결(CFS) 우선, 없으면 별도(OFS).
+ *
+ * 금액과 누적금액을 따로 담는다. 4분기를 만들 때 3분기 누적이 필요해서다.
+ */
+function pick(rows: Acnt[]): { 금액: Record<string, number>; 누적: Record<string, number> } {
   const pref = rows.some((r) => r.fs_div === "CFS") ? "CFS" : "OFS";
-  const out: Record<string, number> = {};
+  const 금액: Record<string, number> = {};
+  const 누적: Record<string, number> = {};
   for (const r of rows) {
     if (r.fs_div !== pref) continue;
     const name = (r.account_nm ?? "").replace(/\s/g, "");
     const v = won(r.thstrm_amount);
-    if (Number.isFinite(v) && !(name in out)) out[name] = v;
+    if (Number.isFinite(v) && !(name in 금액)) 금액[name] = v;
+    const a = won(r.thstrm_add_amount);
+    if (Number.isFinite(a) && !(name in 누적)) 누적[name] = a;
   }
-  return out;
+  return { 금액, 누적 };
 }
 
-const REPRT = { annual: ["11011"], quarter: ["11013", "11012", "11014", "11011"] };
+/**
+ * 흐름 항목 — 기간 동안 쌓인 값이라 더하고 뺄 수 있다.
+ *
+ * 잔액 항목(부채총계·자본총계)과 갈라 두어야 한다. 4분기를 만들 때
+ * "연간 − 3분기누적" 을 쓰는데, 그것을 잔액에 적용하면 연말 부채에서
+ * 9월 부채를 빼는 꼴이 되어 아무 뜻도 없는 수가 나온다.
+ */
+const 흐름 = ["매출액", "수익(매출액)", "영업이익", "영업이익(손실)", "당기순이익", "당기순이익(손실)"];
 
 async function report(corp: string, year: number, reprt: string): Promise<Acnt[]> {
   const u =
@@ -118,36 +135,70 @@ export async function dartFinancials(
 
   return cached<Financials>(`dart:fin:${code}:${period}`, 24 * 3600, async () => {
     const thisYear = new Date().getUTCFullYear();
-    // 연간은 최근 4개 사업연도, 분기는 최근 2년치 분기
+
+    // ── 4분기 보고서는 없다 ─────────────────────────────────
+    // DART 가 주는 것은 1분기·반기·3분기·사업보고서 넷이고, 사업보고서는
+    // 연간이다. 그것을 12월 분기 자리에 그대로 넣으면 삼성전자 2025년이
+    // 938,374억이어야 할 자리에 3,336,059억(연간)이 뜬다 — 3.6배다.
+    //
+    // 그래서 4분기는 만들어 낸다.  4Q = 연간 − 3분기누적
+    //
+    //   2025 삼성전자   1Q 791,405  2Q 745,663  3Q 860,617   (셋의 합 2,397,685)
+    //                   3Q 누적 2,397,686 · 연간 3,336,059
+    //                   → 4Q 938,373   (네이버가 내놓는 938,374 와 같다)
+    //
+    // 뺄셈은 흐름 항목에만 쓴다. 부채총계·자본총계는 잔액이라 연말 값을
+    // 그대로 쓴다 — 12월 부채에서 9월 부채를 빼면 아무 뜻도 없는 수다.
+    const 분기 = [
+      { rc: "11013", label: "03" },
+      { rc: "11012", label: "06" },
+      { rc: "11014", label: "09" },
+    ];
     const jobs: { year: number; reprt: string; title: string }[] = [];
     if (period === "annual") {
       for (let y = thisYear - 4; y <= thisYear; y++) {
         jobs.push({ year: y, reprt: "11011", title: `${y}.12` });
       }
     } else {
-      const label: Record<string, string> = {
-        "11013": "03", "11012": "06", "11014": "09", "11011": "12",
-      };
       for (let y = thisYear - 1; y <= thisYear; y++) {
-        for (const rc of REPRT.quarter) jobs.push({ year: y, reprt: rc, title: `${y}.${label[rc]}` });
+        for (const q of 분기) jobs.push({ year: y, reprt: q.rc, title: `${y}.${q.label}` });
+        // 4분기를 만들려면 연간이 필요하다. 자리는 뒤에서 채운다.
+        jobs.push({ year: y, reprt: "11011", title: `${y}.12` });
       }
     }
 
     const got = await Promise.all(
-      jobs.map(async (j) => ({ ...j, rows: pick(await report(corp, j.year, j.reprt)) })),
+      jobs.map(async (j) => ({ ...j, ...pick(await report(corp, j.year, j.reprt)) })),
     );
-    const live = got.filter((g) => Object.keys(g.rows).length > 0);
+
+    if (period === "quarter") {
+      for (const g of got) {
+        if (g.reprt !== "11011") continue;
+        const 삼분기 = got.find((x) => x.year === g.year && x.reprt === "11014");
+        // 3분기 누적이 없으면 4분기를 셀 수 없다. 연간을 분기인 척 내놓느니
+        // 그 칸을 비운다.
+        if (!삼분기 || !Object.keys(삼분기.누적).length) { g.금액 = {}; continue; }
+        for (const k of 흐름) {
+          const 연간 = g.금액[k];
+          const 누적 = 삼분기.누적[k];
+          g.금액[k] =
+            Number.isFinite(연간) && Number.isFinite(누적) ? 연간 - 누적 : NaN;
+        }
+      }
+    }
+
+    const live = got.filter((g) => Object.values(g.금액).some((v) => Number.isFinite(v)));
     if (!live.length) return { periods: [], rows: [] };
 
     const 억 = (v: number) => (Number.isFinite(v) ? Math.round(v / 1e8) : NaN);
     const rate = (a: number, b: number) =>
       Number.isFinite(a) && Number.isFinite(b) && b !== 0 ? +((a / b) * 100).toFixed(2) : NaN;
 
-    const 매출 = live.map((g) => g.rows["매출액"] ?? g.rows["수익(매출액)"] ?? NaN);
-    const 영익 = live.map((g) => g.rows["영업이익"] ?? g.rows["영업이익(손실)"] ?? NaN);
-    const 순익 = live.map((g) => g.rows["당기순이익"] ?? g.rows["당기순이익(손실)"] ?? NaN);
-    const 부채 = live.map((g) => g.rows["부채총계"] ?? NaN);
-    const 자본 = live.map((g) => g.rows["자본총계"] ?? NaN);
+    const 매출 = live.map((g) => g.금액["매출액"] ?? g.금액["수익(매출액)"] ?? NaN);
+    const 영익 = live.map((g) => g.금액["영업이익"] ?? g.금액["영업이익(손실)"] ?? NaN);
+    const 순익 = live.map((g) => g.금액["당기순이익"] ?? g.금액["당기순이익(손실)"] ?? NaN);
+    const 부채 = live.map((g) => g.금액["부채총계"] ?? NaN);
+    const 자본 = live.map((g) => g.금액["자본총계"] ?? NaN);
 
     const txt = (xs: number[]) =>
       xs.map((v) => (Number.isFinite(v) ? v.toLocaleString("ko-KR") : null));
