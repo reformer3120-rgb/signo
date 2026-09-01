@@ -17,6 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, execSync } from "node:child_process";
+import { 전부, 만드는법, 키검사 } from "./pack-list.mjs";
 
 /** 지난 꾸러미를 묶은 시점 (2026-08-31 15:45) */
 const BASE = "5e2ebc5";
@@ -24,24 +25,19 @@ const BASE = "5e2ebc5";
 const OUT = "SIGNO-종목탭-바뀐것.zip";
 const TMP = ".cache/pack-delta";
 
-/** 그쪽 화면에 들어가는 것 — 이대로 덮어쓰면 된다 */
-const 화면 = [
-  "src/components/stock/StockBriefCard.tsx",
-  "src/components/stock/StockView.tsx",
-  "src/app/stock/page.tsx",
-  "src/app/api/stock-brief/route.ts",
-  "src/lib/about.ts",
-  "src/lib/ownTheme.ts",
-  "src/data/about.json",
-];
-
-/** 개요 문장을 분기에 한 번 새로 만들 때만 필요한 것 */
-const 만드는법 = [
-  "scripts/theme/build-about.mjs",
-  "scripts/theme/sent.mjs",
-  "scripts/theme/classify.mjs",
-  "scripts/theme/build-data.mjs",
-];
+// 무엇을 담을지 손으로 적지 않는다.
+//
+// 처음에는 바뀐 파일을 여기 적어 두었다. 그러다 개요를 고치고 나니 여섯
+// 파일이 목록에서 빠졌는데, 받는 쪽은 그것이 빠진 줄도 모른다. 목록은
+// pack-list.mjs 하나뿐이고, 그중 무엇이 바뀌었는지는 git 에게 묻는다.
+const 상태 = new Map(
+  execSync(`git diff --name-status ${BASE}..HEAD -- src scripts`, { encoding: "utf8" })
+    .trim().split(String.fromCharCode(10)).filter(Boolean)
+    .map((l) => { const [t, f] = l.split(String.fromCharCode(9)); return [f, t]; }),
+);
+const 담은것 = 전부.filter((f) => 상태.has(f));
+const 새것 = 담은것.filter((f) => 상태.get(f) === "A");
+const 고친것 = 담은것.filter((f) => 상태.get(f) === "M");
 
 fs.rmSync(TMP, { recursive: true, force: true });
 const 담기 = (from, to) => {
@@ -50,26 +46,12 @@ const 담기 = (from, to) => {
 };
 
 let 빠진것 = 0;
-for (const f of [...화면, ...만드는법]) {
+for (const f of 담은것) {
   if (!fs.existsSync(f)) { console.log(`  없음 — ${f}`); 빠진것++; continue; }
   담기(f, `덮어쓸것/${f}`);
 }
 
-// 줄바꿈과 탭. 이 파일은 여러 도구를 거쳐 만들어져 역슬래시가 먹히는 일이
-// 있었다. 문자 코드로 적어 두면 그럴 일이 없다.
 const 줄 = String.fromCharCode(10);
-const 탭 = String.fromCharCode(9);
-
-// 무엇이 새 파일이고 무엇이 고친 파일인가 — git 에게 묻는다.
-// 손으로 나눠 적으면 다음에 꼭 어긋난다.
-const 상태 = new Map(
-  execSync(`git diff --name-status ${BASE}..HEAD -- src scripts`, { encoding: "utf8" })
-    .trim().split(줄).filter(Boolean)
-    .map((l) => { const [t, f] = l.split(탭); return [f, t]; }),
-);
-const 담은것 = [...화면, ...만드는법];
-const 새것 = 담은것.filter((f) => 상태.get(f) === "A");
-const 고친것 = 담은것.filter((f) => 상태.get(f) === "M");
 
 // 바뀐 자리 — 고친 파일만 넣는다.
 //
@@ -95,7 +77,7 @@ fs.writeFileSync(
   [
     "# 고칠 자리만 — 종목탭",
     "",
-    "지난 꾸러미(전체 65파일) 이후 바뀐 것만 담았다. 나머지는 그대로다.",
+    "지난 꾸러미(전체 66파일) 이후 바뀐 것만 담았다. 나머지는 그대로다.",
     "",
     "## 읽는 순서",
     "",
@@ -103,7 +85,7 @@ fs.writeFileSync(
     "2. `바뀐자리.diff` — 고친 파일이 어떻게 바뀌었나",
     "3. `덮어쓸것/` — 그대로 복사",
     "",
-    "## 새 파일 (그대로 넣으면 된다)",
+    `## 새 파일 ${새것.length}개 (그대로 넣으면 된다)`,
     "",
     "```",
     ...새것,
@@ -112,11 +94,14 @@ fs.writeFileSync(
     "`src/data/about.json` 이 개요 문장이다. **이게 없으면 개요가 통째로",
     "안 뜬다.** 1.4MB 이고 서버에서만 읽는다.",
     "",
-    "## 고친 파일 (diff 를 보고 반영)",
+    `## 고친 파일 ${고친것.length}개 (diff 를 보고 반영)`,
     "",
     "```",
     ...고친것,
     "```",
+    "",
+    "`scripts/` 는 개요 문장을 분기에 한 번 새로 만들 때만 필요하다.",
+    "지금 당장은 `about.json` 만 있으면 된다.",
     "",
     "## 안 건드린 것",
     "",
@@ -126,11 +111,8 @@ fs.writeFileSync(
     "",
     "## 어디부터",
     "",
-    "개요 카드부터. **키가 필요 없어서 오늘 바로 붙는다** — `stock-brief` 가",
+    "기업 개요부터. **키가 필요 없어서 오늘 바로 붙는다** — `stock-brief` 가",
     "이제 바깥을 하나도 안 부르고 굳혀 둔 표 둘만 읽는다.",
-    "",
-    "`scripts/` 는 개요 문장을 분기에 한 번 새로 만들 때만 필요하다.",
-    "지금 당장은 `about.json` 만 있으면 된다.",
     "",
   ].join(줄),
 );
@@ -145,11 +127,7 @@ fs.writeFileSync(
   }),
 );
 
-const 위험 = [...화면, ...만드는법].filter((f) => /\.env|token|secret|\.key/i.test(f));
-if (위험.length) {
-  console.error(`키로 보이는 파일이 목록에 있다 — ${위험.join(", ")}`);
-  process.exit(1);
-}
+키검사(담은것);
 
 fs.rmSync(OUT, { force: true });
 execFileSync("powershell", [
@@ -158,5 +136,5 @@ execFileSync("powershell", [
 ], { stdio: "inherit" });
 
 console.log(`\n${OUT}  ${(fs.statSync(OUT).size / 1024 / 1024).toFixed(2)}MB`);
-console.log(`  화면 ${화면.length}개 · 만드는 법 ${만드는법.length}개 · 기준 ${BASE}`);
+console.log(`  새 파일 ${새것.length} · 고친 파일 ${고친것.length} · 기준 ${BASE}`);
 if (빠진것) console.log(`  못 담은 것 ${빠진것}개 — 위를 볼 것`);

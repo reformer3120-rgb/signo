@@ -17,46 +17,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { 화면, 라우트, 만드는법, 키검사 } from "./pack-list.mjs";
 
 const OUT = "SIGNO-종목탭-이식.zip";
 const TMP = ".cache/pack";
 
-/** 종목탭이 쓰는 파일 — StockView.tsx 에서 import 를 따라가면 나오는 전부 */
-const SRC = [
-  "src/app/globals.css",
-  "src/app/stock/page.tsx",
-  ...[
-    "financials", "grades", "investor", "investor-estimate", "investor-frgn",
-    "ohlcv", "quote", "search", "sector-rank", "stock-brief", "stock-detail",
-    "stock-news", "stock-themes",
-  ].map((r) => `src/app/api/${r}/route.ts`),
-  ...[
-    "CandleChart", "Card", "ChartFoldButton", "ExchangeSelect", "IndicatorBar",
-    "InvestorPanel", "MaLegend", "SessionBadge", "StockBrief", "StockSearch",
-    "WatchButton",
-  ].map((c) => `src/components/${c}.tsx`),
-  "src/components/sections/StockSection.tsx",
-  ...[
-    "FinancialsCard", "NewsCard", "SectorRankCard", "StockBriefCard",
-    "StockDetailCard", "StockStickyBar", "StockThemeChips", "StockView",
-  ].map((c) => `src/components/stock/${c}.tsx`),
-  // 굳혀 둔 표 — 이게 없으면 테마와 개요가 통째로 비어 뜬다
-  "src/data/themes.json",
-  "src/data/about.json",
-  ...[
-    "about", "baseline", "cache", "chartDraw", "facts", "format", "indicators",
-    "kis", "naver", "naverApi", "ownTheme", "score", "sectorGroup", "session",
-    "swr", "types", "useChartHeight", "useSticky", "useStickyOffset", "watchlist",
-  ].map((l) => `src/lib/${l}.ts`),
-  ...["dart", "index", "koscom", "naverKis", "types"].map((p) => `src/lib/providers/${p}.ts`),
-];
-
-/** 분기에 한 번 돌려 개요 문장을 새로 만드는 것 */
-const SCRIPTS = [
-  "scripts/theme/build-about.mjs",
-  "scripts/theme/sent.mjs",
-  "scripts/theme/classify.mjs",
-];
+const SRC = [...화면, ...라우트];
+const SCRIPTS = 만드는법;
 
 /** 꾸러미 맨 위에 놓을 문서 — [원본, 담을 이름] */
 const DOCS = [
@@ -101,11 +68,7 @@ fs.writeFileSync(
 
 // 키가 섞여 들어가지 않았는지 본다. 사람이 고르든 코드가 고르든 마지막에
 // 한 번은 확인해야 한다.
-const 위험 = [...SRC, ...SCRIPTS].filter((f) => /\.env|token|secret|\.key/i.test(f));
-if (위험.length) {
-  console.error(`키로 보이는 파일이 목록에 있다 — ${위험.join(", ")}`);
-  process.exit(1);
-}
+키검사([...SRC, ...SCRIPTS]);
 
 fs.rmSync(OUT, { force: true });
 // -Path 에 폴더를 주면 폴더째 들어가고, 와일드카드를 주면 압축 루트에 'pack'
