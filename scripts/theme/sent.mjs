@@ -29,3 +29,24 @@ export function 평서문(s) {
   for (const [re, to] of 어미) if (re.test(t)) return t.replace(re, to);
   return /[.!?…]$/.test(t) ? t : t + ".";
 }
+
+/**
+ * "-며/-으며" 로 이어지던 절을 문장으로 닫는다.
+ *
+ *   "…금융투자업무를 주요사업으로 영위하고 있으며"  →  "…영위하고 있다."
+ *
+ * 뒤가 잘려 나간 문장을 살려 쓸 때 필요하다. 원문에서 뒷절만 버리면
+ * 앞절이 종결어미 없이 남는다.
+ */
+export function 며닫기(h) {
+  const 줄기 = h.trim().replace(/[,·]$/, "").replace(/(으)?며$/, "");
+  // 형용사와 계사는 "-는다" 를 받지 않는다.
+  //   있으며 → 있다 (있는다 ×)   없으며 → 없다
+  //   영위중이며 → 영위중이다 (영위중인다 ×)
+  if (/(있|없)$/.test(줄기)) return 줄기 + "다";
+  if (/이$/.test(줄기)) return 줄기 + "다";
+  const 끝 = 줄기.charCodeAt(줄기.length - 1) - 0xac00;
+  if (끝 < 0 || 끝 >= 11172) return null;
+  if (끝 % 28 !== 0) return 줄기 + "는다";                                  // 받침 있음
+  return 줄기.slice(0, -1) + String.fromCharCode(0xac00 + 끝 + 4) + "다";   // ㄴ 받침(4)
+}
