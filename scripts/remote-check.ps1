@@ -42,19 +42,39 @@ if ($bat) {
 }
 
 # 2. 크롬 원격 데스크톱 호스트
+#
+# 돌고 있는 것만으로는 모자란다. 시작 유형이 자동이어야 재부팅 뒤에도
+# 다시 뜬다. 수동이면 한 번 재부팅되는 순간 밖에서 붙을 길이 없어진다.
 $crd = Get-Service chromoting -ErrorAction SilentlyContinue
-확인 "크롬 원격 데스크톱" ($crd -and $crd.Status -eq 'Running') `
+$등록 = Test-Path (Join-Path $env:ProgramData 'Google\Chrome Remote Desktop\host.json')
+확인 "크롬 원격 데스크톱" ($crd -and $crd.Status -eq 'Running' -and $등록) `
   "돌고 있음" "설치 안 됐거나 멈춤 — remotedesktop.google.com/access"
+if ($crd) {
+  확인 "  재부팅 뒤 자동 시작" ($crd.StartType -eq 'Automatic') `
+    "자동" "'$($crd.StartType)' — 재부팅되면 안 뜬다"
+}
 
-# 3. 인터넷
+# 3. 윈도우 업데이트 재부팅
+#
+# 재부팅 자체는 견딜 만하다. 호스트가 자동으로 뜨고, 잠금화면에도 붙을 수
+# 있어서 거기서 윈도우 암호로 로그인하면 된다. 다만 이미 재부팅이 밀려
+# 있으면 나가기 전에 해 두는 편이 낫다 — 밖에서 겪을 이유가 없다.
+$RB = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+확인 "윈도우 업데이트" (-not (Test-Path $RB)) "재부팅 대기 없음" "재부팅이 밀려 있다 — 나가기 전에 해 둘 것"
+$au = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings' -EA SilentlyContinue
+if ($null -ne $au.ActiveHoursStart) {
+  Write-Output "  [ ] 활성 시간 $($au.ActiveHoursStart)시~$($au.ActiveHoursEnd)시 — 이 밖의 시간엔 알아서 재부팅할 수 있다"
+}
+
+# 4. 인터넷
 확인 "인터넷" (Test-Connection 8.8.8.8 -Count 1 -Quiet -ErrorAction SilentlyContinue) `
   "연결됨" "끊김"
 
-# 4. 윗층 주간 갱신 — 나가 있는 동안 월요일이 끼면 이게 돌아야 한다
+# 5. 윗층 주간 갱신 — 나가 있는 동안 월요일이 끼면 이게 돌아야 한다
 $t = schtasks /query /tn "SIGNO-upper-refresh" /fo list 2>$null
 확인 "윗층 주간 갱신" ($LASTEXITCODE -eq 0) "등록돼 있음 (월 07:00)" "등록 안 됨"
 
-# 5. 저장소가 다 올라가 있나 — 안 올라간 커밋은 폰에서 못 본다
+# 6. 저장소가 다 올라가 있나 — 안 올라간 커밋은 폰에서 못 본다
 Push-Location C:\signo
 $안올림 = (git rev-list --count '@{u}..HEAD' 2>$null)
 $뭔가있나 = (git status --porcelain 2>$null | Measure-Object -Line).Lines
