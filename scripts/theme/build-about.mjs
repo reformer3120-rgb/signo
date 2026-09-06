@@ -25,6 +25,7 @@
 //   node scripts/theme/build-about.mjs --write  → src/data/about.json
 import fs from "node:fs";
 import path from "node:path";
+import { 캐시확인 } from "./cache-guard.mjs";
 import { sentences, looksTable, SELF } from "./classify.mjs";
 import { 평서문, 며닫기 } from "./sent.mjs";
 
@@ -36,6 +37,7 @@ const MAX_문장 = 3;    // 증권플러스 개요도 셋이다. 넷을 넘으�
 const MAX_길이 = 130;  // 한 문장이 화면에서 두 줄
 const MIN_길이 = 25;   // 이보다 짧으면 토막이지 문장이 아니다
 
+캐시확인(path.join(DIR, "overview.json"), "scripts/theme/collect.mjs");
 const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 

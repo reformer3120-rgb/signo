@@ -9,6 +9,7 @@
 // 결과 → src/data/themes.json  (분기에 한 번 갱신하면 된다)
 import fs from "node:fs";
 import path from "node:path";
+import { 캐시확인 } from "./cache-guard.mjs";
 import { THEMES } from "./dict.mjs";
 import { ourSentences, SELF } from "./classify.mjs";
 import { 사업항목 } from "./biz.mjs";
@@ -19,6 +20,7 @@ const DIR = ".cache/theme";
 const OUT = "src/data/themes.json";
 const MAX_WHY = 220; // 화면에서 두 줄쯤
 
+캐시확인(path.join(DIR, "overview.json"), "scripts/theme/collect.mjs");
 const ov = JSON.parse(fs.readFileSync(path.join(DIR, "overview.json"), "utf8"));
 const raw = JSON.parse(fs.readFileSync(path.join(DIR, "classified.json"), "utf8"));
 
