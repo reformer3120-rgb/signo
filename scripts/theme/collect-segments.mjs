@@ -206,6 +206,7 @@ for (const s of 종목) {
     if (!seg) 못찾음++;
     out[s.code] = seg ? { ...seg, report: r0.report_nm, asOf: r0.rcept_dt } : null;
     새로++;
+  } catch { out[s.code] = null; }
   if (새로 && 새로 % 50 === 0) {
     fs.writeFileSync(OUT, JSON.stringify(out));
     console.log(`  ${한것}/${Math.min(종목.length, LIMIT)} · 새로 ${새로} · 못 찾음 ${못찾음} · ${((Date.now()-시작)/1000).toFixed(0)}초`);
