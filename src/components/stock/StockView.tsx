@@ -83,7 +83,7 @@ export function StockView({
         onMinUnit={setMinUnit}
         onExch={setExch}
       />
-      <StockBriefCard code={code} name={name} />
+      <StockBriefCard code={code} name={name} exch={exch} />
       <StockDetailCard code={code} exch={exch} />
       <FinancialsCard code={code} />
       <SectorRankCard code={code} onSelect={selectFromSector} />
