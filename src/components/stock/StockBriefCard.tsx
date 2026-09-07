@@ -28,7 +28,7 @@ type Resp = BriefData & {
  *   PER · 시총 · 목표주가 · 의견     → 종목 상세
  *   테마 N종목                     → 차트 위 테마 칩
  *
- * 여기 남은 숫자는 다른 데 없는 것들뿐이다 — 설립 연도, 매출 구성, 주주 구성.
+ * 여기 남은 숫자는 다른 데 없는 것들뿐이다 — 매출 구성과 주주 구성.
  *
  * ── 외국인 비중은 왜 여기서 받나 ───────────────────────────
  * 대량보유자는 굳혀 둘 수 있지만(분기 공시) 외국인 보유비중은 하루에도
@@ -91,13 +91,8 @@ export function StockBriefCard({
         </ul>
       )}
 
-      {(낱말.length > 0 || d.설립) && (
+      {낱말.length > 0 && (
         <div className={`flex flex-wrap items-center gap-1.5 ${문장.length ? "mt-2.5" : ""}`}>
-          {d.설립 && (
-            <span className="tnum rounded bg-surface px-1.5 py-0.5 text-[11.5px] font-medium">
-              {d.설립}년 설립
-            </span>
-          )}
           {낱말.map((b) => (
             <span key={b} className="rounded bg-surface px-1.5 py-0.5 text-[11.5px] font-medium">
               {b}

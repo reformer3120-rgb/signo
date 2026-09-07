@@ -1,4 +1,4 @@
-// 개요 카드의 그림 재료 — 설립 연도 · 매출 구성 · 대량보유자.
+// 개요 카드의 그림 재료 — 매출 구성과 대량보유자.
 //
 // 문장(about.json)과 나눠 둔 이유는 만드는 주기가 달라서다. 문장은 사업보고서
 // 원문에서 뽑고, 이쪽은 매출실적표·대량보유 공시·회사개황에서 온다.
@@ -21,7 +21,6 @@ export interface 보유자 extends 조각 {
   구분: string | null;
 }
 export interface Profile {
-  설립?: number;
   매출?: { rows: 조각[]; asOf: string | null; report: string | null };
   주주?: { rows: 보유자[]; asOf: string | null };
 }

@@ -37,6 +37,8 @@ const DIR = ".cache/theme";
 const OUT = path.join(DIR, "segments.json");
 const 인자 = (n, 기본) => { const i = process.argv.indexOf(n); return i > 0 ? Number(process.argv[i + 1]) : 기본; };
 const LIMIT = 인자("--limit", Infinity);
+// 한 종목만 다시 뽑아 본다 — 규칙을 고친 뒤 확인할 때 쓴다
+const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
 
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
 const out = 읽기(OUT, {});
@@ -110,9 +112,15 @@ function 표풀기(tbl) {
  * 사람인 [사업부문 구분 값…] 이 모두 같은 규칙으로 풀린다.
  */
 function 부문뽑기(xml) {
-  // 제목은 문서 앞 목차에도 나온다. 첫 매치만 보면 목차 뒤를 뒤지다 만다.
-  // 나오는 자리를 모두 훑어 표가 풀리는 곳을 쓴다.
-  const 자리 = [...xml.matchAll(/매\s*출\s*실\s*적|매출\s*및\s*수주/g)].map((x) => x.index);
+  // 제목이 목차에도 나온다. 목차를 잡으면 그 뒤 6만 자 안의 엉뚱한 표를 쓴다 —
+  // 삼성전기가 주식 총수 표를 잡아 "보통주 96.3% / 우선주 3.7%" 가 나왔다.
+  //
+  // 진짜 절은 <TITLE> 태그로 표시된다. 그것을 먼저 찾고, 없을 때만 본문
+  // 아무 데나 나온 자리를 쓴다.
+  const 절 = /<TITLE[^>]*>[^<]*(?:매\s*출\s*실\s*적|매출\s*및\s*수주)[^<]*<\/TITLE>/g;
+  const 아무데나 = /매\s*출\s*실\s*적|매출\s*및\s*수주/g;
+  const 자리 = [...xml.matchAll(절)].map((x) => x.index);
+  if (!자리.length) 자리.push(...[...xml.matchAll(아무데나)].map((x) => x.index));
   for (const 시작 of 자리) {
     const 뽑은것 = 구역에서(xml.slice(시작, 시작 + 60000));
     if (뽑은것) return 뽑은것;
@@ -192,8 +200,24 @@ function 구역에서(구역) {
   return null;
 }
 
+const 쉼 = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * DART 는 쉬지 않고 두드리면 연결을 끊는다(fetch failed / ECONNRESET).
+ * 다른 수집기가 같이 돌 때 특히 그렇다. 끊기면 쉬었다 다시 건다.
+ */
+async function 받기(url, 남은시도 = 3) {
+  try {
+    return await fetch(url);
+  } catch (e) {
+    if (남은시도 <= 0) throw e;
+    await 쉼(2000);
+    return 받기(url, 남은시도 - 1);
+  }
+}
+
 async function 최근보고서(corpCode) {
-  const j = await (await fetch(
+  const j = await (await 받기(
     `https://opendart.fss.or.kr/api/list.json?crtfc_key=${KEY}&corp_code=${corpCode}` +
     `&bgn_de=20240101&end_de=20301231&pblntf_ty=A&page_count=20`)).json();
   if (j.status !== "000") return null;
@@ -205,20 +229,24 @@ async function 최근보고서(corpCode) {
 let 한것 = 0, 새로 = 0, 못찾음 = 0;
 const 시작 = Date.now();
 for (const s of 종목) {
+  if (ONLY && s.code !== ONLY) continue;
   if (한것 >= LIMIT) break;
   한것++;
-  if (out[s.code] !== undefined) continue;
+  if (!ONLY && out[s.code] !== undefined) continue;
   try {
     const r0 = await 최근보고서(코드[s.code]);
     if (!r0) { out[s.code] = null; 못찾음++; continue; }
-    const res = await fetch(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${r0.rcept_no}`);
+    await 쉼(40);
+    const res = await 받기(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${r0.rcept_no}`);
     let xml = "";
     for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
+    if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
     const seg = 부문뽑기(xml);
+    if (ONLY && !seg) console.log("  표를 못 찾음");
     if (!seg) 못찾음++;
     out[s.code] = seg ? { ...seg, report: r0.report_nm, asOf: r0.rcept_dt } : null;
     새로++;
-  } catch { out[s.code] = null; }
+  } catch (e) { out[s.code] = null; if (ONLY) console.log("  오류:", String(e.message).slice(0, 140)); }
   if (새로 && 새로 % 50 === 0) {
     fs.writeFileSync(OUT, JSON.stringify(out));
     console.log(`  ${한것}/${Math.min(종목.length, LIMIT)} · 새로 ${새로} · 못 찾음 ${못찾음} · ${((Date.now()-시작)/1000).toFixed(0)}초`);

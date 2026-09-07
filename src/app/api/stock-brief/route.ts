@@ -41,9 +41,8 @@ export async function GET(req: Request) {
       // about 이 빈 종목(5%)에서 개요 대신 쓰는 테마 편입 사유
       why: fixed?.why ?? null,
       biz: fixed?.biz ?? [],
-      // 그림 재료 — 설립 연도와 원형 둘. 외국인 비중은 여기 없다(시세와 함께
+      // 그림 재료 — 원형 둘. 외국인 비중은 여기 없다(시세와 함께
       // 바뀌므로 화면이 종목상세에서 받아 합친다).
-      설립: prof?.설립 ?? null,
       매출: prof?.매출 ?? null,
       주주: prof?.주주 ?? null,
     },

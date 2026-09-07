@@ -1,4 +1,14 @@
-// 개요 카드가 쓸 것들을 하나로 굳힌다 — 설립 연도 · 매출 구성 · 대량보유자.
+// 개요 카드가 쓸 것들을 하나로 굳힌다 — 매출 구성과 대량보유자.
+//
+// ── 설립 연도는 싣지 않는다 ────────────────────────────────
+// 처음에는 넣었다가 뺐다. 셋이 걸렸다.
+//   커버리지 54%   1,343/2,496. 칩이 있다 없다 하면 없는 종목이 빠진 것처럼 보인다.
+//   연혁은 문장에  의미가 생기는 것은 설립 연도가 아니라 그 뒤의 사건이고,
+//                 사업보고서에 적힌 회사는 개요 문장이 이미 담는다
+//                 (셀트리온 "2023년 12월 셀트리온헬스케어를 합병").
+//   판단에 안 쓰임 "1973년 설립"이 삼성전기를 볼 때 바꾸는 것이 별로 없다.
+// 받아 둔 company.json 은 지운 것이 아니라 그대로 둔다 — 연혁을 제대로 다룰
+// 일이 생기면 그때 쓴다.
 //
 // 모으는 것과 굳히는 것을 나눈 이유는 themes.json·about.json 과 같다.
 // 원문 39MB 를 배포에 실을 수 없으므로 만든 결과만 커밋한다.
@@ -24,7 +34,6 @@ const OUT = "src/data/profile.json";
 const MAX조각 = 4;
 
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
-const company = 읽기(path.join(DIR, "company.json"), {});
 const segments = 읽기(path.join(DIR, "segments.json"), {});
 const holders = 읽기(path.join(DIR, "holders.json"), {});
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
@@ -61,21 +70,19 @@ function 주주(code) {
 }
 
 const out = {};
-let 설립수 = 0, 매출수 = 0, 주주수 = 0;
+let 매출수 = 0, 주주수 = 0;
 for (const s of 종목) {
-  const 설립 = company[s.code]?.설립 ?? null;
   const m = 매출(s.code);
   const h = 주주(s.code);
-  if (!설립 && !m && !h) continue;
-  if (설립) 설립수++;
+  if (!m && !h) continue;
   if (m) 매출수++;
   if (h) 주주수++;
-  out[s.code] = { ...(설립 ? { 설립 } : {}), ...(m ? { 매출: m } : {}), ...(h ? { 주주: h } : {}) };
+  out[s.code] = { ...(m ? { 매출: m } : {}), ...(h ? { 주주: h } : {}) };
 }
 
 fs.writeFileSync(OUT, JSON.stringify(out));
 const 원형둘 = Object.values(out).filter((v) => (v.매출?.rows.length ?? 0) >= 2 && v.주주).length;
 console.log(`종목 ${Object.keys(out).length} / ${종목.length}`);
-console.log(`  설립 연도 ${설립수} · 매출 구성 ${매출수} · 대량보유자 ${주주수}`);
+console.log(`  매출 구성 ${매출수} · 대량보유자 ${주주수}`);
 console.log(`  원형 둘 다 서는 종목 ${원형둘}`);
 console.log(`  → ${OUT}  ${(fs.statSync(OUT).size / 1024).toFixed(0)}KB`);
