@@ -18,11 +18,13 @@ export const 화면 = [
     "FinancialsCard", "NewsCard", "SectorRankCard", "StockBriefCard",
     "StockDetailCard", "StockStickyBar", "StockThemeChips", "StockView",
   ].map((c) => `src/components/stock/${c}.tsx`),
-  // 굳혀 둔 표 — 이게 없으면 테마와 개요가 통째로 비어 뜬다
+  ...["Donut"].map((c) => `src/components/stock/${c}.tsx`),
+  // 굳혀 둔 표 — 이게 없으면 테마와 개요와 원형이 통째로 비어 뜬다
   "src/data/themes.json",
   "src/data/about.json",
+  "src/data/profile.json",
   ...[
-    "about", "baseline", "cache", "chartDraw", "facts", "format", "indicators",
+    "about", "profile", "baseline", "cache", "chartDraw", "facts", "format", "indicators",
     "kis", "naver", "naverApi", "ownTheme", "score", "sectorGroup", "session",
     "swr", "types", "useChartHeight", "useSticky", "useStickyOffset", "watchlist",
   ].map((l) => `src/lib/${l}.ts`),
@@ -38,10 +40,16 @@ export const 라우트 = [
 
 /** 분기에 한 번 돌려 개요 문장을 새로 만드는 것 */
 export const 만드는법 = [
+  // 개요 문장
   "scripts/theme/build-about.mjs",
   "scripts/theme/sent.mjs",
   "scripts/theme/classify.mjs",
   "scripts/theme/build-data.mjs",
+  // 원형 두 개 — 매출 구성과 주주 구성
+  "scripts/theme/collect-segments.mjs",
+  "scripts/theme/collect-holders.mjs",
+  "scripts/theme/build-profile.mjs",
+  "scripts/theme/dart.mjs",
 ];
 
 /** 꾸러미에 담는 전부 */
