@@ -177,8 +177,12 @@ async function 컨센서스(codes: string[]) {
     if (어) n += Number(어[1].replace(/,/g, ""));
     return n;
   };
+  // 부호를 남겨 두고 읽는다. 「-284.03배」 에서 빼기를 지워 버리면 적자
+  // 추정이 흑자로 뒤집혀 없는 이익이 더해진다. 실제로 그러고 있었다.
+  //   LG에너지솔루션 -284.03 · LG화학 -51.03 · 엘앤에프 -80.70 …
+  // 적자는 세지 않는다 — 연간 PER 을 흑자기업만으로 세는 것과 같은 잣대다.
   const 수 = (s?: string) => {
-    const v = parseFloat(String(s ?? "").replace(/[^\d.]/g, ""));
+    const v = parseFloat(String(s ?? "").replace(/[^\d.-]/g, ""));
     return Number.isFinite(v) && v > 0 ? v : null;
   };
 
@@ -231,7 +235,7 @@ async function 상위코드(market: "KOSPI" | "KOSDAQ", n: number): Promise<stri
  * 몇 종목으로 셌는지 같이 돌려주므로 화면이 그것을 밝힐 수 있다.
  */
 export const marketValue = () =>
-  cached<{ 시장들: 시장가치[]; 버핏: 버핏 | null }>("mktval:v5", 6 * 3600, async () => {
+  cached<{ 시장들: 시장가치[]; 버핏: 버핏 | null }>("mktval:v6", 6 * 3600, async () => {
     const codes = Object.keys(DATA);
     const cap = await 시총모으기();
     const [kospi, kosdaq] = await Promise.all([
