@@ -120,11 +120,18 @@ export function StockBriefCard({
 }
 
 /**
- * 주주 원형 — 대량보유자(5% 이상) + 외국인 + 그 밖.
+ * 주주 원형 — 최대주주(및 특수관계인) + 대량보유자 + 외국인 + 그 밖.
  *
  * 외국계 보유자는 조각을 따로 내지 않는다. 외국인 보유비중 안에 이미 들어
  * 있어서 나누면 두 번 세어진다(NAVER 의 블랙록 7.09%). 대신 외국인 조각에
  * 이름을 적어 누가 들고 있는지는 보이게 한다.
+ *
+ * ── 외국인 조각을 아예 접는 경우 ───────────────────────────
+ * 최대주주 자체가 외국계이면 그 지분이 외국인 보유비중에 통째로 들어 있다.
+ * 둘을 나란히 놓으면 합이 100을 넘는다.
+ *   한국씨티은행  최대주주(씨티은행 해외법인) 99.98% · 외국인 100%
+ * 그래서 국내 조각과 외국인을 더해 100을 넘으면 외국인은 조각으로 두지 않고
+ * 최대주주 조각에 한 줄로 적는다.
  */
 function 주주조각(d: Resp | undefined, 외국인비율?: string): 조각[] {
   const rows = d?.주주?.rows ?? [];
@@ -134,13 +141,19 @@ function 주주조각(d: Resp | undefined, 외국인비율?: string): 조각[] {
   const 국내 = rows.filter((r) => !r.foreign);
   const 외국 = rows.filter((r) => r.foreign);
   const 조각들: 조각[] = 국내.map((r) => ({ name: r.name, pct: r.pct }));
+  const 국내합 = 조각들.reduce((a, r) => a + r.pct, 0);
 
   if (Number.isFinite(외) && 외 > 0) {
-    조각들.push({
-      name: "외국인",
-      pct: +외.toFixed(1),
-      note: 외국.length ? `${외국[0].name} ${외국[0].pct}% 포함` : undefined,
-    });
+    if (국내합 + 외 > 100 && 조각들.length) {
+      // 겹친다. 외국인은 조각을 내지 않고 맨 앞 조각에 적어 둔다.
+      조각들[0] = { ...조각들[0], note: `외국인 ${외.toFixed(1)}% 와 겹침` };
+    } else {
+      조각들.push({
+        name: "외국인",
+        pct: +외.toFixed(1),
+        note: 외국.length ? `${외국[0].name} ${외국[0].pct}% 포함` : undefined,
+      });
+    }
   } else {
     // 외국인 비중을 아직 못 받았으면 외국계 보유자만 따로 낸다
     for (const r of 외국) 조각들.push({ name: r.name, pct: r.pct });

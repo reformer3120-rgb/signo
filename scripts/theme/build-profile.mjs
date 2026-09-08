@@ -36,6 +36,7 @@ const MAX조각 = 4;
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
 const segments = 읽기(path.join(DIR, "segments.json"), {});
 const holders = 읽기(path.join(DIR, "holders.json"), {});
+const largest = 읽기(path.join(DIR, "largest.json"), {});
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 const 종목 = themes.themes.flatMap((t) => t.stocks);
 
@@ -53,20 +54,80 @@ function 매출(code) {
   return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null };
 }
 
-/** 대량보유자 — 5% 이상. 외국계 여부를 달아 둔다. */
+/**
+ * 이름을 견주기 좋게 다듬는다.
+ *
+ * 같은 회사를 두고 공시마다 다르게 적는다. 회사 꼴을 먼저 떼고 나서
+ * 괄호와 띄어쓰기를 지워야 둘이 같아진다.
+ *   (주)셀트리온홀딩스  ┐
+ *   주식회사 셀트리온홀딩스 ┴→ 셀트리온홀딩스
+ */
+const 이름꼴 = (s) =>
+  String(s ?? "")
+    .replace(/\(주\)|\(유\)|㈜|㈜|주식회사|유한회사/g, "")
+    .replace(/[()（）\s]/g, "");
+
+/**
+ * 주주 조각 — 최대주주(및 특수관계인) + 대량보유자.
+ *
+ * ── 최대주주를 따로 받아 오는 이유 ─────────────────────────
+ * 대량보유상황보고(5%룰)는 '보유 상황이 바뀌었을 때' 내는 공시라, 지분을
+ * 쥐고 가만히 있는 지배주주는 최근 목록에 안 뜬다.
+ *   삼성전기  대량보유만 보면 국민연금 9.87 · 블랙록 5.01 뿐이고
+ *             실제 최대주주 삼성전자 23.69% 가 통째로 빠졌다
+ * 그래서 사업보고서의 최대주주 현황(hyslrSttus)을 따로 받아 맨 앞에 둔다.
+ *
+ * 겹치는 이름은 뺀다. 최대주주가 대량보유 공시에도 이름을 올린 경우가
+ * 있어서, 그대로 두면 같은 지분을 두 번 센다.
+ */
 function 주주(code) {
   const rows = holders[code]?.rows ?? [];
-  if (!rows.length) return null;
-  return {
-    rows: rows.slice(0, 4).map((r) => ({
+  const 최대 = largest[code];
+  const 조각 = [];
+
+  if (최대?.pct > 0) {
+    조각.push({
+      name: 최대.인원 > 1 ? `${최대.name} 외 ${최대.인원 - 1}인` : 최대.name,
+      pct: 최대.pct,
+      // 최대주주 현황표에는 국적 칸이 없다. 대량보유 쪽에 같은 이름이
+      // 외국계로 적혀 있을 때만 외국계로 본다.
+      foreign: rows.some((r) => 이름꼴(r.name) === 이름꼴(최대.name) && r.foreign === true),
+      구분: "최대주주",
+    });
+  }
+
+  const 쓴이름 = new Set([이름꼴(최대?.name)]);
+  let 합 = 조각[0]?.pct ?? 0;
+  for (const r of rows) {
+    if (조각.length >= 4) break;
+    if (쓴이름.has(이름꼴(r.name))) continue;
+    // 5%룰 공시는 '본인 + 특별관계자' 를 합쳐 낸다. 그래서 최대주주 쪽 합계와
+    // 거의 같은 값이 다른 이름으로 또 들어온다.
+    //   삼성전자  최대주주 삼성생명보험 외 18인 19.84%
+    //             대량보유 삼성물산 19.69%  ← 같은 지분을 삼성물산이 대표로 낸 것
+    // 이름이 달라 못 거르므로 값으로 거른다.
+    if (최대?.pct > 0 && Math.abs(r.pct - 최대.pct) <= 1) continue;
+    // 이름도 값도 안 맞는데 겹치는 것들이 남는다. 영문·국문 표기가 갈린
+    // 같은 투자자, 계열사가 저마다 대표로 낸 그룹 공시가 그렇다.
+    //   클래시스  BCPE Centur Investments, LP 54.16
+    //             비씨피이 센츄어인베스트먼츠, 엘피 68.13  ← 같은 곳
+    //   KG모빌리티 KG에코솔루션 외 9인 60.85 / KG케미칼 49
+    // 어느 쪽이 겹쳤는지 가릴 길이 없으므로, 합이 100을 넘게 만드는 조각은
+    // 넣지 않는다. 덜 보여 줄지언정 없는 지분을 그리지는 않는다.
+    if (합 + r.pct > 100) continue;
+    합 += r.pct;
+    쓴이름.add(이름꼴(r.name));
+    조각.push({
       name: r.name,
       pct: r.pct,
       // 국적은 공시의 국적 칸에서 읽은 것이다. 이름으로 가르지 않았다.
       foreign: r.foreign === true,
       구분: r.구분 ?? null,
-    })),
-    asOf: rows[0]?.asOf ?? null,
-  };
+    });
+  }
+
+  if (!조각.length) return null;
+  return { rows: 조각, asOf: 최대?.asOf ?? rows[0]?.asOf ?? null };
 }
 
 const out = {};
