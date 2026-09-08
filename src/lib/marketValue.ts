@@ -13,8 +13,8 @@
 //   기준 시점   시총은 지금, 재무는 직전 사업연도 (= 후행 PER)
 // 그래서 "코스피 PER 21.4배" 라고 단정하지 않고 SIGNO 산출임을 적는다.
 //
-// 값 자체보다 **견주는 데** 쓸모가 있다 — 한 종목의 PER 이 시장의 몇 배인지는
-// 양쪽이 같은 방식으로 세므로 위 차이에 휘둘리지 않는다.
+// 그래서 절대 수치를 단정하지 않는다. 추세(지난달 대비)나 두 시장 비교로
+// 읽는 편이 안전하다.
 import RAW from "@/data/valuation.json";
 import { cached, redis } from "@/lib/cache";
 
@@ -106,14 +106,3 @@ export const marketValue = () =>
     const cap = await 시총읽기(codes);
     return (["Y", "K"] as const).map((m) => 세기(codes, cap, m));
   });
-
-/** 한 종목의 PER·PBR 이 그 시장의 몇 배인가 — 값 자체보다 이쪽이 쓸모 있다 */
-export function 시장대비(code: string, per: number | null, pbr: number | null, 시장들: 시장가치[]) {
-  const f = DATA[code];
-  if (!f) return null;
-  const m = 시장들.find((x) => x.시장 === 이름[f.시]);
-  if (!m) return null;
-  const 배 = (v: number | null, 기준: number | null) =>
-    v && 기준 && v > 0 ? +(v / 기준).toFixed(2) : null;
-  return { 시장: m.시장, per: 배(per, m.per), pbr: 배(pbr, m.pbr), 기준: m };
-}
