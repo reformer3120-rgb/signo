@@ -27,8 +27,14 @@ const 이름: Record<string, 시장> = { Y: "코스피", K: "코스닥" };
 
 export interface 시장가치 {
   시장: 시장;
-  /** 흑자기업만으로 센 PER. 이것을 대표값으로 쓴다. */
+  /** 흑자기업만으로 센 PER — DART 사업보고서(직전 연간) 기준 */
   per: number | null;
+  /** 선행 PER — 애널리스트 컨센서스(추정PER)에서 역산 */
+  선행per: number | null;
+  /** 후행 PER — 최근 4분기(TTM). 선행과 같은 표본이라 견주기 좋다 */
+  후행per: number | null;
+  /** 선행·후행을 센 표본이 그 시장 시총의 몇 %인가 */
+  컨센커버: number | null;
   /** 적자까지 넣어 센 PER — 참고용 */
   perAll: number | null;
   pbr: number | null;
@@ -70,6 +76,7 @@ function 세기(codes: string[], cap: Map<string, number>, 시장코드: "Y" | "
   return {
     시장: 이름[시장코드],
     per: 나누기(흑시총, 흑순이익),
+    선행per: null, 후행per: null, 컨센커버: null,
     perAll: 나누기(시총, 순이익),
     pbr: 나누기(시총, 자본),
     종목, 적자,
@@ -127,14 +134,97 @@ async function 시총모으기(): Promise<Map<string, number>> {
 }
 
 /**
+ * 선행 PER 을 셀 재료 — 종목별 추정PER·PER 을 시총 상위부터 모은다.
+ *
+ * ── 종목 수가 아니라 시총으로 봐야 한다 ────────────────────
+ * 애널리스트 컨센서스는 종목 수로는 일부에만 있다. 그래서 처음에는
+ * "시장 전체를 못 덮으니 선행 PER 은 어렵다" 고 판단했는데 틀렸다.
+ * 시장 PER 은 시총 가중이므로 시총 커버리지가 맞는 잣대다.
+ *
+ *   코스피 상위 154종목  종목 수 88%  ·  시총 98.3%
+ *   코스닥 상위 200종목  종목 수 31%  ·  시총 44.6%
+ *
+ * 코스피는 사실상 다 덮는다. 코스닥은 절반이라 그 사실을 같이 내보낸다.
+ *
+ * ── 왜 상위만 보나 ────────────────────────────────────────
+ * 순위 목록에는 PER 이 없어 종목마다 따로 물어야 한다. 시총 상위 150이면
+ * 코스피의 96%가 들어오므로 전 종목을 두드릴 이유가 없다.
+ *
+ * ── 추정PER 에서 이익을 역산한다 ───────────────────────────
+ *   종목별 추정순이익 = 시가총액 ÷ 추정PER
+ *   시장 선행 PER    = Σ시가총액 ÷ Σ추정순이익   (컨센서스가 있는 것만)
+ */
+async function 컨센서스(codes: string[]) {
+  let 덮은시총 = 0, 선행이익 = 0, 후행시총 = 0, 후행이익 = 0, 전체시총 = 0;
+  const 억 = (s?: string) => {
+    if (!s || s === "-") return 0;
+    let n = 0;
+    const 조 = s.match(/([\d,]+)조/), 어 = s.match(/([\d,]+)억/);
+    if (조) n += Number(조[1].replace(/,/g, "")) * 10000;
+    if (어) n += Number(어[1].replace(/,/g, ""));
+    return n;
+  };
+  const 수 = (s?: string) => {
+    const v = parseFloat(String(s ?? "").replace(/[^\d.]/g, ""));
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+
+  // 여섯씩 겹쳐 부른다. 하나씩 부르면 150종목에 45초가 걸린다.
+  const CONC = 6;
+  for (let i = 0; i < codes.length; i += CONC) {
+    await Promise.all(codes.slice(i, i + CONC).map(async (c) => {
+      const d = await getJson(`https://m.stock.naver.com/api/stock/${c}/integration`).catch(() => null);
+      if (!d) return;
+      const ti: Record<string, string> = {};
+      for (const x of (d.totalInfos ?? []) as { code: string; value: string }[]) ti[x.code] = x.value;
+      const cap = 억(ti.marketValue) * 1e8;
+      if (!(cap > 0)) return;
+      전체시총 += cap;
+      const f = 수(ti.cnsPer);
+      if (f) { 덮은시총 += cap; 선행이익 += cap / f; }
+      const t = 수(ti.per);
+      if (t) { 후행시총 += cap; 후행이익 += cap / t; }
+    }));
+  }
+  const 나누기 = (a: number, b: number) => (b > 0 && a > 0 ? +(a / b).toFixed(2) : null);
+  return {
+    선행per: 나누기(덮은시총, 선행이익),
+    후행per: 나누기(후행시총, 후행이익),
+    컨센커버: 전체시총 > 0 ? +((100 * 덮은시총) / 전체시총).toFixed(1) : null,
+  };
+}
+
+/** 시총 상위 코드만 뽑는다 — 컨센서스를 물을 대상 */
+async function 상위코드(market: "KOSPI" | "KOSDAQ", n: number): Promise<string[]> {
+  const out: string[] = [];
+  for (let p = 1; out.length < n && p <= 3; p++) {
+    const d = await getJson(
+      `https://m.stock.naver.com/api/stocks/marketValue/${market}?page=${p}&pageSize=100`,
+    ).catch(() => ({ stocks: [] }));
+    const rows = (d.stocks ?? []) as { itemCode?: string; stockEndType?: string }[];
+    if (!rows.length) break;
+    for (const r of rows) {
+      // 보통주만 — 우선주는 그 회사의 PER 을 다시 세는 것이 된다
+      if (r.stockEndType === "stock" && r.itemCode && /0$/.test(r.itemCode)) out.push(r.itemCode);
+    }
+  }
+  return out.slice(0, n);
+}
+
+/**
  * 코스피·코스닥 PER·PBR.
  *
  * 시총은 지표 크론이 채우는 것이라 크론이 아직 안 훑은 종목은 빠진다.
  * 몇 종목으로 셌는지 같이 돌려주므로 화면이 그것을 밝힐 수 있다.
  */
 export const marketValue = () =>
-  cached<시장가치[]>("mktval:v2", 3600, async () => {
+  cached<시장가치[]>("mktval:v3", 6 * 3600, async () => {
     const codes = Object.keys(DATA);
     const cap = await 시총모으기();
-    return (["Y", "K"] as const).map((m) => 세기(codes, cap, m));
+    const [kospi, kosdaq] = await Promise.all([
+      상위코드("KOSPI", 150).then(컨센서스),
+      상위코드("KOSDAQ", 150).then(컨센서스),
+    ]);
+    const 컨센 = { Y: kospi, K: kosdaq };
+    return (["Y", "K"] as const).map((m) => ({ ...세기(codes, cap, m), ...컨센[m] }));
   });
