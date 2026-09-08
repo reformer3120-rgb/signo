@@ -22,6 +22,7 @@
 // 실행
 //   node scripts/theme/collect-largest.mjs --limit 20
 //   node scripts/theme/collect-largest.mjs
+//   node scripts/theme/collect-largest.mjs --csv   → 최대주주현황.csv
 import fs from "node:fs";
 import path from "node:path";
 import { KEY } from "./dart.mjs";
@@ -31,6 +32,8 @@ const OUT = path.join(DIR, "largest.json");
 const 인자 = (n, 기본) => { const i = process.argv.indexOf(n); return i > 0 ? Number(process.argv[i + 1]) : 기본; };
 const LIMIT = 인자("--limit", Infinity);
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
+const CSV만 = process.argv.includes("--csv");
+const CSV = "최대주주현황.csv";
 
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
 const out = 읽기(OUT, {});
@@ -41,6 +44,39 @@ const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 let 종목 = themes.themes.flatMap((t) => t.stocks).filter((s) => 코드[s.code]);
 if (ONLY) 종목 = 종목.filter((s) => s.code === ONLY);
 
+/**
+ * CSV 로 내보내기 — 법인팀이 그대로 쓸 형태.
+ *
+ * 지분율은 특수관계인까지 더한 값이고, 본인 몫은 따로 낸다. 증권사 화면이
+ * 「삼성전자 외 5인 23.8%」 라고 쓸 때의 23.8 이 지분율이다.
+ *
+ * 이름에 쉼표가 든 곳이 있어(「BCPE Centur Investments, LP」) 큰따옴표로
+ * 감싸고 안의 따옴표는 겹쳐 적는다.
+ */
+function 내보내기() {
+  // DART 최대주주 이름에는 줄바꿈이 든 것이 있다.
+  //   「엠부동산성장1호투자목적↵ 유한회사」 「주식회사↵케이피엠테크」
+  // 규격상 따옴표로 감싸면 되지만 읽는 쪽에서 깨지기 쉬워 한 칸으로 누른다.
+  const 이름다듬기 = (s) => String(s ?? "").replace(/[\s\u00a0]+/g, " ").trim();
+  const 칸 = (v) => {
+    const s = String(v ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const 이름 = new Map(
+    JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"))
+      .themes.flatMap((t) => t.stocks).map((s) => [s.code, s.name]));
+  const 줄 = ["종목코드,최대주주명,지분율,본인지분율,특수관계인수,기준일"];
+  const 정렬 = Object.entries(out)
+    .filter(([, v]) => v?.pct != null)
+    .sort((a, b) => (이름.get(a[0]) ?? "").localeCompare(이름.get(b[0]) ?? ""));
+  for (const [code, v] of 정렬)
+    줄.push([code, 칸(이름다듬기(v.name)), v.pct, v.본인, Math.max(0, (v.인원 ?? 1) - 1), v.asOf ?? ""].join(","));
+  fs.writeFileSync(CSV, 줄.join("\n") + "\n", "utf8");
+  console.log(`→ ${CSV}  ${정렬.length}종목  ${(fs.statSync(CSV).size / 1024).toFixed(0)}KB`);
+}
+
+if (CSV만) { 내보내기(); process.exit(0); }
+
 const 쉼 = (ms) => new Promise((r) => setTimeout(r, ms));
 async function 받기(url, 남은 = 3) {
   try { return await (await fetch(url)).json(); }
@@ -50,13 +86,34 @@ const 수 = (s) => { const n = Number(String(s ?? "").replace(/[,%\s]/g, "")); r
 // 기말이 비면 기초를 쓴다. 기중에 새로 오른 최대주주는 기초가 비어 있다.
 const 지분 = (r) => 수(r.trmend_posesn_stock_qota_rt) ?? 수(r.bsis_posesn_stock_qota_rt);
 
-/** 보고서 한 건에서 최대주주 이름과 특수관계인 포함 합계를 뽑는다 */
+/**
+ * 보고서 한 건에서 최대주주 이름과 특수관계인 포함 합계를 뽑는다.
+ *
+ * ── 주식 종류 칸이 회사마다 다르다 ─────────────────────────
+ * 사람 행과 합계 행이 서로 다른 말을 쓰는 회사가 있다.
+ *   삼성전기    사람 「보통주」          · 계 「보통주」
+ *   SK하이닉스  사람 「의결권 있는 주식」 · 계 「보통주」
+ *   한화시스템  사람 「의결권 있는 주식」 · 계 「보통주」 / 「종류주식」
+ * 처음에는 「보통」이 든 행만 남겼는데, 그러면 SK하이닉스는 합계 행 둘만
+ * 남아 사람이 하나도 없게 된다. 실제로 19종목이 그렇게 빠졌다.
+ *
+ * 그래서 우선주만 걷어내는 쪽으로 뒤집었다. 합계 행은 보통주·의결권 쪽을
+ * 먼저 찾고 없으면 아무 「계」나 쓴다.
+ */
 function 추리기(list) {
-  const 보통 = list.filter((r) => !r.stock_knd || /보통/.test(r.stock_knd));
-  const 대상 = 보통.length ? 보통 : list;
-  const 계 = 대상.find((r) => String(r.nm).trim() === "계");
-  const 사람 = 대상.filter((r) => String(r.nm).trim() !== "계");
-  const 본인 = 사람.find((r) => /최대주주 본인|본인/.test(r.relate ?? "")) ?? 사람[0];
+  const 우선주 = (r) => /우선|종류주식/.test(r.stock_knd ?? "");
+  const 계행 = (r) => String(r.nm).trim() === "계";
+
+  const 계 =
+    list.find((r) => 계행(r) && /보통|의결권/.test(r.stock_knd ?? "")) ??
+    list.find((r) => 계행(r) && !우선주(r)) ??
+    list.find(계행);
+  const 사람 = list.filter((r) => !계행(r) && !우선주(r));
+  // relate 는 「최대주주」로만 적는 회사도 있고 「최대주주 본인」으로 적는
+  // 회사도 있다. 특수관계인 쪽이 걸리지 않게 따로 막는다.
+  const 본인 =
+    사람.find((r) => /최대주주|본인/.test(r.relate ?? "") && !/특수관계/.test(r.relate ?? "")) ??
+    사람[0];
   if (!본인) return null;
 
   // 합계 행이 있으면 그것을 쓰고, 없으면 직접 더한다

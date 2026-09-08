@@ -85,9 +85,13 @@ function 주주(code) {
   const 최대 = largest[code];
   const 조각 = [];
 
+  // DART 이름에는 줄바꿈이 든 것이 있다 — 「주식회사↵케이피엠테크」
+  const 이름다듬기 = (s) => String(s ?? "").replace(/[\s\u00a0]+/g, " ").trim();
+
   if (최대?.pct > 0) {
+    const 본인이름 = 이름다듬기(최대.name);
     조각.push({
-      name: 최대.인원 > 1 ? `${최대.name} 외 ${최대.인원 - 1}인` : 최대.name,
+      name: 최대.인원 > 1 ? `${본인이름} 외 ${최대.인원 - 1}인` : 본인이름,
       pct: 최대.pct,
       // 최대주주 현황표에는 국적 칸이 없다. 대량보유 쪽에 같은 이름이
       // 외국계로 적혀 있을 때만 외국계로 본다.
@@ -118,7 +122,7 @@ function 주주(code) {
     합 += r.pct;
     쓴이름.add(이름꼴(r.name));
     조각.push({
-      name: r.name,
+      name: 이름다듬기(r.name),
       pct: r.pct,
       // 국적은 공시의 국적 칸에서 읽은 것이다. 이름으로 가르지 않았다.
       foreign: r.foreign === true,
