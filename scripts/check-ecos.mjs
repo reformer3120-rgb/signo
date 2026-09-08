@@ -17,7 +17,7 @@ console.log(`키를 찾았다 (길이 ${키.length}자).`);
 // 분기 명목 GDP — 버핏지수의 분모
 const url =
   `https://ecos.bok.or.kr/api/StatisticSearch/${키}/json/kr/1/8` +
-  `/200Y105/Q/2024Q3/2026Q4/1400/`;
+  `/200Y105/Q/2024Q1/2026Q4/1400/`;
 
 const r = await fetch(url);
 const j = await r.json();
@@ -32,7 +32,10 @@ if (j.RESULT) {
   process.exit(1);
 }
 
-const rows = (j.StatisticSearch?.row ?? []).filter((x) => /Q\d$/.test(x.TIME));
+// 같은 표에 연간 자료가 섞여 오므로 분기 것만 고른다
+const rows = (j.StatisticSearch?.row ?? [])
+  .filter((x) => /^\d{4}Q[1-4]$/.test(x.TIME))
+  .sort((a, b) => a.TIME.localeCompare(b.TIME));
 if (!rows.length) {
   console.log("\n응답은 왔는데 자료가 비었다:", JSON.stringify(j).slice(0, 200));
   process.exit(1);

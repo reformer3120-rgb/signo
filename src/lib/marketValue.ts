@@ -32,10 +32,10 @@ export interface 버핏 {
   값: number;
   /** 시가총액 합 (조원) */
   시총: number;
-  /** 명목 GDP (조원) */
+  /** 명목 GDP (조원) — 최근 4분기 합 */
   gdp: number;
-  /** GDP 기준 연도 — 분자는 지금이고 분모는 이 해다 */
-  gdp해: number;
+  /** GDP 가 어느 분기까지인가 — "2025Q3~2026Q2" */
+  gdp기간: string;
 }
 
 export interface 시장가치 {
@@ -231,7 +231,7 @@ async function 상위코드(market: "KOSPI" | "KOSDAQ", n: number): Promise<stri
  * 몇 종목으로 셌는지 같이 돌려주므로 화면이 그것을 밝힐 수 있다.
  */
 export const marketValue = () =>
-  cached<{ 시장들: 시장가치[]; 버핏: 버핏 | null }>("mktval:v4", 6 * 3600, async () => {
+  cached<{ 시장들: 시장가치[]; 버핏: 버핏 | null }>("mktval:v5", 6 * 3600, async () => {
     const codes = Object.keys(DATA);
     const cap = await 시총모으기();
     const [kospi, kosdaq] = await Promise.all([
@@ -246,7 +246,7 @@ export const marketValue = () =>
     const 시총합 = 시장들.reduce((a, m) => a + m.시총, 0);
     const 버핏 =
       gdp && gdp.값 > 0 && 시총합 > 0
-        ? { 값: +((100 * 시총합) / gdp.값).toFixed(1), 시총: 시총합, gdp: gdp.값, gdp해: gdp.해 }
+        ? { 값: +((100 * 시총합) / gdp.값).toFixed(1), 시총: 시총합, gdp: gdp.값, gdp기간: gdp.기간 }
         : null;
     return { 시장들, 버핏 };
   });
