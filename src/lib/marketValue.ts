@@ -16,7 +16,8 @@
 // 그래서 절대 수치를 단정하지 않는다. 추세(지난달 대비)나 두 시장 비교로
 // 읽는 편이 안전하다.
 import RAW from "@/data/valuation.json";
-import { cached, redis } from "@/lib/cache";
+import { cached } from "@/lib/cache";
+import { getJson } from "@/lib/naverApi";
 
 interface 재무 { 순: number; 자: number; 시: "Y" | "K"; 해: number }
 const DATA = RAW as unknown as Record<string, 재무>;
@@ -77,19 +78,50 @@ function 세기(codes: string[], cap: Map<string, number>, 시장코드: "Y" | "
   };
 }
 
-/** Redis 에 지표 크론이 넣어 둔 시가총액 (log10 원) 을 되읽는다 */
-async function 시총읽기(codes: string[]): Promise<Map<string, number>> {
+/**
+ * 시가총액을 시장별로 전 종목 모은다.
+ *
+ * ── 왜 순위 목록을 통째로 받나 ─────────────────────────────
+ * 처음에는 지표 크론이 Redis 에 넣어 둔 것을 되읽었다. 그런데 그것은
+ * 크론이 훑은 만큼만 있고(코스피 740 중 664), 무엇보다 **우선주가 없다.**
+ * 우리 분류표는 보통주만 다루기 때문이다.
+ *
+ * 네이버 시총 순위는 우선주까지 다 준다. 페이지당 100종목이라 두 시장
+ * 합쳐 44번이면 전부 받는다. 한 시간 캐시라 부담이 없다.
+ *
+ * ── ETF·ETN 을 반드시 빼야 한다 ───────────────────────────
+ * 코스피 목록 2,483건 중 주식은 944뿐이고 나머지는 ETF 1,169 · ETN 370 이다.
+ * ETF 시총을 더하면 그 안에 담긴 주식을 두 번 세는 것이 된다.
+ * stockEndType 이 "stock" 인 것만 쓴다.
+ *
+ * ── 우선주는 보통주에 합친다 ──────────────────────────────
+ * 우선주도 그 회사에 대한 지분이므로 시가총액에 넣어야 한다. KRX 통계도,
+ * 원조 버핏지수(Wilshire 5000)도 넣는다. 빼면 그 회사의 시장가치를 덜
+ * 잡는 것이다 — 삼성전자우 하나가 160조다.
+ *
+ * 다만 분모(순이익·자본)는 회사 하나당 한 번만 세야 하므로, 우선주 시총을
+ * 보통주 종목코드에 더해 둔다. 우선주 코드는 보통주 코드의 끝자리를
+ * 5·7·9·K 로 바꾼 것이다 — 005935→005930 · 005387→005380 · 00104K→001040.
+ */
+async function 시총모으기(): Promise<Map<string, number>> {
   const map = new Map<string, number>();
-  if (!redis) return map;
-  for (let i = 0; i < codes.length; i += 50) {
-    const part = codes.slice(i, i + 50);
-    const hit = await redis
-      .mget<({ cap?: number } | null)[]>(...part.map((c) => `mx:${c}`))
-      .catch(() => null);
-    if (!hit) continue;
-    hit.forEach((m, j) => {
-      if (m && Number.isFinite(m.cap)) map.set(part[j], 10 ** (m.cap as number));
-    });
+  for (const market of ["KOSPI", "KOSDAQ"] as const) {
+    for (let p = 1; p <= 30; p++) {
+      const d = await getJson(
+        `https://m.stock.naver.com/api/stocks/marketValue/${market}?page=${p}&pageSize=100`,
+      ).catch(() => ({ stocks: [] }));
+      const rows = (d.stocks ?? []) as { itemCode?: string; stockEndType?: string; marketValue?: string }[];
+      if (!rows.length) break;
+      for (const r of rows) {
+        // ETF·ETN 은 담긴 주식을 다시 세는 것이라 넣지 않는다
+        if (r.stockEndType !== "stock" || !r.itemCode) continue;
+        const 억 = Number(String(r.marketValue ?? "").replace(/[^\d]/g, ""));
+        if (!Number.isFinite(억) || 억 <= 0) continue;
+        // 우선주면 보통주 코드로 옮겨 담는다
+        const 코드 = /0$/.test(r.itemCode) ? r.itemCode : r.itemCode.slice(0, 5) + "0";
+        map.set(코드, (map.get(코드) ?? 0) + 억 * 1e8);
+      }
+    }
   }
   return map;
 }
@@ -101,8 +133,8 @@ async function 시총읽기(codes: string[]): Promise<Map<string, number>> {
  * 몇 종목으로 셌는지 같이 돌려주므로 화면이 그것을 밝힐 수 있다.
  */
 export const marketValue = () =>
-  cached<시장가치[]>("mktval:v1", 3600, async () => {
+  cached<시장가치[]>("mktval:v2", 3600, async () => {
     const codes = Object.keys(DATA);
-    const cap = await 시총읽기(codes);
+    const cap = await 시총모으기();
     return (["Y", "K"] as const).map((m) => 세기(codes, cap, m));
   });

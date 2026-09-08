@@ -34,7 +34,7 @@ const H = {
   Accept: "application/json",
 };
 
-async function getJson(url: string) {
+export async function getJson(url: string) {
   const r = await fetch(url, { headers: H, cache: "no-store" });
   if (!r.ok) throw new Error(`naver ${r.status}`);
   return r.json();
