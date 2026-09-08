@@ -18,12 +18,25 @@
 import RAW from "@/data/valuation.json";
 import { cached } from "@/lib/cache";
 import { getJson } from "@/lib/naverApi";
+import { nominalGDP } from "@/lib/ecos";
 
 interface 재무 { 순: number; 자: number; 시: "Y" | "K"; 해: number }
 const DATA = RAW as unknown as Record<string, 재무>;
 
 export type 시장 = "코스피" | "코스닥";
 const 이름: Record<string, 시장> = { Y: "코스피", K: "코스닥" };
+
+/** 버핏지수 — 시장 전체 시가총액을 명목 GDP 로 나눈 것 */
+export interface 버핏 {
+  /** % */
+  값: number;
+  /** 시가총액 합 (조원) */
+  시총: number;
+  /** 명목 GDP (조원) */
+  gdp: number;
+  /** GDP 기준 연도 — 분자는 지금이고 분모는 이 해다 */
+  gdp해: number;
+}
 
 export interface 시장가치 {
   시장: 시장;
@@ -218,7 +231,7 @@ async function 상위코드(market: "KOSPI" | "KOSDAQ", n: number): Promise<stri
  * 몇 종목으로 셌는지 같이 돌려주므로 화면이 그것을 밝힐 수 있다.
  */
 export const marketValue = () =>
-  cached<시장가치[]>("mktval:v3", 6 * 3600, async () => {
+  cached<{ 시장들: 시장가치[]; 버핏: 버핏 | null }>("mktval:v4", 6 * 3600, async () => {
     const codes = Object.keys(DATA);
     const cap = await 시총모으기();
     const [kospi, kosdaq] = await Promise.all([
@@ -226,5 +239,14 @@ export const marketValue = () =>
       상위코드("KOSDAQ", 150).then(컨센서스),
     ]);
     const 컨센 = { Y: kospi, K: kosdaq };
-    return (["Y", "K"] as const).map((m) => ({ ...세기(codes, cap, m), ...컨센[m] }));
+    const 시장들 = (["Y", "K"] as const).map((m) => ({ ...세기(codes, cap, m), ...컨센[m] }));
+
+    // 버핏지수 — GDP 를 못 받으면(키 없음) 이것만 빠지고 나머지는 그대로 나온다
+    const gdp = await nominalGDP().catch(() => null);
+    const 시총합 = 시장들.reduce((a, m) => a + m.시총, 0);
+    const 버핏 =
+      gdp && gdp.값 > 0 && 시총합 > 0
+        ? { 값: +((100 * 시총합) / gdp.값).toFixed(1), 시총: 시총합, gdp: gdp.값, gdp해: gdp.해 }
+        : null;
+    return { 시장들, 버핏 };
   });
