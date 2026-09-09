@@ -111,25 +111,75 @@ function 표풀기(tbl) {
  * 셀트리온 [사업부문 매출유형 품목 값…] · 알서포트 [품목 값…] ·
  * 사람인 [사업부문 구분 값…] 이 모두 같은 규칙으로 풀린다.
  */
-function 부문뽑기(xml) {
+function 부문뽑기(xml, 원) {
   // 제목이 목차에도 나온다. 목차를 잡으면 그 뒤 6만 자 안의 엉뚱한 표를 쓴다 —
   // 삼성전기가 주식 총수 표를 잡아 "보통주 96.3% / 우선주 3.7%" 가 나왔다.
   //
   // 진짜 절은 <TITLE> 태그로 표시된다. 그것을 먼저 찾고, 없을 때만 본문
   // 아무 데나 나온 자리를 쓴다.
-  const 절 = /<TITLE[^>]*>[^<]*(?:매\s*출\s*실\s*적|매출\s*및\s*수주)[^<]*<\/TITLE>/g;
-  const 아무데나 = /매\s*출\s*실\s*적|매출\s*및\s*수주/g;
+  const 말 = String.raw`매\s*출\s*실\s*적|매출\s*및\s*수주|매출에\s*관한\s*사항|부문별\s*매출|사업부문별\s*매출`;
+  const 절 = new RegExp(`<TITLE[^>]*>[^<]*(?:${말})[^<]*</TITLE>`, "g");
+  const 아무데나 = new RegExp(말, "g");
   const 자리 = [...xml.matchAll(절)].map((x) => x.index);
   if (!자리.length) 자리.push(...[...xml.matchAll(아무데나)].map((x) => x.index));
-  for (const 시작 of 자리) {
-    const 뽑은것 = 구역에서(xml.slice(시작, 시작 + 60000));
-    if (뽑은것) return 뽑은것;
+
+  // 자리마다 뽑아 보고 가장 나은 것을 쓴다.
+  //
+  // 예전에는 첫 자리에서 한 줄이라도 나오면 거기서 끝냈다. 그래서 뒤에 진짜
+  // 사업부문 표가 있어도 안 봤다 — 614종목이 조각 하나로 끝났다.
+  let 한줄 = null;
+  for (const 시작 of 자리.slice(0, 8)) {
+    const c = 구역에서(xml.slice(시작, 시작 + 60000), 원);
+    if (쓸만한가(c)) return c;
+    if (c && !한줄) 한줄 = c;
   }
+  return 한줄;
+}
+
+/**
+ * 한 줄짜리는 뒤로 미룬다.
+ *
+ * 앞에 나오는 표가 옳다는 원칙은 그대로다 — 조각 수를 앞세웠더니 환율표
+ * (USD·EUR·JPY)와 연구과제 목록이 딸려 왔다. 다만 조각이 하나뿐이면 매출유형
+ * 한 줄인 경우가 많으므로, 뒤에 둘 이상인 표가 있으면 그쪽을 쓴다.
+ */
+function 쓸만한가(c) {
+  return !!c && c.rows.length >= 2;
+}
+
+/**
+ * 뽑은 표가 정말 매출 표인가 — 합계를 매출액과 견주고, 단위도 함께 맞춘다.
+ *
+ * 엉뚱한 표를 이름으로 걸러 내려다 끝이 없었다. 충당금 변동표, 파생상품
+ * 명세, 지식재산권 현황, 수주잔고, 거래처 목록, 국책과제… 새 종목을 볼
+ * 때마다 새 표가 나왔다. 잣대를 뒤집는다. 매출 표라면 조각의 합이 그 해
+ * 매출액과 맞아야 한다. 이름을 아무리 그럴듯하게 지어도 이건 못 속인다.
+ *
+ * ── 단위도 여기서 정한다 ──────────────────────────────────
+ * 표 앞의 「(단위 : 백만원)」 을 읽어 쓰는데, 그 글이 표에서 멀거나 아예
+ * 없는 경우가 많다. 그러면 합이 백만분의 일로 나와 멀쩡한 표가 버려졌다.
+ *   동국S&C · 인화정공 · 톱텍  비율 0.00 인데 표는 맞았다
+ * 그래서 흔한 단위를 차례로 대 보고 매출액과 맞는 것을 쓴다. 맞는 단위가
+ * 없으면 그 표가 아니다.
+ *
+ * 폭을 넓게 잡은 까닭은 연결과 별도가 다르고 내부거래를 빼는 데가 있어서다.
+ *   삼성전기 1.000 · 셀트리온 1.000 · 삼성전자 1.090(내부거래 미제거)
+ */
+const 단위들 = [1, 1e3, 1e6, 1e8];
+function 맞는단위(c, 원) {
+  if (!c?.rows?.length || !(원 > 0)) return undefined;   // 견줄 것이 없으면 판단 보류
+  const 합 = c.rows.reduce((a, r) => a + r.v, 0);
+  if (!(합 > 0)) return null;
+  const 맞나 = (u) => { const 비 = (합 * u) / 원; return 비 >= 0.7 && 비 <= 1.45; };
+  // 표에서 읽은 단위를 먼저 믿는다
+  if (맞나(c.단위)) return c.단위;
+  for (const u of 단위들) if (맞나(u)) return u;
   return null;
 }
 
 /** 한 구역 안의 표들을 차례로 보며 부문별 금액을 뽑는다 */
-function 구역에서(구역) {
+function 구역에서(구역, 원) {
+  let 최고 = null;
   for (const m of 구역.matchAll(/<TABLE\b[\s\S]*?<\/TABLE>/gi)) {
     const tbl = m[0];
     const rows = 표풀기(tbl).filter((r) => r.length >= 2);
@@ -156,6 +206,16 @@ function 구역에서(구역) {
     }
     if (이름칸 < 0) continue;
 
+    // 부문마다 수출·내수·합계 세 줄이 오는 표가 많다. 셋을 다 더하면 두 배가
+    // 된다 — 삼성전기가 매출 11.3조인데 22.6조로 잡혔다. 원형은 비율만 쓰므로
+    // 겉으로는 멀쩡해 보이지만, 합계가 맞아야 이 표가 매출 표인지 가릴 수 있다.
+    //
+    //   컴포넌트 수출 5,006,765 · 내수 191,737 · 합계 5,198,502
+    //
+    // 그래서 합계 줄이 있으면 그것만 쓰고, 없을 때만 세부를 더한다.
+    const 소계칸 = (r) =>
+      r.some((cell, i) => i !== 이름칸 && i !== 값칸 && /^(합\s*계|소\s*계|계)$/.test(String(cell ?? "").trim()));
+    const 묶음 = new Map();
     const 합 = new Map();
     for (const r of rows) {
       const 이름 = (r[이름칸] ?? "").trim();
@@ -170,12 +230,60 @@ function 구역에서(구역) {
       if (/소\s*계|합\s*계|총\s*계/.test(이름)) continue;
       // 각주 표를 잡은 것 — "주1)" "주2)"
       if (/^주\s*\d/.test(이름)) continue;
-      합.set(이름, (합.get(이름) ?? 0) + v);
+      const g = 묶음.get(이름) ?? { 소계: null, 세부: 0 };
+      if (소계칸(r)) g.소계 = (g.소계 ?? 0) + v;
+      else g.세부 += v;
+      묶음.set(이름, g);
     }
+    for (const [이름, g] of 묶음) 합.set(이름, g.소계 ?? g.세부);
     if (합.size < 1) continue;
     // 이름이 죄다 한두 글자 로마자면 사업부문이 아니라 등급표다 (D · C · CC · CCC)
     const 이름들 = [...합.keys()];
     if (이름들.every((n) => /^[A-Za-z+-]{1,4}$/.test(n))) continue;
+    // 환율 표 — 통화 코드가 절반을 넘으면 매출이 아니다 (USD · EUR · JPY · VND)
+    const 통화 = /^(USD|EUR|JPY|CNY|CNH|VND|PHP|MXN|SGD|TWD|HKD|GBP|AUD|CAD|CHF|IDR|THB|INR|BRL|RUB|TRY|PLN|MYR|KRW|AED|SAR)$/i;
+    if (이름들.filter((n) => 통화.test(n)).length / 이름들.length >= 0.4) continue;
+    // 연구개발비·비용 명세 표 — 무엇을 쓰느냐지 어디서 버느냐가 아니다.
+    //   다우기술  연구개발비용 계 · 인 건 비 · 위 탁 용 역 비 · 감 가 상 각 비
+    const 비용 = /연구개발비|인건비|위탁용역비|감가상각비|복리후생비|지급수수료|외주가공비|재료비|경상연구|회계처리/;
+    if (이름들.filter((n) => 비용.test(n.replace(/\s+/g, ""))).length >= 2) continue;
+    // 연구개발 과제 목록 — 사업부문이 열 갈래를 넘는 회사는 없다.
+    //   다우기술  다우오피스4.0 · 뿌리오 차세대 서비스 개발 및 구축 · …(18개)
+    if (이름들.length > 12) continue;
+    // 인력 표 — 사람 수를 센 것이다
+    //   다우기술  책임연구원 · 선임연구원 · 리드 & 수석연구원 · 연구소장
+    const 사람 = /연구원|연구소장|임원|직원|박사|석사|학사|정규직|계약직|기간제|남자|여자|사무직|생산직/;
+    if (이름들.filter((n) => 사람.test(n.replace(/\s+/g, ""))).length >= 2) continue;
+
+    // 매출 표가 아닌 표들.
+    //
+    // 한 줄짜리를 건너뛰고 뒤를 더 보게 하자, 뒤에 있던 온갖 표가 딸려 왔다.
+    // 사업부문 이름으로는 절대 나오지 않는 말들을 모아 둔다.
+    //
+    //   코스맥스엔비티  기말 · 설정 · 기초 · 제각          충당금 변동표
+    //   장원테크        총 장부금액 · 손실충당금 · 기대 손실률  대손충당금표
+    //   LS에코에너지    파생상품(공정가치위험회피) · 확정계약   파생상품 명세
+    //   제이스로보틱스  전년도 수주 이월액 · 당해년도 수주액   수주잔고표
+    //   인티큐브        저작권 · 특허 · 상표 · 인증          지식재산권 현황
+    //   보라티알        종사자수(B) · 사업체수(A)            산업 통계
+    //   해성디에스      LF개발팀 · BGA개발팀 · COB개발팀     연구조직도
+    //   월덱스          미국달러/원 · 일본엔/원              환율 민감도
+    const 아닌표 =
+      /^(기초|기말|설정|제각|환입|상각|증가|감소|취득|처분|대체)$|충당금|장부금액|손실률|파생상품|평가이익|평가손실|위험회피|확정계약|수주잔고|이월액|수주액|저작권|상표권?$|특허권|실용신안|디자인권|의장권|지식재산|산업재산|^PCT$|종사자수|사업체수|개발팀|기획팀|연구팀|사업팀|달러\/원|엔\/원|위안\/원|유로\/원/;
+    if (이름들.filter((n) => 아닌표.test(n.replace(/\s+/g, ""))).length >= 2) continue;
+
+    // 나라 이름만 늘어선 표 — 지역별이지 사업부문이 아니다
+    //   종근당  한국 · 일본 · 기타 · 스위스
+    const 나라 =
+      /^(한국|국내|해외|중국|일본|미국|유럽|아시아|미주|중동|대만|홍콩|싱가포르|베트남|인도|인도네시아|태국|말레이시아|필리핀|호주|캐나다|멕시코|브라질|독일|영국|프랑스|스위스|이탈리아|스페인|러시아|폴란드|헝가리|체코|터키|튀르키예|기타지역)$/;
+    if (이름들.filter((n) => 나라.test(n.replace(/\s+/g, ""))).length >= 2) continue;
+
+    // 개발 코드명만 늘어선 표 — 신약 파이프라인이다
+    //   휴온스   HD204 · PBP1502      영진약품  YPL-001 · YRA-1909
+    //   종근당   CKD-510 · Lobeglitazone(듀비에) · CKD-11101
+    // 이름이 다 코드일 필요는 없다 — 절반만 코드면 파이프라인 표다.
+    if (이름들.length >= 2
+        && 이름들.filter((n) => /[A-Z]{2,5}[- ]?\d{3,}/.test(n)).length / 이름들.length >= 0.5) continue;
     // 이름이 죄다 판로·지역이면 사업부문 표가 아니다 (내수/수출, 국내/해외)
     if (이름들.every((n) => /^(내수|수출|국내|해외|기타|아시아|미주|유럽|중국|일본|미국)$/.test(n))) continue;
     // 재무상태표를 잡은 것 — 조각이 많은 종목은 대개 이쪽이었다.
@@ -195,10 +303,26 @@ function 구역에서(구역) {
     const 앞 = 구역.slice(Math.max(0, m.index - 700), m.index);
     const u = 글(앞).match(/단위\s*[:：]\s*(백만원|천원|억원|원)/);
     const 단위 = { 원: 1, 천원: 1e3, 백만원: 1e6, 억원: 1e8 }[u?.[1] ?? "원"];
-    return { 단위, rows: [...합].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v) };
+    if (process.argv.includes("--표")) {
+      console.log("  ── 표 ──");
+      for (const r of rows) console.log("   ", JSON.stringify(r.slice(0, 8)));
+    }
+    const 후보 = { 단위, rows: [...합].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v) };
+    // 매출액과 안 맞으면 이 표가 아니다 — 다음 표를 본다
+    const 고른단위 = 맞는단위(후보, 원);
+    if (고른단위 === null) continue;
+    if (고른단위 !== undefined) 후보.단위 = 고른단위;
+    if (쓸만한가(후보)) return 후보;
+    if (!최고) 최고 = 후보;
   }
-  return null;
+  return 최고;
 }
+
+/** 종목별 매출액(원) — 뽑은 표가 매출 표인지 견주는 데 쓴다 */
+const 매출액 = (() => {
+  const f = path.join(DIR, "revenue.json");
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : {};
+})();
 
 const 쉼 = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -241,7 +365,7 @@ for (const s of 종목) {
     let xml = "";
     for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
     if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
-    const seg = 부문뽑기(xml);
+    const seg = 부문뽑기(xml, 매출액[s.code] ?? 0);
     if (ONLY && !seg) console.log("  표를 못 찾음");
     if (!seg) 못찾음++;
     out[s.code] = seg ? { ...seg, report: r0.report_nm, asOf: r0.rcept_dt } : null;
