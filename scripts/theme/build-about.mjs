@@ -32,6 +32,8 @@ import { 평서문, 며닫기 } from "./sent.mjs";
 const DIR = ".cache/theme";
 const OUT = "src/data/about.json";
 const WRITE = process.argv.includes("--write");
+// 한 종목이 왜 그렇게 나왔는지 본다 — node … --추적 068270
+const 추적 = (() => { const i = process.argv.indexOf("--추적"); return i > 0 ? process.argv[i + 1] : null; })();
 
 const MAX_문장 = 3;    // 증권플러스 개요도 셋이다. 넷을 넘으면 안 읽는다.
 const MAX_길이 = 130;  // 한 문장이 화면에서 두 줄
@@ -56,8 +58,16 @@ for (const r of Object.values(ov)) if (r?.code && r.text) 원문.set(r.code, r);
  */
 function 머리떼기(s) {
   let t = s.trim();
-  // 번호·글머리
-  t = t.replace(/^[(（]?\d+[)）.]?\s*/, "").replace(/^[가-힣][.)]\s*/, "");
+  // 번호·글머리.
+  //
+  // 닫는 기호를 반드시 요구한다. 예전에는 「^\d+」 만으로 떼었더니 연도를
+  // 먹었다. 「2023년에는 … 짐펜트라의 미국 FDA 신약 허가를 획득하며 …」 가
+  // 「년에는 …」 이 되어 '앞이 잘린 토막' 으로 버려졌다. 연혁과 신약 소식은
+  // 개요에서 가장 알고 싶은 대목인데 그게 통째로 사라지고 있었다.
+  t = t
+    .replace(/^[(（]\s*\d{1,2}\s*[)）]\s*/, "")
+    .replace(/^\d{1,2}[).]\s+/, "")
+    .replace(/^[가-힣][.)]\s*/, "");
   // 흔한 소제목이 통째로 앞에 붙은 것
   // 소제목이 통째로 앞에 붙은 것. 번호가 앞뒤로 섞여 여러 겹인 경우가 있어
   // 더 안 떨어질 때까지 되풀이한다.
@@ -231,6 +241,24 @@ function 버린다(s) {
   return false;
 }
 
+/**
+ * 문장의 갈래.
+ *
+ * 개요 세 줄이 다 「무슨 회사인가」 면 읽을 것이 없다. 셀트리온이 그랬다 —
+ * 소개 두 줄에 합병 한 줄이고, 정작 「2023년 짐펜트라의 미국 FDA 신약 허가를
+ * 획득하며 글로벌 신약 시장에 본격 진출」 이 점수에 밀려 빠졌다.
+ *
+ * 개요에서 알고 싶은 것은 넷이다 — 무슨 회사인가, 어떻게 여기까지 왔나,
+ * 지금 무엇을 하고 있나, 무엇을 만드나. 갈래를 나눠 한 줄씩 뽑는다.
+ */
+function 갈래(s) {
+  if (/(FDA|식약처|허가를? ?(획득|취득|받)|승인(을 받|받았|을 획득)|임상 ?\d상|기술이전|기술수출|수주(하였|했|를 받)|인수를? ?(완료|하였|했)|증설|준공|진출(하였|했|하며)|출시(하였|했))/.test(s))
+    return "사건";
+  if (/설립(되|하|된|일)|창립|합병(하|되|을|하여)|상장(하|되)|전환(하였|했)/.test(s)) return "연혁";
+  if (/영위하|주요 ?(목적 )?사업|주된 사업|기업이다|기업입니다|전문기업|하는 회사/.test(s)) return "소개";
+  return "그밖";
+}
+
 /** 개요다운 문장일수록 높다 */
 function 점수(s, i) {
   let v = 0;
@@ -267,7 +295,20 @@ function 겹치나(a, b) {
   return n / Math.min(A.size, B.size) > 0.5;
 }
 
-function 개요(text, name, why) {
+function 개요(text, name, why, 추적코드) {
+  if (추적 && 추적코드 === 추적) {
+    for (const raw of sentences(text).flatMap(쪼개기)) {
+      const 표 = looksTable(raw);
+      const t = 표 ? raw : 꼬리자르기(머리떼기(raw));
+      const 짧힌것 = 표 ? null : 줄이기(t, MAX_길이);
+      const 까닭 = 표 ? "표로 보임"
+        : 짧힌것 == null ? "너무 길어 못 닫음"
+        : !SELF.test(짧힌것) ? "제 얘기가 아님"
+        : 버린다(짧힌것) ? "걸러짐"
+        : `남음 (점수 ${점수(짧힌것, 0)})`;
+      console.log(`  [${까닭}] ${(짧힌것 ?? t).slice(0, 90)}`);
+    }
+  }
   const 후보 = sentences(text)
     .flatMap(쪼개기)
     .filter((s) => !looksTable(s))
@@ -307,12 +348,31 @@ function 개요(text, name, why) {
       매김.unshift(보루);
     }
   }
+  // 점수대로 줄을 세우되, 같은 갈래를 두 번 뽑지 않는다. 세 자리를 다 못
+  // 채우면 그때 갈래를 안 가리고 채운다.
+  const 줄세운것 = [...매김].sort((a, b) => b.v - a.v || a.i - b.i).filter((c) => c.v > 0);
   const 뽑은것 = [];
-  for (const c of [...매김].sort((a, b) => b.v - a.v || a.i - b.i)) {
-    if (c.v <= 0) break;
-    if (뽑은것.some((x) => 겹치나(x.s, c.s))) continue;
-    뽑은것.push(c);
-    if (뽑은것.length >= MAX_문장) break;
+  const 쓴갈래 = new Set();
+  // 사람이 손본 편입 사유는 첫 줄 자리를 굳혀 둔다.
+  //
+  // 갈래를 흩기 시작하자 이것이 사업보고서의 「주요 목적 사업은 …」 한 줄과
+  // 같은 소개 갈래로 묶여 밀려났다. 그런데 이쪽이 훨씬 낫다 — 셀트리온이
+  // 「항체 바이오시밀러(특허 만료된 바이오의약품의 복제약)를 개발·생산해 …」
+  // 로 열리느냐 「생명공학기술을 기반으로 …」 로 열리느냐의 차이다.
+  if (보루 && 줄세운것.includes(보루)) {
+    뽑은것.push(보루);
+    쓴갈래.add(갈래(보루.s));
+  }
+  for (const 가림 of [true, false]) {
+    for (const c of 줄세운것) {
+      if (뽑은것.length >= MAX_문장) break;
+      if (뽑은것.includes(c)) continue;
+      const g = 갈래(c.s);
+      if (가림 && g !== "그밖" && 쓴갈래.has(g)) continue;
+      if (뽑은것.some((x) => 겹치나(x.s, c.s))) continue;
+      뽑은것.push(c);
+      쓴갈래.add(g);
+    }
   }
   // 점수로는 하나도 못 뽑았는데 편입 사유가 검사를 통과했다면 그것을 쓴다.
   //
@@ -372,7 +432,7 @@ const 없는것 = [];
 for (const t of themes.themes) {
   for (const s of t.stocks) {
     const r = 원문.get(s.code);
-    const a = r?.text ? 개요(r.text, s.name, s.why) : [];
+    const a = r?.text ? 개요(r.text, s.name, s.why, s.code) : [];
     if (a.length) {
       out[s.code] = a;
       있음++;
