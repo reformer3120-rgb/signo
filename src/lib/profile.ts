@@ -21,7 +21,13 @@ export interface 보유자 extends 조각 {
   구분: string | null;
 }
 export interface Profile {
-  매출?: { rows: 조각[]; asOf: string | null; report: string | null };
+  매출?: {
+    rows: 조각[];
+    asOf: string | null;
+    report: string | null;
+    /** 조각의 합이 그 해 매출액과 맞는가. 아니면 화면이 「사업 구성」이라 부른다. */
+    검증?: boolean;
+  };
   주주?: { rows: 보유자[]; asOf: string | null };
 }
 

@@ -38,6 +38,7 @@ const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 
 const segments = 읽기(path.join(DIR, "segments.json"), {});
 const holders = 읽기(path.join(DIR, "holders.json"), {});
 const largest = 읽기(path.join(DIR, "largest.json"), {});
+const 매출액 = 읽기(path.join(DIR, "revenue.json"), {});
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 const 종목 = themes.themes.flatMap((t) => t.stocks);
 
@@ -60,7 +61,7 @@ const 합계행 = /^(전체계|소계|총계|합계|계|합|총합|누계|매출
 // 회사 이름이 조각으로 늘어선 것 — 종속회사 현황 표다.
 //   INVENI  「INVENI Co., Ltd. 66.7% · (주)예스코 33.3%」
 //   툴젠     「㈜레드진 40% · ㈜엣진 40% · CARTherics Pty Ltd 20%」
-const 회사이름 = /㈜|\(주\)|주식회사|유한회사|Co[.,]|Ltd|Inc[.,]?$|LLC|GmbH|Pty|S\.A\./i;
+const 회사이름 = /㈜|\(주\)|주식회사|유한회사|(^|[ .,])Co([ .,]|$)|Ltd|Inc[.,]?$|LLC|GmbH|Pty|S\.A\.|CORP|OIL CO/i;
 // 매입(원재료) 표. 사는 쪽 이야기라 매출 구성이 아니다.
 //   디앤디파마텍  「외주시험비 및 임상시험비 97.2% · 시약재료비 2.8% · 매입유형 0%」
 const 매입표 = /매입(유형|액|처|금액)?$|^(원재료|부재료|외주가공비|재료비)$/;
@@ -83,7 +84,7 @@ const 거래처표 = /^주요?(거래처|고객|매출처)|^매출처|^고객\d|
 const 상계행 = /내부매출|연결조정|내부거래|상계제거|매출제거/;
 // 표의 머리글이 조각으로 끼어든 것
 //   테라뷰  「EOTPR 72.9% · TeraPulse 등 14.9% · TeraCota 12.1% · 제품명 0%」
-const 머리글 = /^(제품명|품목|품명|구분|항목|사업부문|부문|종류|매출유형|유형|비고)$/;
+const 머리글 = /^(제품명|품목|품명|구분|항목|사업부문|부문|종류|매출유형|유형|비고|매출현황|매출액현황)$/;
 // 이 말만으로는 무슨 사업인지 알 수 없는 라벨 — 매출유형별 구분이다
 const 밋밋 =
   /^(제품|상품|용역|서비스|기타|그밖|그외|기타등|제품매출|상품매출|용역매출|기타매출|서비스매출|기타사업|기타부문|기타사업부문|기타수익|기타매출액|임대|임대수익|수수료|합계|계|매출|매출액|주요제품|소분류|중분류|대분류)$/;
@@ -184,7 +185,18 @@ function 매출(code) {
 
   // 한 조각이 99% 를 넘으면 원형이 아니라 동그라미다
   if (상위.some((r) => r.pct >= 99)) return null;
-  return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null };
+
+  // 조각의 합이 그 해 매출액과 맞는지 표시해 둔다.
+  //
+  // 맞으면 「매출 구성」 이라 불러도 된다. 매출액을 모르면 이 표가 정말 매출
+  // 표인지 확인할 길이 없으므로 화면이 「사업 구성」 이라 부른다 — 사업부문이
+  // 무엇무엇인지는 맞고, 그 비율이 매출 비중인지까지는 장담하지 않는다는 뜻이다.
+  const 원 = 매출액[code];
+  const 합원 = v.rows.reduce((a, r) => a + r.v, 0) * (v.단위 ?? 1);
+  const 비 = 원 > 0 ? 합원 / 원 : null;
+  const 검증 = 비 !== null && 비 >= 0.7 && 비 <= 1.45;
+
+  return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null, 검증 };
 }
 /**
  * 이름을 견주기 좋게 다듬는다.

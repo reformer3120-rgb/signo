@@ -113,7 +113,18 @@ export function StockBriefCard({
           }`}
         >
           {매출.length >= 2 && (
-            <Donut title="매출 구성" rows={매출} wide={원형수 === 1} foot={d.매출?.asOf ?? undefined} />
+            <Donut
+              // 조각의 합이 그 해 매출액과 맞을 때만 「매출 구성」 이라 부른다.
+              //
+              // 사업보고서에서 표를 찾아 오다 보면 엉뚱한 표가 걸린다. 합계를
+              // 매출액과 견주면 가려낼 수 있는데, 매출액을 모르는 종목이 366개
+              // 있다. 그런 것은 사업부문이 무엇무엇인지는 맞지만 그 비율이 매출
+              // 비중인지까지는 장담할 수 없어 「사업 구성」 이라 적는다.
+              title={d.매출?.검증 ? "매출 구성" : "사업 구성"}
+              rows={매출}
+              wide={원형수 === 1}
+              foot={d.매출?.asOf ?? undefined}
+            />
           )}
           {주주.length >= 2 && (
             <Donut title="주주 구성" rows={주주} wide={원형수 === 1} foot={d.주주?.asOf ?? undefined} />
