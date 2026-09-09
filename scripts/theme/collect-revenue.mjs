@@ -49,8 +49,13 @@ async function 매출액(corp) {
 
 if (process.argv[1] && import.meta.url === `file:///${process.argv[1].split("\\").join("/")}`) {
   const corp = JSON.parse(fs.readFileSync(path.join(DIR, "corp.json"), "utf8"));
-  const sales = JSON.parse(fs.readFileSync(path.join(DIR, "sales.json"), "utf8"));
-  const 대상 = new Set(Object.keys(sales).filter((c) => sales[c]));
+  // 대상은 테마에 실린 종목 전부다.
+  //
+  // 예전에는 sales.json(옛 매출 표 파서)에 든 종목만 받았다. 그 파서가 못
+  // 읽은 종목은 매출액도 없어서, 지금 쓰는 검증(조각의 합이 매출액과 맞나)을
+  // 아예 걸 수 없었다 — 366종목이 「사업 구성」 으로 남은 까닭이다.
+  const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
+  const 대상 = new Set(themes.themes.flatMap((t) => t.stocks).map((s) => s.code));
 
   const ents = Object.values(corp).filter((c) => 대상.has(c.code));
   const done = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, "utf8")) : {};
