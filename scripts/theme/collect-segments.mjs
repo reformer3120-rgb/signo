@@ -38,7 +38,13 @@ const OUT = path.join(DIR, "segments.json");
 const 인자 = (n, 기본) => { const i = process.argv.indexOf(n); return i > 0 ? Number(process.argv[i + 1]) : 기본; };
 const LIMIT = 인자("--limit", Infinity);
 // 한 종목만 다시 뽑아 본다 — 규칙을 고친 뒤 확인할 때 쓴다
+// 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
+// --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
+// 한 번에 다 못 돌릴 때 쓸모가 있다.
+const 판 = 2;
+let 한도넘음 = false;
 const 약한것만 = process.argv.includes("--약한것");
+const 묵은것만 = process.argv.includes("--묵은것");
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
 
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
@@ -378,6 +384,7 @@ async function 최근보고서(corpCode) {
   const j = await (await 받기(
     `https://opendart.fss.or.kr/api/list.json?crtfc_key=${KEY}&corp_code=${corpCode}` +
     `&bgn_de=20240101&end_de=20301231&pblntf_ty=A&page_count=20`)).json();
+  if (j.status === "020") { console.log("\n하루 호출 한도를 넘었다. 여기서 멈춘다 — 다시 돌리면 이어서 받는다."); 한도넘음 = true; return null; }
   if (j.status !== "000") return null;
   // 가장 최근 것을 쓴다.
   //
@@ -400,17 +407,21 @@ let 한것 = 0, 새로 = 0, 못찾음 = 0;
 const 시작 = Date.now();
 for (const s of 종목) {
   if (ONLY && s.code !== ONLY) continue;
-  if (한것 >= LIMIT) break;
+  // --limit 은 실제로 받은 수로 센다. 건너뛴 것까지 세면 이미 받아 둔 것이
+  // 한도를 다 갉아먹어, 700 을 줘도 87개밖에 못 돌았다.
+  if (새로 >= LIMIT) break;
   한것++;
   // --약한것 은 이미 받은 것 중 시원찮은 것만 다시 받는다.
   // 호출 한도가 빠듯할 때 쓸 것부터 고쳐 쓰려고 둔다.
   if (!ONLY) {
     const 있는것 = out[s.code];
     if (약한것만) { if (있는것?.rows?.length >= 2) continue; }
+    else if (묵은것만) { if (있는것?.판 === 판) continue; }
     else if (있는것 !== undefined) continue;
   }
   try {
     const 보고서들 = await 최근보고서(코드[s.code]);
+    if (한도넘음) break;
     if (!보고서들) { out[s.code] = null; 못찾음++; continue; }
     let 얻은것 = null;
     for (const r0 of 보고서들) {
@@ -420,11 +431,13 @@ for (const s of 종목) {
       for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
       if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
       const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm));
-      if (seg) { 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt }; break; }
+      if (seg) { 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판 }; break; }
       if (ONLY) console.log("  이 보고서에서는 표를 못 찾음");
     }
     if (!얻은것) 못찾음++;
-    out[s.code] = 얻은것;
+    // 못 찾은 것에도 판을 남긴다. 안 남기면 --묵은것 이 이것들을 끝없이 다시
+    // 받는다 — 600 을 줬는데 344 만 새로 받았던 까닭이다.
+    out[s.code] = 얻은것 ?? { 판, rows: [] };
     새로++;
   } catch (e) { out[s.code] = null; if (ONLY) console.log("  오류:", String(e.message).slice(0, 140)); }
   if (새로 && 새로 % 50 === 0) {
