@@ -66,8 +66,13 @@ export function StockBriefCard({
     );
   }
 
-  // 개요가 없으면 편입 사유 한 줄로 대신한다
-  const 문장 = d?.about?.length ? d.about : d?.why ? [d.why] : [];
+  // 개요가 없으면 편입 사유 한 줄로 대신한다 — 성한 문장일 때만.
+  //
+  // 편입 사유는 사람이 손본 것도 있고 사업보고서에서 그대로 뽑아 온 것도
+  // 있다. 뽑아 온 것은 그림 파일명이 붙어 있거나 220자짜리 덩어리가 도중에
+  // 끊긴 것이 섞여 있다. 개요를 만들 때 그런 것은 걸러 냈는데, 여기서 도로
+  // 띄우면 걸러 낸 뜻이 없다.
+  const 문장 = d?.about?.length ? d.about : 성한문장(d?.why) ? [d!.why!] : [];
   // 주요사업 낱말은 개요 문장에서 뽑은 것이라 99.5%가 문장 안에 그대로 있다.
   // 바로 위에 쓰인 말을 칩으로 또 다는 것은 군더더기다.
   const 낱말 = (d?.biz ?? []).filter((b) => !문장.some((s) => s.includes(b))).slice(0, 4);
@@ -117,6 +122,15 @@ export function StockBriefCard({
       )}
     </Card>
   );
+}
+
+/** 개요 자리에 그대로 띄워도 되는 문장인가 */
+function 성한문장(w?: string | null): boolean {
+  if (!w) return false;
+  const t = w.trim();
+  return t.length >= 25 && t.length <= 190
+    && /(다|요)[.]$/.test(t)
+    && !/\.(jpg|jpeg|png|gif|bmp)/i.test(t);
 }
 
 /**
