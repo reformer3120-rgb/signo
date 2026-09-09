@@ -15,6 +15,7 @@ import { ourSentences, SELF } from "./classify.mjs";
 import { 사업항목 } from "./biz.mjs";
 import { 평서문 } from "./sent.mjs";
 import { makeExclusive } from "./exclusive.mjs";
+import { 실체풀기 } from "./entity.mjs";
 
 const DIR = ".cache/theme";
 const OUT = "src/data/themes.json";
@@ -146,7 +147,8 @@ for (const [id, list] of Object.entries(cls)) {
     const f = FIN[s.code] ?? null;
     stocks.push({
       code: s.code,
-      name: s.name,
+      // 상장기업 목록의 종목명에 「신세계I&amp;C」 처럼 HTML 실체가 섞여 온다
+      name: 실체풀기(s.name),
       // 사람이 확인해 적어 준 문장이 있으면 그것을 쓴다. 원문에서 뽑은 발췌보다
       // 짧고 읽기 쉽다 — "무엇을 만들어 어디에 파는가" 한 문장이다.
       why: s.manualWhy ?? why,

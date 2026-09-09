@@ -28,6 +28,7 @@
 //   node scripts/theme/build-profile.mjs   → src/data/profile.json
 import fs from "node:fs";
 import path from "node:path";
+import { 실체풀기 } from "./entity.mjs";
 
 const DIR = ".cache/theme";
 const OUT = "src/data/profile.json";
@@ -39,12 +40,6 @@ const holders = 읽기(path.join(DIR, "holders.json"), {});
 const largest = 읽기(path.join(DIR, "largest.json"), {});
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 const 종목 = themes.themes.flatMap((t) => t.stocks);
-
-/** 사업보고서 원문에 그대로 남아 있는 HTML 실체를 푼다 — 동국S&amp;C */
-const 실체풀기 = (s) =>
-  String(s ?? "")
-    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ");
 
 /** 견주기 좋게 눌러 둔다 — 「제 품」과 「제품」은 같은 말이다 */
 const 눌러 = (s) => 실체풀기(s).replace(/[\s]+/g, "").replace(/[(（][^)）]*[)）]/g, "").trim();
