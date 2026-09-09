@@ -47,6 +47,39 @@ async function 매출액(corp) {
   return 0; // 매출 계정을 못 찾았다 (0 과 통신 실패를 가른다)
 }
 
+/**
+ * 주요계정에 매출이 없을 때 — 전체 재무제표에서 찾는다.
+ *
+ * fnlttSinglAcnt(주요계정)는 회사마다 주는 계정이 다르다. 참좋은여행은
+ * 영업이익만 있고 매출액이 아예 없고, 올릭스도 마찬가지였다. 그래서
+ * 210종목이 매출액 0 으로 남아 검증을 못 걸었다.
+ *
+ * fnlttSinglAcntAll(전체 재무제표)에는 있다. 무거운 호출이라 주요계정이
+ * 빈손일 때만 쓴다.
+ */
+async function 매출액_전체(corp) {
+  for (const fs_div of ["CFS", "OFS"]) {
+    for (const year of ["2025", "2024"]) {
+      const r = await get(
+        `${BASE}/fnlttSinglAcntAll.json?crtfc_key=${KEY}&corp_code=${corp}` +
+          `&bsns_year=${year}&reprt_code=11011&fs_div=${fs_div}`,
+      );
+      if (!r) return null;
+      let j;
+      try { j = await r.json(); } catch { return null; }
+      if (j.status !== "000") continue;
+      const 손익 = (j.list ?? []).filter((x) => /손익|포괄/.test(x.sj_nm ?? ""));
+      // 표준계정코드가 있으면 그것이 가장 확실하다
+      const 표준 = 손익.find((x) => x.account_id === "ifrs-full_Revenue");
+      const 이름 = 손익.find((x) =>
+        /^(매출액|매출|영업수익|수익\(매출액\)|매출및지분법손익)$/.test((x.account_nm ?? "").trim()));
+      const v = Number(String((표준 ?? 이름)?.thstrm_amount ?? "").replace(/[,\s]/g, ""));
+      if (v > 0) return v;
+    }
+  }
+  return 0;
+}
+
 if (process.argv[1] && import.meta.url === `file:///${process.argv[1].split("\\").join("/")}`) {
   const corp = JSON.parse(fs.readFileSync(path.join(DIR, "corp.json"), "utf8"));
   // 대상은 테마에 실린 종목 전부다.
@@ -59,14 +92,19 @@ if (process.argv[1] && import.meta.url === `file:///${process.argv[1].split("\\"
 
   const ents = Object.values(corp).filter((c) => 대상.has(c.code));
   const done = fs.existsSync(OUT) ? JSON.parse(fs.readFileSync(OUT, "utf8")) : {};
-  const todo = ents.filter((e) => !(e.code in done));
+  // --빈것 을 주면 0 으로 남은 것만 다시 받는다 (전체 재무제표로)
+  const 빈것만 = process.argv.includes("--빈것");
+  const todo = 빈것만
+    ? ents.filter((e) => e.code in done && !(done[e.code] > 0))
+    : ents.filter((e) => !(e.code in done));
   console.log(`대상 ${ents.length}종목 · 받을 것 ${todo.length}`);
 
   let ok = 0;
   let 실패연속 = 0;
   for (let i = 0; i < todo.length; i += CONC) {
     const batch = todo.slice(i, i + CONC);
-    const rs = await Promise.all(batch.map((e) => 매출액(e.corp).then((v) => [e.code, v]).catch(() => [e.code, null])));
+    const 받기 = 빈것만 ? 매출액_전체 : 매출액;
+    const rs = await Promise.all(batch.map((e) => 받기(e.corp).then((v) => [e.code, v]).catch(() => [e.code, null])));
     for (const [code, v] of rs) {
       if (v === null) { 실패연속++; continue; }
       실패연속 = 0;

@@ -38,6 +38,7 @@ const OUT = path.join(DIR, "segments.json");
 const 인자 = (n, 기본) => { const i = process.argv.indexOf(n); return i > 0 ? Number(process.argv[i + 1]) : 기본; };
 const LIMIT = 인자("--limit", Infinity);
 // 한 종목만 다시 뽑아 본다 — 규칙을 고친 뒤 확인할 때 쓴다
+const 약한것만 = process.argv.includes("--약한것");
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
 
 const 읽기 = (p, 기본) => (fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : 기본);
@@ -111,7 +112,7 @@ function 표풀기(tbl) {
  * 셀트리온 [사업부문 매출유형 품목 값…] · 알서포트 [품목 값…] ·
  * 사람인 [사업부문 구분 값…] 이 모두 같은 규칙으로 풀린다.
  */
-function 부문뽑기(xml, 원) {
+function 부문뽑기(xml, 원, 배수) {
   // 제목이 목차에도 나온다. 목차를 잡으면 그 뒤 6만 자 안의 엉뚱한 표를 쓴다 —
   // 삼성전기가 주식 총수 표를 잡아 "보통주 96.3% / 우선주 3.7%" 가 나왔다.
   //
@@ -129,7 +130,7 @@ function 부문뽑기(xml, 원) {
   // 사업부문 표가 있어도 안 봤다 — 614종목이 조각 하나로 끝났다.
   let 한줄 = null;
   for (const 시작 of 자리.slice(0, 8)) {
-    const c = 구역에서(xml.slice(시작, 시작 + 60000), 원);
+    const c = 구역에서(xml.slice(시작, 시작 + 60000), 원, 배수);
     if (쓸만한가(c)) return c;
     if (c && !한줄) 한줄 = c;
   }
@@ -166,11 +167,28 @@ function 쓸만한가(c) {
  *   삼성전기 1.000 · 셀트리온 1.000 · 삼성전자 1.090(내부거래 미제거)
  */
 const 단위들 = [1, 1e3, 1e6, 1e8];
-function 맞는단위(c, 원) {
+
+/**
+ * 이 보고서의 표는 연매출의 몇 배로 나와야 하나.
+ *
+ * 분기·반기 보고서의 매출실적 표는 누적으로 적는 데도 있고 그 분기만 적는
+ * 데도 있어 둘 다 받아 준다.
+ */
+function 기대배수(보고서) {
+  const n = String(보고서 ?? "");
+  if (/사업보고서/.test(n)) return [1];
+  if (/반기보고서/.test(n)) return [0.5, 0.25];
+  if (/분기보고서/.test(n)) return [0.25, 0.5, 0.75];
+  return [1];
+}
+function 맞는단위(c, 원, 배수 = [1]) {
   if (!c?.rows?.length || !(원 > 0)) return undefined;   // 견줄 것이 없으면 판단 보류
   const 합 = c.rows.reduce((a, r) => a + r.v, 0);
   if (!(합 > 0)) return null;
-  const 맞나 = (u) => { const 비 = (합 * u) / 원; return 비 >= 0.7 && 비 <= 1.45; };
+  const 맞나 = (u) => {
+    const 비 = (합 * u) / 원;
+    return 배수.some((k) => 비 >= k * 0.7 && 비 <= k * 1.45);
+  };
   // 표에서 읽은 단위를 먼저 믿는다
   if (맞나(c.단위)) return c.단위;
   for (const u of 단위들) if (맞나(u)) return u;
@@ -178,7 +196,7 @@ function 맞는단위(c, 원) {
 }
 
 /** 한 구역 안의 표들을 차례로 보며 부문별 금액을 뽑는다 */
-function 구역에서(구역, 원) {
+function 구역에서(구역, 원, 배수) {
   let 최고 = null;
   for (const m of 구역.matchAll(/<TABLE\b[\s\S]*?<\/TABLE>/gi)) {
     const tbl = m[0];
@@ -272,6 +290,22 @@ function 구역에서(구역, 원) {
       /^(기초|기말|설정|제각|환입|상각|증가|감소|취득|처분|대체)$|충당금|장부금액|손실률|파생상품|평가이익|평가손실|위험회피|확정계약|수주잔고|이월액|수주액|저작권|상표권?$|특허권|실용신안|디자인권|의장권|지식재산|산업재산|^PCT$|종사자수|사업체수|개발팀|기획팀|연구팀|사업팀|달러\/원|엔\/원|위안\/원|유로\/원/;
     if (이름들.filter((n) => 아닌표.test(n.replace(/\s+/g, ""))).length >= 2) continue;
 
+    // 88종목을 눈으로 훑어 나온 나머지 유형들.
+    //
+    //   애닉             일본 엔화/원 · 미국 달러/원        환율 민감도(한글)
+    //   링세오코리아      통화선도(매도) · 구리선물(매입)     파생상품 명세
+    //   엠에프엠코리아    주임 · 과장 · 실장 · 부장          직급별 인원
+    //   인제니아테라퓨틱스 Principal Scientist · Sr. Research Associate  직책별 인원
+    //   테크트랜스        특허권 · 상표 등록권               지식재산권 현황
+    //   메지온            잔금 · 계약금                     계약 조건
+    //   카이바이오텍      …공급계약서 · 위탁제조 계약        계약 목록
+    //   스튜디오에스      한시점에 이전하는 재화 · 기간에 걸쳐 이전하는 용역  수익인식 기준
+    //   부산은행          보장성보험 · 연금보험 · 화재보험    방카슈랑스 판매
+    //   한화플러스제3호   NH투자증권 · KB증권                주주 목록
+    const 딴표 =
+      /(엔화|달러|바트화|위안화?|유로|루피|링깃)[/／]원|통화선도|통화스왑|이자율스왑|선물환|[가-힣]+선물[(（]|^(주임|대리|과장|차장|부장|실장|사원|팀장|이사|상무|전무)$|Scientist|Research ?Associate|Engineer$|^특허권?$|^상표( ?등록권)?$|^디자인권$|^실용신안권?$|잔금|계약금|중도금|계약서$|한시점|기간에 ?걸쳐|보장성보험|연금보험|화재보험|변액보험|투자증권|자산운용|인베스트먼트/;
+    if (이름들.filter((n) => 딴표.test(n.replace(/\s+/g, ""))).length >= 2) continue;
+
     // 나라 이름만 늘어선 표 — 지역별이지 사업부문이 아니다
     //   종근당  한국 · 일본 · 기타 · 스위스
     const 나라 =
@@ -309,7 +343,7 @@ function 구역에서(구역, 원) {
     }
     const 후보 = { 단위, rows: [...합].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v) };
     // 매출액과 안 맞으면 이 표가 아니다 — 다음 표를 본다
-    const 고른단위 = 맞는단위(후보, 원);
+    const 고른단위 = 맞는단위(후보, 원, 배수);
     if (고른단위 === null) continue;
     if (고른단위 !== undefined) 후보.단위 = 고른단위;
     if (쓸만한가(후보)) return 후보;
@@ -345,9 +379,21 @@ async function 최근보고서(corpCode) {
     `https://opendart.fss.or.kr/api/list.json?crtfc_key=${KEY}&corp_code=${corpCode}` +
     `&bgn_de=20240101&end_de=20301231&pblntf_ty=A&page_count=20`)).json();
   if (j.status !== "000") return null;
-  // 사업보고서를 먼저, 없으면 반기·분기
+  // 가장 최근 것을 쓴다.
+  //
+  // 예전에는 사업보고서를 먼저 찾았다. 그런데 사업보고서는 한 해에 한 번이라
+  // 9월이면 반년 넘게 묵은 것을 본다. 사업구조를 알자는 것이지 정확한 매출액을
+  // 알자는 것이 아니므로, 분기·반기라도 최신이 낫다.
+  //
+  // 대신 검증 잣대를 손봐야 한다 — 분기·반기 표는 누적이라 합이 연매출의
+  // 0.25·0.5·0.75 배로 나온다. 어느 보고서를 받았는지 알고 있으니 기대 배수를
+  // 그에 맞춘다(아래 기대배수()).
+  // 최신을 먼저 보되, 거기서 표를 못 찾으면 사업보고서로 되돌아간다.
+  // 반기보고서는 표가 성겨 아예 없는 회사가 있다 — 삼성전자가 그랬다.
   const 목록 = (j.list ?? []).sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt));
-  return 목록.find((r) => /사업보고서/.test(r.report_nm)) ?? 목록[0] ?? null;
+  const 사업 = 목록.find((r) => /사업보고서/.test(r.report_nm));
+  const 후보 = [목록[0], 사업].filter((r, i, a) => r && a.findIndex((x) => x?.rcept_no === r.rcept_no) === i);
+  return 후보.length ? 후보 : null;
 }
 
 let 한것 = 0, 새로 = 0, 못찾음 = 0;
@@ -356,19 +402,29 @@ for (const s of 종목) {
   if (ONLY && s.code !== ONLY) continue;
   if (한것 >= LIMIT) break;
   한것++;
-  if (!ONLY && out[s.code] !== undefined) continue;
+  // --약한것 은 이미 받은 것 중 시원찮은 것만 다시 받는다.
+  // 호출 한도가 빠듯할 때 쓸 것부터 고쳐 쓰려고 둔다.
+  if (!ONLY) {
+    const 있는것 = out[s.code];
+    if (약한것만) { if (있는것?.rows?.length >= 2) continue; }
+    else if (있는것 !== undefined) continue;
+  }
   try {
-    const r0 = await 최근보고서(코드[s.code]);
-    if (!r0) { out[s.code] = null; 못찾음++; continue; }
-    await 쉼(40);
-    const res = await 받기(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${r0.rcept_no}`);
-    let xml = "";
-    for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
-    if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
-    const seg = 부문뽑기(xml, 매출액[s.code] ?? 0);
-    if (ONLY && !seg) console.log("  표를 못 찾음");
-    if (!seg) 못찾음++;
-    out[s.code] = seg ? { ...seg, report: r0.report_nm, asOf: r0.rcept_dt } : null;
+    const 보고서들 = await 최근보고서(코드[s.code]);
+    if (!보고서들) { out[s.code] = null; 못찾음++; continue; }
+    let 얻은것 = null;
+    for (const r0 of 보고서들) {
+      await 쉼(40);
+      const res = await 받기(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${r0.rcept_no}`);
+      let xml = "";
+      for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
+      if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
+      const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm));
+      if (seg) { 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt }; break; }
+      if (ONLY) console.log("  이 보고서에서는 표를 못 찾음");
+    }
+    if (!얻은것) 못찾음++;
+    out[s.code] = 얻은것;
     새로++;
   } catch (e) { out[s.code] = null; if (ONLY) console.log("  오류:", String(e.message).slice(0, 140)); }
   if (새로 && 새로 % 50 === 0) {
