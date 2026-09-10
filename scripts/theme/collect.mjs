@@ -24,14 +24,14 @@
 //   기록이 아예 없으면 = 아직 못 받음 → 다음 실행에서 다시 시도
 import fs from "node:fs";
 import path from "node:path";
-import { inflateRawSync } from "node:zlib";
+// 받아 오는 부분은 dart.mjs 하나에 모아 두었다. 예전에는 이 파일이 제 안에
+// 똑같은 것을 또 갖고 있었다 — 원문 캐시가 한쪽에만 붙는 것을 막으려 지웠다.
+import { KEY, BASE, get, unzipAll, decode, 원문, 원문본문, 공시목록 } from "./dart.mjs";
 
-const KEY = /^DART_API_KEY=(.*)$/m.exec(fs.readFileSync(".env.local", "utf8"))?.[1]?.trim();
 if (!KEY) {
   console.error("DART_API_KEY 가 .env.local 에 없다.");
   process.exit(1);
 }
-const BASE = "https://opendart.fss.or.kr/api";
 const OUT_DIR = ".cache/theme";
 const OUT = path.join(OUT_DIR, "overview.json");
 
@@ -44,52 +44,6 @@ const PAUSE_MS = 400; // 배치 사이 쉼
 const MAX_FAIL_STREAK = 12; // 이만큼 연달아 실패하면 막힌 것으로 보고 멈춘다
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** 연결이 끊기면 물러섰다 다시. 그래도 안 되면 null */
-async function get(url, tries = 4) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const r = await fetch(url, { cache: "no-store" });
-      if (r.status === 429 || r.status >= 500) throw new Error("HTTP " + r.status);
-      return r;
-    } catch {
-      if (i === tries - 1) return null;
-      await sleep(1500 * 2 ** i);
-    }
-  }
-  return null;
-}
-
-/** 중앙 디렉터리를 읽어 ZIP 안 파일을 전부 꺼낸다 */
-function unzipAll(buf) {
-  let eo = -1;
-  for (let i = buf.length - 22; i >= 0 && i > buf.length - 70000; i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) { eo = i; break; }
-  }
-  if (eo < 0) throw new Error("EOCD 없음");
-  const n = buf.readUInt16LE(eo + 10);
-  let p = buf.readUInt32LE(eo + 16);
-  const out = [];
-  for (let k = 0; k < n; k++) {
-    if (buf.readUInt32LE(p) !== 0x02014b50) break;
-    const method = buf.readUInt16LE(p + 10);
-    const csize = buf.readUInt32LE(p + 20);
-    const nameLen = buf.readUInt16LE(p + 28);
-    const extraLen = buf.readUInt16LE(p + 30);
-    const cmtLen = buf.readUInt16LE(p + 32);
-    const lho = buf.readUInt32LE(p + 42);
-    const name = buf.subarray(p + 46, p + 46 + nameLen).toString("utf8");
-    const start = lho + 30 + buf.readUInt16LE(lho + 26) + buf.readUInt16LE(lho + 28);
-    let data = null;
-    try {
-      const body = buf.subarray(start, start + csize);
-      data = method === 0 ? body : method === 8 ? inflateRawSync(body) : null;
-    } catch { /* 깨진 항목은 건너뛴다 */ }
-    out.push({ name, data, method });
-    p += 46 + nameLen + extraLen + cmtLen;
-  }
-  return out;
-}
 
 async function corpList() {
   const cache = path.join(OUT_DIR, "corp.json");
@@ -109,35 +63,6 @@ async function corpList() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(cache, JSON.stringify(out));
   return out;
-}
-
-/**
- * 본문을 글자로 푼다.
- *
- * DART 원문은 EUC-KR 인 것도 있고 UTF-8 인 것도 있다. 처음에는 EUC-KR 로 읽고
- * "사업" 이라는 글자가 안 보이면 UTF-8 로 다시 읽었는데, 깨진 글자 속에 우연히
- * "사업" 이 섞이면 그대로 넘어갔다. 웹젠·조광피혁 등 34종목이 이 때문에
- * "개요 없음" 으로 접혔다.
- *
- * 이제 XML 선언을 먼저 보고, 그래도 애매하면 한글이 더 많이 나오는 쪽을 고른다.
- */
-function decode(buf) {
-  const head = buf.subarray(0, 200).toString("latin1");
-  const dec = /encoding\s*=\s*["']?utf-?8/i.test(head)
-    ? "utf-8"
-    : /encoding\s*=\s*["']?(euc-kr|ks_c_5601)/i.test(head)
-      ? "euc-kr"
-      : null;
-  if (dec) return new TextDecoder(dec).decode(buf);
-
-  // 선언이 없으면 둘 다 읽어 보고 한글이 많은 쪽을 쓴다
-  const sample = buf.subarray(0, 60000);
-  const hangul = (t) => (t.match(/[가-힣]/g) ?? []).length;
-  const e = new TextDecoder("euc-kr").decode(sample);
-  const u = sample.toString("utf8");
-  return hangul(u) > hangul(e)
-    ? buf.toString("utf8")
-    : new TextDecoder("euc-kr").decode(buf);
 }
 
 /**
@@ -178,41 +103,25 @@ function overview(plain) {
 
 /** 본문 하나를 받아 개요를 뽑는다. 파일이 없으면 "없음", 통신 실패면 null */
 async function docOf(rcept) {
-  const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rcept}`);
-  if (!dr) return null;
-  const buf = Buffer.from(await dr.arrayBuffer());
-
-  // ZIP 이 아니면 오류 XML 이다. 그 중 014 는 "그 접수번호에 본문 파일이 없다" 는
-  // 뜻이라 다시 불러도 소용없다 — [첨부정정] 보고서에서 자주 나온다.
-  // 통신 실패와 구분하지 않으면 연속 실패로 세어져 수집이 통째로 멈춘다.
-  if (buf.length < 200 || buf.readUInt32LE(0) !== 0x04034b50) {
-    const t = buf.toString("utf8");
-    if (/<status>014<\/status>/.test(t)) return "없음";
-    return null;
-  }
-  let files;
-  try { files = unzipAll(buf); } catch { return null; }
-  const main = files.filter((f) => f.data).sort((a, b) => b.data.length - a.data.length)[0];
-  if (!main) return "없음";
-  const plain = decode(main.data).replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
+  // 받은 원문은 dart.mjs 가 남겨 둔다. 본문 없음(014)·통신 실패의 구분도 거기
+  // 있다 — 둘을 섞으면 연속 실패로 세어져 수집이 통째로 멈춘다.
+  const 본문 = await 원문본문(rcept);
+  if (본문 === null) return null;
+  if (본문 === "없음") return "없음";
+  const plain = 본문.replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/g, " ").replace(/\s+/g, " ");
   return overview(plain) ?? "없음";
 }
 
 /** 성공 → 기록 / 받을 게 없음 → skip / 통신 실패 → null (기록하지 않는다) */
 async function fetchOne({ corp, code, name }) {
-  const lr = await get(
-    `${BASE}/list.json?crtfc_key=${KEY}&corp_code=${corp}&bgn_de=20240101&pblntf_ty=A&page_count=30`,
-  );
-  if (!lr) return null;
-  let j;
-  try { j = await lr.json(); } catch { return null; }
-  if (j.status === "013") return { code, name, skip: "공시없음" };
-  if (j.status !== "000") return null; // 020 한도초과 등 — 다시 시도해야 한다
+  const list = await 공시목록(corp, { bgn: "20240101", ty: "A", n: 30 });
+  if (list === null) return null; // 통신 실패·한도 초과 — 다시 시도해야 한다
+  if (!list.length) return { code, name, skip: "공시없음" };
 
   // 사업보고서 후보를 최근 순으로 모은다. 가장 최근 것이 [첨부정정] 이라 본문이
   // 없을 수 있으므로, 될 때까지 아래로 내려간다. 서연이화·제주항공 등 55종목이
   // 이 때문에 빠져 있었다.
-  const cands = (j.list ?? []).filter((x) => /사업보고서/.test(x.report_nm));
+  const cands = list.filter((x) => /사업보고서/.test(x.report_nm));
   if (!cands.length) return { code, name, skip: "사업보고서없음" };
 
   for (const rep of cands.slice(0, 4)) {
@@ -284,18 +193,14 @@ const todo = ONLY
 if (ONLY) {
   const c = todo[0];
   if (!c) { console.log(`${ONLY} — 상장 목록에 없다`); process.exit(0); }
-  const lr = await get(
-    `${BASE}/list.json?crtfc_key=${KEY}&corp_code=${c.corp}&bgn_de=20240101&pblntf_ty=A&page_count=30`,
-  );
-  const j = await lr.json();
-  const cands = (j.list ?? []).filter((x) => /사업보고서/.test(x.report_nm));
+  const cands = ((await 공시목록(c.corp, { bgn: "20240101", ty: "A", n: 30 })) ?? [])
+    .filter((x) => /사업보고서/.test(x.report_nm));
   console.log(`${c.name} (${c.code}) — 사업보고서 후보 ${cands.length}건`);
   for (const rep of cands.slice(0, 4)) {
-    const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rep.rcept_no}`);
-    const buf = Buffer.from(await dr.arrayBuffer());
-    const isZip = buf.length >= 200 && buf.readUInt32LE(0) === 0x04034b50;
-    let note = `ZIP 아님 (${buf.subarray(0, 120).toString("utf8").replace(/\s+/g, " ")})`;
-    if (isZip) {
+    const buf = await 원문(rep.rcept_no);
+    if (!Buffer.isBuffer(buf)) { console.log(`  ${rep.report_nm} — ${buf === "없음" ? "본문 없음(014)" : "못 받음"}`); continue; }
+    let note = "";
+    {
       let files = [];
       try { files = unzipAll(buf); } catch (e) { note = "ZIP 해제 실패: " + e.message; }
       const live = files.filter((f) => f.data);

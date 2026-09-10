@@ -31,7 +31,7 @@
 //   node scripts/theme/collect-holders.mjs --limit 60 앞 60종목만 (시험용)
 import fs from "node:fs";
 import path from "node:path";
-import { KEY, unzipAll, decode } from "./dart.mjs";
+import { KEY, 원문글 } from "./dart.mjs";
 
 const DIR = ".cache/theme";
 const OUT = path.join(DIR, "holders.json");
@@ -60,10 +60,9 @@ const 값 = (xml, re) => (xml.match(re) ?? [])[1]?.replace(/<[^>]+>/g, "").repla
 /** 보고서 한 건에서 보고자의 이름·국적·구분을 읽는다 */
 async function 문서읽기(rcept) {
   if (docs[rcept]) return docs[rcept];
-  const r = await fetch(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${rcept}`);
-  if (!r.ok) return (docs[rcept] = null);
-  let xml = "";
-  for (const f of unzipAll(Buffer.from(await r.arrayBuffer()))) if (f.data) xml += decode(f.data);
+  // 원문은 dart.mjs 가 남겨 둔다 — 개요·매출·부문 수집기와 같은 것을 본다.
+  const xml = await 원문글(rcept);
+  if (!xml) return (docs[rcept] = null);
   const v = {
     이름: 값(xml, /ACODE="IFR_NM"[^>]*>([^<]*)</),
     국적: 값(xml, /ACODE="IFR_NT"[^>]*>([^<]*)</),

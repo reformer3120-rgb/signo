@@ -31,7 +31,7 @@
 //   node scripts/theme/collect-segments.mjs --limit 40  앞 40종목만
 import fs from "node:fs";
 import path from "node:path";
-import { KEY, unzipAll, decode } from "./dart.mjs";
+import { 공시목록, 원문글, 한도넘었나, 셈 } from "./dart.mjs";
 
 const DIR = ".cache/theme";
 const OUT = path.join(DIR, "segments.json");
@@ -42,7 +42,6 @@ const LIMIT = 인자("--limit", Infinity);
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
 const 판 = 2;
-let 한도넘음 = false;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
@@ -366,26 +365,11 @@ const 매출액 = (() => {
 
 const 쉼 = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * DART 는 쉬지 않고 두드리면 연결을 끊는다(fetch failed / ECONNRESET).
- * 다른 수집기가 같이 돌 때 특히 그렇다. 끊기면 쉬었다 다시 건다.
- */
-async function 받기(url, 남은시도 = 3) {
-  try {
-    return await fetch(url);
-  } catch (e) {
-    if (남은시도 <= 0) throw e;
-    await 쉼(2000);
-    return 받기(url, 남은시도 - 1);
-  }
-}
-
 async function 최근보고서(corpCode) {
-  const j = await (await 받기(
-    `https://opendart.fss.or.kr/api/list.json?crtfc_key=${KEY}&corp_code=${corpCode}` +
-    `&bgn_de=20240101&end_de=20301231&pblntf_ty=A&page_count=20`)).json();
-  if (j.status === "020") { console.log("\n하루 호출 한도를 넘었다. 여기서 멈춘다 — 다시 돌리면 이어서 받는다."); 한도넘음 = true; return null; }
-  if (j.status !== "000") return null;
+  // 목록·원문 모두 dart.mjs 가 받은 것을 남겨 둔다. 잣대를 고쳐 다시 돌릴 때
+  // 호출이 들지 않는 까닭이다.
+  const 목록 = await 공시목록(corpCode, { bgn: "20240101", end: "20301231", ty: "A", n: 20 });
+  if (!목록?.length) return null;
   // 가장 최근 것을 쓴다.
   //
   // 예전에는 사업보고서를 먼저 찾았다. 그런데 사업보고서는 한 해에 한 번이라
@@ -397,11 +381,18 @@ async function 최근보고서(corpCode) {
   // 그에 맞춘다(아래 기대배수()).
   // 최신을 먼저 보되, 거기서 표를 못 찾으면 사업보고서로 되돌아간다.
   // 반기보고서는 표가 성겨 아예 없는 회사가 있다 — 삼성전자가 그랬다.
-  const 목록 = (j.list ?? []).sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt));
-  const 사업 = 목록.find((r) => /사업보고서/.test(r.report_nm));
-  const 후보 = [목록[0], 사업].filter((r, i, a) => r && a.findIndex((x) => x?.rcept_no === r.rcept_no) === i);
+  const 최근 = [...목록].sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt));
+  const 사업 = 최근.find((r) => /사업보고서/.test(r.report_nm));
+  const 후보 = [최근[0], 사업].filter((r, i, a) => r && a.findIndex((x) => x?.rcept_no === r.rcept_no) === i);
   return 후보.length ? 후보 : null;
 }
+
+/** 한도에 걸렸으면 알리고 멈춘다 — 다음에 이어받는다 */
+const 멈출때 = () => {
+  if (!한도넘었나()) return false;
+  console.log("\n하루 호출 한도를 넘었다. 여기서 멈춘다 — 다시 돌리면 이어서 받는다.");
+  return true;
+};
 
 let 한것 = 0, 새로 = 0, 못찾음 = 0;
 const 시작 = Date.now();
@@ -421,19 +412,20 @@ for (const s of 종목) {
   }
   try {
     const 보고서들 = await 최근보고서(코드[s.code]);
-    if (한도넘음) break;
+    if (멈출때()) break;
     if (!보고서들) { out[s.code] = null; 못찾음++; continue; }
     let 얻은것 = null;
     for (const r0 of 보고서들) {
       await 쉼(40);
-      const res = await 받기(`https://opendart.fss.or.kr/api/document.xml?crtfc_key=${KEY}&rcept_no=${r0.rcept_no}`);
-      let xml = "";
-      for (const f of unzipAll(Buffer.from(await res.arrayBuffer()))) if (f.data) xml += decode(f.data);
+      const xml = await 원문글(r0.rcept_no);
+      if (한도넘었나()) break;
+      if (xml === null) continue; // 통신 실패 — 남기지 않고 다음에 다시 받는다
       if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
       const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm));
       if (seg) { 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판 }; break; }
       if (ONLY) console.log("  이 보고서에서는 표를 못 찾음");
     }
+    if (멈출때()) break;
     if (!얻은것) 못찾음++;
     // 못 찾은 것에도 판을 남긴다. 안 남기면 --묵은것 이 이것들을 끝없이 다시
     // 받는다 — 600 을 줬는데 344 만 새로 받았던 까닭이다.
@@ -447,5 +439,7 @@ for (const s of 종목) {
 }
 fs.writeFileSync(OUT, JSON.stringify(out));
 const 있는것 = Object.values(out).filter(Boolean);
+const { 부름, 캐시 } = 셈();
 console.log(`\n종목 ${Object.keys(out).length} · 부문 뽑힌 종목 ${있는것.length}`);
+console.log(`DART 두드림 ${부름}건 · 남겨 둔 것으로 때움 ${캐시}건`);
 console.log(`  → ${OUT}  ${(fs.statSync(OUT).size/1024).toFixed(0)}KB`);

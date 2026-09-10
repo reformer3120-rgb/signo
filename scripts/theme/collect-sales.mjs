@@ -32,7 +32,7 @@
 // 결과 → .cache/theme/sales.json  { code: [{label, v, 비중}] | null }
 import fs from "node:fs";
 import path from "node:path";
-import { get, unzipAll, decode, KEY, BASE } from "./dart.mjs";
+import { 원문본문, 공시목록 } from "./dart.mjs";
 
 const DIR = ".cache/theme";
 const OUT = path.join(DIR, "sales.json");
@@ -168,32 +168,20 @@ export function 부문비중(seg) {
 // ── 걷어 오기 ──────────────────────────────────────────────
 
 async function 한종목({ corp, code, name }) {
-  const lr = await get(
-    `${BASE}/list.json?crtfc_key=${KEY}&corp_code=${corp}&bgn_de=20240101&pblntf_ty=A&page_count=30`,
-  );
-  if (!lr) return null;
-  let j;
-  try { j = await lr.json(); } catch { return null; }
-  if (j.status === "013") return { code, name, skip: "공시없음" };
-  if (j.status !== "000") return null;
+  const list = await 공시목록(corp, { bgn: "20240101", ty: "A", n: 30 });
+  if (list === null) return null;
+  if (!list.length) return { code, name, skip: "공시없음" };
 
-  const cands = (j.list ?? []).filter((x) => /사업보고서/.test(x.report_nm));
+  const cands = list.filter((x) => /사업보고서/.test(x.report_nm));
   if (!cands.length) return { code, name, skip: "사업보고서없음" };
 
   for (const rep of cands.slice(0, 4)) {
-    const dr = await get(`${BASE}/document.xml?crtfc_key=${KEY}&rcept_no=${rep.rcept_no}`);
-    if (!dr) return null;
-    const buf = Buffer.from(await dr.arrayBuffer());
-    if (buf.length < 200 || buf.readUInt32LE(0) !== 0x04034b50) {
-      // 014 는 "그 접수번호에 본문이 없다" — [첨부정정] 에서 흔하다. 다음 후보로.
-      if (/<status>014<\/status>/.test(buf.toString("utf8"))) continue;
-      return null;
-    }
-    let files;
-    try { files = unzipAll(buf); } catch { return null; }
-    const main = files.filter((f) => f.data).sort((a, b) => b.data.length - a.data.length)[0];
-    if (!main) continue;
-    const plain = decode(main.data)
+    // 014("그 접수번호에 본문이 없다" — [첨부정정] 에서 흔하다) 는 "없음" 으로
+    // 온다. 다음 후보로 넘어간다.
+    const 본문 = await 원문본문(rep.rcept_no);
+    if (본문 === null) return null;
+    if (본문 === "없음") continue;
+    const plain = 본문
       .replace(/<[^>]+>/g, " ")
       .replace(/&[a-z]+;/g, " ")
       .replace(/\s+/g, " ");
