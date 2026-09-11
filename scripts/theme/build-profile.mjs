@@ -39,6 +39,9 @@ const segments = 읽기(path.join(DIR, "segments.json"), {});
 const holders = 읽기(path.join(DIR, "holders.json"), {});
 const largest = 읽기(path.join(DIR, "largest.json"), {});
 const 매출액 = 읽기(path.join(DIR, "revenue.json"), {});
+// 재무 API 가 안 주는 회사(코넥스·비상장·상장폐지)는 사업보고서 원문의
+// 요약재무정보에서 읽어 둔 것을 쓴다 — collect-revenue.mjs --원문
+const 원문매출 = 읽기(path.join(DIR, "revenue-doc.json"), {});
 const themes = JSON.parse(fs.readFileSync("src/data/themes.json", "utf8"));
 const 종목 = themes.themes.flatMap((t) => t.stocks);
 
@@ -209,7 +212,7 @@ function 매출(code) {
   // 맞으면 「매출 구성」 이라 불러도 된다. 매출액을 모르면 이 표가 정말 매출
   // 표인지 확인할 길이 없으므로 화면이 「사업 구성」 이라 부른다 — 사업부문이
   // 무엇무엇인지는 맞고, 그 비율이 매출 비중인지까지는 장담하지 않는다는 뜻이다.
-  const 원 = 매출액[code];
+  const 원 = 매출액[code] > 0 ? 매출액[code] : (원문매출[code] ?? 0);
   const 합원 = v.rows.reduce((a, r) => a + r.v, 0) * (v.단위 ?? 1);
   const 비 = 원 > 0 ? 합원 / 원 : null;
   // 분기·반기 보고서의 표는 누적이라 합이 연매출의 0.25·0.5·0.75 배로 나온다.
