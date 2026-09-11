@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 12;
+const 판 = 14;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const 왜 = process.argv.includes("--왜");

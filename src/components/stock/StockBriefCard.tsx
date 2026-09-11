@@ -79,7 +79,10 @@ export function StockBriefCard({
 
   const 매출 = d?.매출?.rows ?? [];
   const 주주 = 주주조각(d, detail?.data?.detail?.foreignRate);
-  const 원형수 = (매출.length >= 2 ? 1 : 0) + (주주.length >= 2 ? 1 : 0);
+  // 매출은 조각이 하나여도 그린다. 단일사업 회사에게는 그것이 사실이다 —
+  // 「반도체 장비재료 100%」. 다만 조각 합이 매출액과 맞을 때만 세우므로
+  // (build-profile.mjs) 한 조각짜리는 늘 「매출 구성」 이다.
+  const 원형수 = (매출.length >= 1 ? 1 : 0) + (주주.length >= 2 ? 1 : 0);
 
   if (!d || (!문장.length && !낱말.length && !원형수)) return null;
 
@@ -112,7 +115,7 @@ export function StockBriefCard({
             원형수 === 2 ? "grid grid-cols-2" : "grid grid-cols-1"
           }`}
         >
-          {매출.length >= 2 && (
+          {매출.length >= 1 && (
             <Donut
               // 조각의 합이 그 해 매출액과 맞을 때만 「매출 구성」 이라 부른다.
               //

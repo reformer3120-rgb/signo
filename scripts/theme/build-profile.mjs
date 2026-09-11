@@ -48,7 +48,7 @@ const 종목 = themes.themes.flatMap((t) => t.stocks);
 // 매출 표가 아닌 표를 가리는 규칙은 한 곳에 모아 두었다 — 뽑는 쪽
 // (collect-segments.mjs)도 같은 것을 본다.
 import {
-  눌러, 매출표아님, 기대배수, 손익표, 합계행, 상계행, 머리글, 밋밋, 주식표, 종속표, 지역표,
+  눌러, 매출표아님, 밋밋하다, 기대배수, 손익표, 합계행, 상계행, 머리글, 주식표, 종속표, 지역표,
 } from "./매출표.mjs";
 
 
@@ -76,7 +76,7 @@ function 라벨다듬기(name) {
 function 알맹이(name) {
   const x = 눌러(name);
   if (x.length < 2) return false;
-  if (밋밋.test(x) || 주식표.test(x) || 종속표.test(x) || 지역표.test(x)) return false;
+  if (밋밋하다(x) || 주식표.test(x) || 종속표.test(x) || 지역표.test(x)) return false;
   if (/^[A-Z]$/.test(x)) return false;              // A · B · C
   if (/^[\d.,%\-()※]+$/.test(x)) return false;       // (1) · ------------
   return true;
@@ -101,7 +101,7 @@ function 알맹이(name) {
  */
 function 매출(code) {
   const v = segments[code];
-  if (!v?.rows?.length || v.rows.length < 2) return null;
+  if (!v?.rows?.length) return null;
 
   if (매출표아님(v.rows.map((r) => r.label), v.rows.length)) return null;
 
@@ -110,7 +110,7 @@ function 매출(code) {
     const x = 눌러(r.label);
     return !합계행.test(x) && !손익표.test(x) && !머리글.test(x) && !상계행.test(x);
   });
-  if (알짜.length < 2) return null;
+  if (!알짜.length) return null;
 
   const 합 = 알짜.reduce((a, r) => a + r.v, 0);
   if (합 <= 0) return null;
@@ -134,9 +134,6 @@ function 매출(code) {
   // 0.1% 도 안 되는 "그 밖" 은 조각으로 두지 않는다 — 범례만 한 줄 늘린다
   if (밖 > 0 && 몫(밖) >= 0.1) 상위.push({ name: "그 밖", pct: 몫(밖) });
 
-  // 한 조각이 99% 를 넘으면 원형이 아니라 동그라미다
-  if (상위.some((r) => r.pct >= 99)) return null;
-
   // 조각의 합이 그 해 매출액과 맞는지 표시해 둔다.
   //
   // 맞으면 「매출 구성」 이라 불러도 된다. 매출액을 모르면 이 표가 정말 매출
@@ -150,6 +147,11 @@ function 매출(code) {
   // 안 되는 종목이 147 생겼다.
   const 배수 = 기대배수(v.report);
   const 검증 = 비 !== null && 배수.some((k) => 비 >= k * 0.7 && 비 <= k * 1.45);
+
+  // 조각이 하나면 「이 회사 매출은 전부 이것」 이라는 말이 된다. 그 말은 합이
+  // 매출액과 맞을 때만 할 수 있다 — 표에 한 부문만 적힌 것일 수도 있어서다.
+  // 여럿이면 비율 자체가 알려 주는 것이 있으므로 못 견줘도 그린다.
+  if (상위.length === 1 && !검증) return null;
 
   return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null, 검증 };
 }
