@@ -32,6 +32,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { 공시목록, 원문글, 한도넘었나, 셈 } from "./dart.mjs";
+import { 매출표아님 } from "./매출표.mjs";
 
 const DIR = ".cache/theme";
 const OUT = path.join(DIR, "segments.json");
@@ -41,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 2;
+const 판 = 5;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
@@ -260,8 +261,14 @@ function 구역에서(구역, 원, 배수) {
     }
     for (const [이름, g] of 묶음) 합.set(이름, g.소계 ?? g.세부);
     if (합.size < 1) continue;
-    // 이름이 죄다 한두 글자 로마자면 사업부문이 아니라 등급표다 (D · C · CC · CCC)
     const 이름들 = [...합.keys()];
+    // 매출 표가 아닌 표는 건너뛰고 다음 표를 본다 — 화면 쪽과 같은 규칙이다.
+    //
+    // 거래처별·지역별·종속회사별 매출 표는 합이 매출액과 맞아서 「합을 견주는」
+    // 잣대로는 못 거른다. 그래서 집고 거기서 멈췄고, 반기보고서에서 그러면
+    // 사업보고서로 되돌아가 제대로 된 표를 찾을 기회까지 잃었다(204종목).
+    if (매출표아님(이름들)) continue;
+    // 이름이 죄다 한두 글자 로마자면 사업부문이 아니라 등급표다 (D · C · CC · CCC)
     if (이름들.every((n) => /^[A-Za-z+-]{1,4}$/.test(n))) continue;
     // 환율 표 — 통화 코드가 절반을 넘으면 매출이 아니다 (USD · EUR · JPY · VND)
     const 통화 = /^(USD|EUR|JPY|CNY|CNH|VND|PHP|MXN|SGD|TWD|HKD|GBP|AUD|CAD|CHF|IDR|THB|INR|BRL|RUB|TRY|PLN|MYR|KRW|AED|SAR)$/i;
