@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 25;
+const 판 = 26;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const 왜 = process.argv.includes("--왜");
@@ -119,13 +119,14 @@ function 표풀기(tbl) {
  * 셀트리온 [사업부문 매출유형 품목 값…] · 알서포트 [품목 값…] ·
  * 사람인 [사업부문 구분 값…] 이 모두 같은 규칙으로 풀린다.
  */
-function 부문뽑기(xml, 원, 배수) {
+function 부문뽑기(xml, 원, 배수, 손봄 = {}) {
   // 제목이 목차에도 나온다. 목차를 잡으면 그 뒤 6만 자 안의 엉뚱한 표를 쓴다 —
   // 삼성전기가 주식 총수 표를 잡아 "보통주 96.3% / 우선주 3.7%" 가 나왔다.
   //
   // 진짜 절은 <TITLE> 태그로 표시된다. 그것을 먼저 찾고, 없을 때만 본문
   // 아무 데나 나온 자리를 쓴다.
-  const 말 = String.raw`매\s*출\s*실\s*적|매출\s*및\s*수주|매출에\s*관한\s*사항|부문별\s*매출|사업부문별\s*매출`;
+  const 말 = String.raw`매\s*출\s*실\s*적|매출\s*및\s*수주|매출에\s*관한\s*사항|부문별\s*매출|사업부문별\s*매출`
+    + (손봄.닻 ? `|${손봄.닻}` : "");
   const 절 = new RegExp(`<TITLE[^>]*>[^<]*(?:${말})[^<]*</TITLE>`, "g");
   const 아무데나 = new RegExp(말, "g");
   const 자리 = [...xml.matchAll(절)].map((x) => x.index);
@@ -137,13 +138,13 @@ function 부문뽑기(xml, 원, 배수) {
   // 사업부문 표가 있어도 안 봤다 — 614종목이 조각 하나로 끝났다.
   let 한줄 = null;
   for (const 시작 of 자리.slice(0, 8)) {
-    const c = 구역에서(xml.slice(시작, 시작 + 60000), 원, 배수);
+    const c = 구역에서(xml.slice(시작, 시작 + 60000), 원, 배수, 손봄);
     if (쓸만한가(c) && 알짜조각(c.rows.map((r) => r.label)) >= 2) return c;
     if (c && !한줄) 한줄 = c;
   }
   // 매출실적 표에서 못 건졌으면 부문정보 주석을 본다. 현대모비스·두산에너빌리티
   // 처럼 큰 회사는 그쪽에만 갈래가 있다.
-  const 주석 = 부문주석(xml, 원, 배수);
+  const 주석 = 부문주석(xml, 원, 배수, 손봄);
   if (주석 && 알짜조각(주석.rows.map((r) => r.label)) >= 2) return 주석;
   return 한줄 ?? 주석;
 }
@@ -250,7 +251,7 @@ function 묶기(rows, 이름칸, 값칸) {
  * 내부거래를 뺀 「외부고객으로부터의 수익」 이 곧 부문별 매출이다. 없으면
  * 총부문수익을 쓴다. 매출실적 표에서 아무것도 못 건졌을 때만 본다.
  */
-function 부문주석(구역, 원, 배수) {
+function 부문주석(구역, 원, 배수, 손봄 = {}) {
   // 여는 태그마다 다음 닫는 태그까지 잘라 본다. 정규식으로 짝을 지으면 안
   // 닫힌 표에 뒤엣것이 먹힌다 — 현대모비스 보고서는 <TABLE> 이 2,705개인데
   // </TABLE> 은 2,535개뿐이라, 정작 부문정보 표가 어느 짝에도 안 들어갔다.
@@ -266,7 +267,8 @@ function 부문주석(구역, 원, 배수) {
     const 머리 = rows[0];
     const 첫칸 = (r) => (r[0] ?? "").replace(/\s+/g, "");
     const 줄 =
-      rows.find((r) => /^외부고객/.test(첫칸(r)))
+      (손봄.주석줄 ? rows.find((r) => new RegExp(손봄.주석줄).test(첫칸(r))) : null)
+      ?? rows.find((r) => /^외부고객/.test(첫칸(r)))
       ?? rows.find((r) => /^(총부문수익|부문수익|매출액|수익)$/.test(첫칸(r)));
     if (!줄) { 버림("주석 · 수익 줄을 못 찾음", rows.map((r) => 첫칸(r))); continue; }
     const 조각 = [];
@@ -287,7 +289,7 @@ function 부문주석(구역, 원, 배수) {
     const 앞 = 구역.slice(Math.max(0, 열림 - 700), 열림);
     const u = 글(앞).match(/단위\s*[:：]\s*(백만원|천원|억원|원)/);
     const 후보 = { 단위: { 원: 1, 천원: 1e3, 백만원: 1e6, 억원: 1e8 }[u?.[1] ?? "원"], rows: 조각.sort((a, b) => b.v - a.v) };
-    const 고른단위 = 맞는단위(후보, 원, 배수);
+    const 고른단위 = 손봄.검증 === false ? undefined : 맞는단위(후보, 원, 배수);
     if (고른단위 === null) { 버림("주석 · 합이 매출액과 안 맞음", 조각.map((x) => x.label)); continue; }
     if (고른단위 !== undefined) 후보.단위 = 고른단위;
     return 후보;
@@ -297,7 +299,7 @@ function 부문주석(구역, 원, 배수) {
 
 
 /** 한 구역 안의 표들을 차례로 보며 부문별 금액을 뽑는다 */
-function 구역에서(구역, 원, 배수) {
+function 구역에서(구역, 원, 배수, 손봄 = {}) {
   let 최고 = null, 차선 = null;
   for (const m of 구역.matchAll(/<TABLE\b[\s\S]*?<\/TABLE>/gi)) {
     const tbl = m[0];
@@ -327,7 +329,7 @@ function 구역에서(구역, 원, 배수) {
     // 칸을 고르게 했더니 품목 상세·거래처·자산 목록이 딸려 왔다 — 휴젤이
     // 「H.E.L.F in Seoul 2026」, 보로노이가 「인천 송도 IT센터S동 11층」 이
     // 됐고 시총 상위 100 중 다섯이 빠졌다.
-    let 이름칸 = -1;
+    let 이름칸 = -1, 최고알맹이 = 0;
     for (let c = 0; c < 값칸; c++) {
       const 있는것 = rows.filter((r) => (r[c] ?? "").trim());
       if (있는것.length < 2) continue;
@@ -337,6 +339,8 @@ function 구역에서(구역, 원, 배수) {
       // 여섯(LG에너지솔루션·한미반도체·두산 등)이 그렇게 빠졌다. 기아는
       // 그래서 아직 못 잡는다.
       const 알맹이수 = new Set(있는것.map((r) => 눌러(r[c])).filter((x) => x.length >= 2 && !밋밋하다(x))).size;
+      // 손보기로 「알맹이」 를 준 종목은 알맹이가 가장 많은 칸을 쓴다
+      if (손봄.이름칸 === "알맹이") { if (알맹이수 > 최고알맹이) { 이름칸 = c; 최고알맹이 = 알맹이수; } continue; }
       if (이름칸 < 0) 이름칸 = c;          // 첫 후보는 일단 쥔다
       if (알맹이수 >= 2) { 이름칸 = c; break; }
     }
@@ -440,7 +444,7 @@ function 구역에서(구역, 원, 배수) {
     }
     const 후보 = { 단위, rows: [...합].map(([label, v]) => ({ label, v })).sort((a, b) => b.v - a.v) };
     // 매출액과 안 맞으면 이 표가 아니다 — 다음 표를 본다
-    const 고른단위 = 맞는단위(후보, 원, 배수);
+    const 고른단위 = 손봄.검증 === false ? undefined : 맞는단위(후보, 원, 배수);
     if (고른단위 === null) { 버림(`합이 매출액과 안 맞음(합 ${[...합.values()].reduce((a,b)=>a+b,0)})`, 이름들); continue; }
     if (고른단위 !== undefined) 후보.단위 = 고른단위;
     // 알맹이 있는 표를 먼저 쓴다.
@@ -459,6 +463,23 @@ function 구역에서(구역, 원, 배수) {
 }
 
 /** 종목별 매출액(원) — 뽑은 표가 매출 표인지 견주는 데 쓴다 */
+/**
+ * 종목별 손보기 — 고르는 결정만 못 박는다. 값은 그대로 보고서에서 읽으므로
+ * 다음 분기에 보고서가 바뀌어도 묵지 않는다.
+ *
+ *   "000270": { "이름칸": "알맹이", "왜": "기아 — 매출유형 칸이 아니라 품목 칸" }
+ *
+ * 손잡이
+ *   이름칸 "알맹이"  뭉뚱그린 왼쪽 칸 대신 알맹이가 가장 많은 칸을 쓴다
+ *   닻     "정규식"  절 제목을 하나 더 찾아 본다
+ *   주석줄 "정규식"  부문정보 주석에서 읽을 줄(기본 「외부고객으로부터의 수익」)
+ *   검증   false     합을 매출액과 안 견준다 — 매출 개념이 다른 금융업에 쓴다
+ */
+const 손보기 = (() => {
+  const f = "scripts/theme/매출표-손보기.json";
+  return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, "utf8")) : {};
+})();
+
 const 매출액 = (() => {
   const 읽기 = (n) => {
     const f = path.join(DIR, n);
@@ -540,7 +561,7 @@ for (const s of 종목) {
       if (한도넘었나()) break;
       if (xml === null) continue; // 통신 실패 — 남기지 않고 다음에 다시 받는다
       if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
-      const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm));
+      const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm), 손보기[s.code] ?? {});
       if (!seg) { if (ONLY) console.log("  이 보고서에서는 표를 못 찾음"); continue; }
       const 알짜 = 알짜조각(seg.rows.map((r) => r.label));
       if (ONLY) console.log(`  ${r0.report_nm} — 조각 ${seg.rows.length} · 알맹이 ${알짜}`);
