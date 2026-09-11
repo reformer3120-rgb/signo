@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 22;
+const 판 = 25;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const 왜 = process.argv.includes("--왜");
@@ -138,10 +138,14 @@ function 부문뽑기(xml, 원, 배수) {
   let 한줄 = null;
   for (const 시작 of 자리.slice(0, 8)) {
     const c = 구역에서(xml.slice(시작, 시작 + 60000), 원, 배수);
-    if (쓸만한가(c)) return c;
+    if (쓸만한가(c) && 알짜조각(c.rows.map((r) => r.label)) >= 2) return c;
     if (c && !한줄) 한줄 = c;
   }
-  return 한줄;
+  // 매출실적 표에서 못 건졌으면 부문정보 주석을 본다. 현대모비스·두산에너빌리티
+  // 처럼 큰 회사는 그쪽에만 갈래가 있다.
+  const 주석 = 부문주석(xml, 원, 배수);
+  if (주석 && 알짜조각(주석.rows.map((r) => r.label)) >= 2) return 주석;
+  return 한줄 ?? 주석;
 }
 
 /**
@@ -232,9 +236,69 @@ function 묶기(rows, 이름칸, 값칸) {
   return 합;
 }
 
+/**
+ * 부문정보 주석 — 행과 열이 뒤집힌 표에서 부문별 매출을 읽는다.
+ *
+ * 큰 회사일수록 매출실적 표가 성기고, 진짜 갈래는 IFRS 영업부문 주석에 있다.
+ * 그 표는 부문이 열로 가고 항목이 행으로 온다.
+ *
+ *   구 분                    모듈 및 부품제조  A/S용 부품  공통  연결조정  합계
+ *   총부문수익                   58,702,105   17,842,842   -   (15,426,820)  61,118,127
+ *   외부고객으로부터의 수익        47,800,119   13,318,008   -        -      61,118,127
+ *   영업이익                        76,027    3,503,512   -    (222,083)   3,357,456
+ *
+ * 내부거래를 뺀 「외부고객으로부터의 수익」 이 곧 부문별 매출이다. 없으면
+ * 총부문수익을 쓴다. 매출실적 표에서 아무것도 못 건졌을 때만 본다.
+ */
+function 부문주석(구역, 원, 배수) {
+  // 여는 태그마다 다음 닫는 태그까지 잘라 본다. 정규식으로 짝을 지으면 안
+  // 닫힌 표에 뒤엣것이 먹힌다 — 현대모비스 보고서는 <TABLE> 이 2,705개인데
+  // </TABLE> 은 2,535개뿐이라, 정작 부문정보 표가 어느 짝에도 안 들어갔다.
+  for (const m of 구역.matchAll(/<TABLE/gi)) {
+    const 열림 = m.index;
+    const 닫힘 = 구역.indexOf("</TABLE>", 열림);
+    if (닫힘 < 0 || 닫힘 - 열림 > 60000) continue;
+    const 표 = 구역.slice(열림, 닫힘);
+    if (!/외부고객|총부문수익|부문수익/.test(표.replace(/\s+/g, ""))) continue;
+    let rows;
+    try { rows = 표풀기(표).filter((r) => r.length >= 3); } catch { continue; }
+    if (rows.length < 2) continue;
+    const 머리 = rows[0];
+    const 첫칸 = (r) => (r[0] ?? "").replace(/\s+/g, "");
+    const 줄 =
+      rows.find((r) => /^외부고객/.test(첫칸(r)))
+      ?? rows.find((r) => /^(총부문수익|부문수익|매출액|수익)$/.test(첫칸(r)));
+    if (!줄) { 버림("주석 · 수익 줄을 못 찾음", rows.map((r) => 첫칸(r))); continue; }
+    const 조각 = [];
+    for (let c = 1; c < Math.min(머리.length, 줄.length); c++) {
+      const 이름 = (머리[c] ?? "").trim();
+      const v = 돈(줄[c]);
+      if (!이름 || !Number.isFinite(v) || v <= 0) continue;
+      // 합계·조정·공통은 부문이 아니다
+      if (/합\s*계|소\s*계|총\s*계|^계$|전체|연결\s*조정|내부\s*거래|상계|공통|조정/.test(이름)) continue;
+      if (이름.length > 24 || /^\d/.test(이름)) continue;
+      // 머리글이 가로로 병합돼 있으면 같은 이름이 여러 칸에 퍼진다
+      if (조각.some((x) => x.label === 이름)) continue;
+      조각.push({ label: 이름, v });
+    }
+    if (조각.length < 2) { 버림("주석 · 조각이 모자람", 조각.map((x) => x.label)); continue; }
+    const 왜못 = 매출표아님(조각.map((x) => x.label));
+    if (왜못) { 버림(`주석 · ${왜못}`, 조각.map((x) => x.label)); continue; }
+    const 앞 = 구역.slice(Math.max(0, 열림 - 700), 열림);
+    const u = 글(앞).match(/단위\s*[:：]\s*(백만원|천원|억원|원)/);
+    const 후보 = { 단위: { 원: 1, 천원: 1e3, 백만원: 1e6, 억원: 1e8 }[u?.[1] ?? "원"], rows: 조각.sort((a, b) => b.v - a.v) };
+    const 고른단위 = 맞는단위(후보, 원, 배수);
+    if (고른단위 === null) { 버림("주석 · 합이 매출액과 안 맞음", 조각.map((x) => x.label)); continue; }
+    if (고른단위 !== undefined) 후보.단위 = 고른단위;
+    return 후보;
+  }
+  return null;
+}
+
+
 /** 한 구역 안의 표들을 차례로 보며 부문별 금액을 뽑는다 */
 function 구역에서(구역, 원, 배수) {
-  let 최고 = null;
+  let 최고 = null, 차선 = null;
   for (const m of 구역.matchAll(/<TABLE\b[\s\S]*?<\/TABLE>/gi)) {
     const tbl = m[0];
     const rows = 표풀기(tbl).filter((r) => r.length >= 2);
@@ -379,10 +443,19 @@ function 구역에서(구역, 원, 배수) {
     const 고른단위 = 맞는단위(후보, 원, 배수);
     if (고른단위 === null) { 버림(`합이 매출액과 안 맞음(합 ${[...합.values()].reduce((a,b)=>a+b,0)})`, 이름들); continue; }
     if (고른단위 !== undefined) 후보.단위 = 고른단위;
-    if (쓸만한가(후보)) return 후보;
+    // 알맹이 있는 표를 먼저 쓴다.
+    //
+    // 앞에 나온 표를 무조건 쓰다 보니 수익 유형 표에서 멈췄다. LG전자가
+    // 「재화의 판매 · 용역의 제공 · 임대수익」 이었는데, 같은 구역 뒤에
+    // 「HS 29.3% · MS 21.8% · VS 12.5% · ES 10.5% · 이노텍 24.5%」 가 있었다.
+    if (쓸만한가(후보)) {
+      if (알짜조각(후보.rows.map((r) => r.label)) >= 2) return 후보;
+      if (!차선) 차선 = 후보;
+      continue;
+    }
     if (!최고) 최고 = 후보;
   }
-  return 최고;
+  return 차선 ?? 최고;
 }
 
 /** 종목별 매출액(원) — 뽑은 표가 매출 표인지 견주는 데 쓴다 */
