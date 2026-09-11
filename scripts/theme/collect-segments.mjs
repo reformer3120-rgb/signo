@@ -32,7 +32,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { 공시목록, 원문글, 한도넘었나, 셈 } from "./dart.mjs";
-import { 매출표아님 } from "./매출표.mjs";
+import { 매출표아님, 알짜조각 } from "./매출표.mjs";
 
 const DIR = ".cache/theme";
 const OUT = path.join(DIR, "segments.json");
@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 5;
+const 판 = 9;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const ONLY = (() => { const i = process.argv.indexOf("--only"); return i > 0 ? process.argv[i + 1] : null; })();
@@ -254,12 +254,15 @@ function 구역에서(구역, 원, 배수) {
       if (/소\s*계|합\s*계|총\s*계/.test(이름)) continue;
       // 각주 표를 잡은 것 — "주1)" "주2)"
       if (/^주\s*\d/.test(이름)) continue;
-      const g = 묶음.get(이름) ?? { 소계: null, 세부: 0 };
+      // 같은 이름을 띄어쓰기만 달리 적는 데가 있다. 그대로 두면 한 부문이 두
+      // 조각으로 갈린다 — 다이나믹디자인이 「타이어금형 · 타이어 금형」 이었다.
+      const 열쇠 = 이름.replace(/\s+/g, "");
+      const g = 묶음.get(열쇠) ?? { 보임: 이름, 소계: null, 세부: 0 };
       if (소계칸(r)) g.소계 = (g.소계 ?? 0) + v;
       else g.세부 += v;
-      묶음.set(이름, g);
+      묶음.set(열쇠, g);
     }
-    for (const [이름, g] of 묶음) 합.set(이름, g.소계 ?? g.세부);
+    for (const g of 묶음.values()) 합.set(g.보임, g.소계 ?? g.세부);
     if (합.size < 1) continue;
     const 이름들 = [...합.keys()];
     // 매출 표가 아닌 표는 건너뛰고 다음 표를 본다 — 화면 쪽과 같은 규칙이다.
@@ -421,7 +424,17 @@ for (const s of 종목) {
     const 보고서들 = await 최근보고서(코드[s.code]);
     if (멈출때()) break;
     if (!보고서들) { out[s.code] = null; 못찾음++; continue; }
+    // 최신 보고서를 먼저 보되, 거기서 나온 표가 성기면 사업보고서도 본다.
+    //
+    // 예전에는 한 조각이라도 나오면 거기서 멈췄다. 반기보고서는 표가 성겨
+    // 「제품 100%」 한 줄로 끝나는 데가 많은데, 같은 회사 사업보고서에는
+    // 사업부문이 갈라져 있다 — 조각 하나로 끝난 종목이 364, 매출유형만 나온
+    // 종목이 114 였다. 둘을 다 보고 알맹이가 많은 쪽을 쓴다.
     let 얻은것 = null;
+    // -1 에서 시작한다. 0 이면 알맹이 없는 표(「제품 · 상품」)를 아예 안 남겨
+    // 「표를 못 찾음」 으로 세어진다 — 화면은 어차피 안 그리지만 뒤에 규칙을
+    // 고쳐 다시 볼 자료까지 버리는 셈이다.
+    let 최고 = -1;
     for (const r0 of 보고서들) {
       await 쉼(40);
       const xml = await 원문글(r0.rcept_no);
@@ -429,8 +442,11 @@ for (const s of 종목) {
       if (xml === null) continue; // 통신 실패 — 남기지 않고 다음에 다시 받는다
       if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
       const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm));
-      if (seg) { 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판 }; break; }
-      if (ONLY) console.log("  이 보고서에서는 표를 못 찾음");
+      if (!seg) { if (ONLY) console.log("  이 보고서에서는 표를 못 찾음"); continue; }
+      const 알짜 = 알짜조각(seg.rows.map((r) => r.label));
+      if (ONLY) console.log(`  ${r0.report_nm} — 조각 ${seg.rows.length} · 알맹이 ${알짜}`);
+      if (알짜 > 최고) { 최고 = 알짜; 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판 }; }
+      if (최고 >= 2) break;
     }
     if (멈출때()) break;
     if (!얻은것) 못찾음++;
