@@ -37,6 +37,9 @@ const OUT = path.join(OUT_DIR, "overview.json");
 
 const args = process.argv.slice(2);
 const WAIT = args.includes("--wait");
+// 뽑는 규칙을 고쳤을 때 이미 받아 둔 것까지 다시 뽑는다. 원문은 캐시에 있어
+// DART 를 거의 두드리지 않는다.
+const 다시 = args.includes("--다시");
 const ONLY = args[args.indexOf("--only") + 1] && args.includes("--only") ? args[args.indexOf("--only") + 1] : null;
 const LIMIT = Number(args.find((a) => /^\d+$/.test(a))) || Infinity;
 const CONC = 2;
@@ -80,8 +83,26 @@ async function corpList() {
  */
 const MIN_OVERVIEW = 80;
 
+/**
+ * 표인가 글인가.
+ *
+ * 「사업의 개요」 라는 말은 한 보고서에 여러 번 나온다. 목차에도 있고, 종속
+ * 회사 절에도 있다. 예전에는 그중 가장 긴 것을 골랐는데, 표가 길다. 카카오는
+ * 자금조달 표(12,000자)가 진짜 개요(2,206자)를 이겨, 문장을 하나도 못 건지고
+ * 사람이 쓴 한 줄만 남았다.
+ *
+ * 숫자가 적은 것을 고르게 해 봤더니 이번엔 멀쩡한 글이 걸렸다. 「N2O, NH3」
+ * 도 「120톤 전기로」 도 숫자다. 뷰웍스가 숫자 21%인 제 개요를 잃었다.
+ *
+ * 재는 것은 문장이 얼마나 빽빽한가다. 표에도 문장은 섞이지만 드물다.
+ *
+ *   카카오  진짜 개요   116자에 한 문장     자금조달 표  300자에 한 문장
+ *   큐엠씨  진짜 개요   125자에 한 문장     목차 토막     문장 없음
+ */
+const 문장수 = (t) => (t.match(/[가-힣][다요]\.[\s"')\]]/g) ?? []).length;
+
 function overview(plain) {
-  let best = "";
+  const 후보 = [];
   const re = /사업의\s*개요/g;
   let m;
   while ((m = re.exec(plain))) {
@@ -95,11 +116,21 @@ function overview(plain) {
       const more = /(?:3\s*\.?\s*원재료|원재료\s*및\s*생산설비|4\s*\.?\s*매출)/.exec(tail);
       seg = tail.slice(0, more ? more.index : Math.min(tail.length, stop.index + 1500)).trim();
     }
-    if (seg.length > best.length) best = seg;
+    // 「Ⅱ. 사업의 개요에 요약된 내용의 세부사항은 …을 참고하여 주시기
+    // 바랍니다」 — 딴 절을 가리키는 문장 안의 말을 닻으로 잡은 것이다. 조사로
+    // 이어지면 제목이 아니다. 이 군더더기가 문장은 빽빽해서 그냥 두면 진짜
+    // 개요를 이긴다(노바렉스·덴티스 등 17종목이 문장을 잃었다).
+    if (/^\s*[에의를은는이가로과와]\s/.test(seg)) continue;
+    후보.push({ seg, 문장: 문장수(seg) });
   }
+  if (!후보.length) return null;
+
+  // 문장이 빽빽한 것부터. 세 문장은 나와야 글로 본다.
+  const 글 = 후보.filter((c) => c.문장 >= 3 && c.seg.length > MIN_OVERVIEW);
+  글.sort((a, b) => b.문장 / b.seg.length - a.문장 / a.seg.length);
+  const best = 글[0]?.seg ?? 후보.sort((a, b) => b.seg.length - a.seg.length)[0].seg;
   return best.length > MIN_OVERVIEW ? best.slice(0, 6000) : null;
 }
-
 
 /** 본문 하나를 받아 개요를 뽑는다. 파일이 없으면 "없음", 통신 실패면 null */
 async function docOf(rcept) {
@@ -187,7 +218,7 @@ const pool = onlyListed ? all.filter((c) => onlyListed.has(c.code)) : all;
 if (onlyListed) console.log(`상장 종목만 받는다 — 대응표 ${all.length} 중 ${pool.length}`);
 const todo = ONLY
   ? pool.filter((c) => c.code === ONLY)
-  : pool.filter((c) => !have[c.code]).slice(0, LIMIT);
+  : pool.filter((c) => 다시 || !have[c.code]).slice(0, LIMIT);
 
 // 한 종목만 볼 때는 어디서 걸리는지 찍는다
 if (ONLY) {
