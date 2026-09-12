@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 26;
+const 판 = 27;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const 왜 = process.argv.includes("--왜");
@@ -260,7 +260,11 @@ function 부문주석(구역, 원, 배수, 손봄 = {}) {
     const 닫힘 = 구역.indexOf("</TABLE>", 열림);
     if (닫힘 < 0 || 닫힘 - 열림 > 60000) continue;
     const 표 = 구역.slice(열림, 닫힘);
-    if (!/외부고객|총부문수익|부문수익/.test(표.replace(/\s+/g, ""))) continue;
+    // 손보기로 표에 들어야 할 말을 준 종목은 그 표만 본다. 같은 낱말이 든
+    // 표가 여럿일 때 쓴다 — 미래에셋증권은 「영업수익」 이 여러 표에 나온다.
+    if (손봄.주석표 && !new RegExp(손봄.주석표).test(표)) continue;
+    const 찾을말 = 손봄.주석줄 ? new RegExp(손봄.주석줄.replace(/[\^$]/g, "")) : /외부고객|총부문수익|부문수익/;
+    if (!찾을말.test(표.replace(/\s+/g, ""))) continue;
     let rows;
     try { rows = 표풀기(표).filter((r) => r.length >= 3); } catch { continue; }
     if (rows.length < 2) continue;
@@ -301,7 +305,13 @@ function 부문주석(구역, 원, 배수, 손봄 = {}) {
 /** 한 구역 안의 표들을 차례로 보며 부문별 금액을 뽑는다 */
 function 구역에서(구역, 원, 배수, 손봄 = {}) {
   let 최고 = null, 차선 = null;
-  for (const m of 구역.matchAll(/<TABLE\b[\s\S]*?<\/TABLE>/gi)) {
+  // 여는 태그마다 다음 닫는 태그까지 잘라 본다. 정규식으로 짝을 지으면 안
+  // 닫힌 표에 뒤엣것이 먹혀 그 뒤 표를 통째로 못 본다 — LG화학 매출실적
+  // 표가 그래서 안 잡혔다.
+  for (const 열림 of [...구역.matchAll(/<TABLE/gi)].map((x) => x.index)) {
+    const 닫힘 = 구역.indexOf("</TABLE>", 열림);
+    if (닫힘 < 0 || 닫힘 - 열림 > 60000) continue;
+    const m = { 0: 구역.slice(열림, 닫힘), index: 열림 };
     const tbl = m[0];
     const rows = 표풀기(tbl).filter((r) => r.length >= 2);
     if (rows.length < 2) { 버림("줄이 둘 미만"); continue; }
@@ -371,7 +381,10 @@ function 구역에서(구역, 원, 배수, 손봄 = {}) {
     if (이름들.length > 12) { 버림("갈래가 열둘 넘음", 이름들); continue; }
     // 인력 표 — 사람 수를 센 것이다
     //   다우기술  책임연구원 · 선임연구원 · 리드 & 수석연구원 · 연구소장
-    const 사람 = /연구원|연구소장|임원|직원|박사|석사|학사|정규직|계약직|기간제|남자|여자|사무직|생산직/;
+    // 학력은 말머리나 말끝에서만 본다. 「박사|석사|학사」 를 통째로 찾았더니
+    // 「석유화학사업부문」·「생명과학사업부문」 안의 「학사」 가 걸려 LG화학의
+    // 진짜 부문 표가 인력 표로 몰렸다.
+    const 사람 = /연구원|연구소장|임원|직원|^(박|석|학)사|(박|석|학)사$|(박|석|학)사급|정규직|계약직|기간제|남자|여자|사무직|생산직/;
     if (이름들.filter((n) => 사람.test(n.replace(/\s+/g, ""))).length >= 2) { 버림("인력 표", 이름들); continue; }
 
     // 매출 표가 아닌 표들.
@@ -541,6 +554,23 @@ for (const s of 종목) {
     else if (있는것 !== undefined) continue;
   }
   try {
+    // 손으로 적어 둔 것이 있으면 그대로 쓴다. 보고서에서 표를 못 찾는 회사가
+    // 있다 — 금융지주처럼 부문별 매출을 아예 안 내거나, 표 꼴이 제각각이라
+    // 읽히지 않는 경우다. 출처와 기준을 반드시 같이 적는다.
+    const 손봄먼저 = 손보기[s.code] ?? {};
+    if (손봄먼저.조각) {
+      out[s.code] = {
+        단위: 1,
+        rows: 손봄먼저.조각.map(([label, v]) => ({ label, v })),
+        report: 손봄먼저.출처 ?? "손보기",
+        asOf: 손봄먼저.기준 ?? null,
+        판,
+        손: true,
+        ...(손봄먼저.제목 ? { 제목: 손봄먼저.제목 } : {}),
+      };
+      새로++;
+      continue;
+    }
     const 보고서들 = await 최근보고서(코드[s.code]);
     if (멈출때()) break;
     if (!보고서들) { out[s.code] = null; 못찾음++; continue; }
@@ -561,11 +591,12 @@ for (const s of 종목) {
       if (한도넘었나()) break;
       if (xml === null) continue; // 통신 실패 — 남기지 않고 다음에 다시 받는다
       if (ONLY) console.log("  문서", xml.length, "자 ·", r0.report_nm);
-      const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm), 손보기[s.code] ?? {});
+      const 손봄 = 손보기[s.code] ?? {};
+      const seg = 부문뽑기(xml, 매출액[s.code] ?? 0, 기대배수(r0.report_nm), 손봄);
       if (!seg) { if (ONLY) console.log("  이 보고서에서는 표를 못 찾음"); continue; }
       const 알짜 = 알짜조각(seg.rows.map((r) => r.label));
       if (ONLY) console.log(`  ${r0.report_nm} — 조각 ${seg.rows.length} · 알맹이 ${알짜}`);
-      if (알짜 > 최고) { 최고 = 알짜; 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판 }; }
+      if (알짜 > 최고) { 최고 = 알짜; 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판, ...(손봄.제목 ? { 제목: 손봄.제목 } : {}) }; }
       if (최고 >= 2) break;
     }
     if (멈출때()) break;

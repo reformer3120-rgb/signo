@@ -27,6 +27,8 @@ export interface Profile {
     report: string | null;
     /** 조각의 합이 그 해 매출액과 맞는가. 아니면 화면이 「사업 구성」이라 부른다. */
     검증?: boolean;
+    /** 손보기로 달리 준 제목 — 금융지주의 「영업이익 구성」 같은 것 */
+    제목?: string;
   };
   주주?: { rows: 보유자[]; asOf: string | null };
 }

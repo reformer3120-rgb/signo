@@ -153,7 +153,7 @@ function 매출(code) {
   // 여럿이면 비율 자체가 알려 주는 것이 있으므로 못 견줘도 그린다.
   if (상위.length === 1 && !검증) return null;
 
-  return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null, 검증 };
+  return { rows: 상위, asOf: v.asOf ?? null, report: v.report ?? null, 검증, ...(v.제목 ? { 제목: v.제목 } : {}) };
 }
 /**
  * 이름을 견주기 좋게 다듬는다.
