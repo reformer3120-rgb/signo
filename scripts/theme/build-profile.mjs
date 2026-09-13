@@ -69,6 +69,8 @@ function 라벨다듬기(name) {
   // 건드리지 않으려고.
   if (토막.length >= 2 && 토막.some((w) => w.length === 1)
       && /^[가-힣\s]+$/.test(t)) t = 토막.join("");
+  // 각주 표시는 조각 이름이 아니다 — 「상품 매출(주3)」 「광고(주1)」
+  t = t.replace(/\s*[(（]\s*주\s*\d*\s*[)）]\s*$/g, "").replace(/\s*주\s*\d+\s*[)）]\s*$/g, "").trim();
   return t.replace(/\s*:\s*/g, ": ").trim();
 }
 
@@ -110,6 +112,8 @@ function 매출(code) {
   // 합계 행은 조각에서 뺀다
   const 알짜 = v.rows.filter((r) => {
     const x = 눌러(r.label);
+    // 「-」 「※」 처럼 이름이 없는 칸이 조각으로 들어오기도 한다
+    if (!x || /^[-–—·.,※*]+$/.test(x)) return false;
     return !합계행.test(x) && !손익표.test(x) && !머리글.test(x) && !상계행.test(x);
   });
   if (!알짜.length) return null;
@@ -128,11 +132,18 @@ function 매출(code) {
     if (Math.max(...값) - Math.min(...값) <= Math.max(...값) * 0.02) return null;
   }
 
-  const 상위 = 알짜.slice(0, MAX조각).map((r) => ({
-    name: 라벨다듬기(r.label),
-    pct: 몫(r.v),
-  }));
-  const 밖 = 알짜.slice(MAX조각).reduce((a, r) => a + r.v, 0);
+  // 다듬고 나면 이름이 겹치는 수가 있다 — 「기타(주2)」 와 「기타(주4)」 가
+  // 둘 다 「기타」 가 된다. 같은 이름은 합친다.
+  const 묶음 = [];
+  for (const r of 알짜) {
+    const name = 라벨다듬기(r.label);
+    const 있는것 = 묶음.find((x) => x.name === name);
+    if (있는것) 있는것.v += r.v;
+    else 묶음.push({ name, v: r.v });
+  }
+  묶음.sort((x, y) => y.v - x.v);
+  const 상위 = 묶음.slice(0, MAX조각).map((r) => ({ name: r.name, pct: 몫(r.v) }));
+  const 밖 = 묶음.slice(MAX조각).reduce((a, r) => a + r.v, 0);
   // 0.1% 도 안 되는 "그 밖" 은 조각으로 두지 않는다 — 범례만 한 줄 늘린다
   if (밖 > 0 && 몫(밖) >= 0.1) 상위.push({ name: "그 밖", pct: 몫(밖) });
 
