@@ -32,6 +32,9 @@ import { 평서문, 며닫기 } from "./sent.mjs";
 const DIR = ".cache/theme";
 const OUT = "src/data/about.json";
 const WRITE = process.argv.includes("--write");
+// 법인팀에 넘길 CSV — node scripts/theme/build-about.mjs --csv
+const CSV만 = process.argv.includes("--csv");
+const CSV = "기업개요.csv";
 // 한 종목이 왜 그렇게 나왔는지 본다 — node … --추적 068270
 const 추적 = (() => { const i = process.argv.indexOf("--추적"); return i > 0 ? process.argv[i + 1] : null; })();
 
@@ -627,6 +630,24 @@ for (const c of 볼것) {
   if (!s) continue;
   console.log(`\n── ${s.name}`);
   for (const l of out[c] ?? ["(없음)"]) console.log(`   · ${l}`);
+}
+
+/** CSV 로 내보내기 — 쉼표·따옴표가 든 칸은 따옴표로 감싼다 */
+function 칸(v) {
+  const t = String(v ?? "");
+  return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+}
+
+if (CSV만) {
+  const 이름 = {};
+  for (const t of themes.themes) for (const s of t.stocks) 이름[s.code] = s.name;
+  const 줄 = ["종목코드,종목명,문장수,개요1,개요2,개요3,개요4"];
+  for (const [code, v] of Object.entries(out).sort((a, b) => (이름[a[0]] ?? "").localeCompare(이름[b[0]] ?? "", "ko"))) {
+    const 칸들 = [code, 이름[code] ?? "", v.length, v[0] ?? "", v[1] ?? "", v[2] ?? "", v[3] ?? ""];
+    줄.push(칸들.map(칸).join(","));
+  }
+  fs.writeFileSync(CSV, 줄.join("\n") + "\n", "utf8");
+  console.log(`→ ${CSV}  ${줄.length - 1}종목  ${(fs.statSync(CSV).size / 1024).toFixed(0)}KB`);
 }
 
 if (WRITE) {

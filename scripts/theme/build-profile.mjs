@@ -31,6 +31,9 @@ import path from "node:path";
 import { 실체풀기 } from "./entity.mjs";
 
 const DIR = ".cache/theme";
+// 법인팀에 넘길 CSV — node scripts/theme/build-profile.mjs --csv
+const CSV만 = process.argv.includes("--csv");
+const CSV = "매출구성.csv";
 const OUT = "src/data/profile.json";
 const MAX조각 = 4;
 
@@ -257,6 +260,32 @@ for (const s of 종목) {
   if (m) 매출수++;
   if (h) 주주수++;
   out[s.code] = { ...(m ? { 매출: m } : {}), ...(h ? { 주주: h } : {}) };
+}
+
+/** CSV 로 내보내기 — 쉼표·따옴표가 든 칸은 따옴표로 감싼다 */
+const 칸 = (v) => {
+  const t = String(v ?? "");
+  return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+
+if (CSV만) {
+  const 이름 = {};
+  for (const s of 종목) 이름[s.code] = s.name;
+  const 줄 = ["종목코드,종목명,구분,조각,비중,기준보고서,기준일"];
+  const 정렬 = Object.entries(out)
+    .filter(([, v]) => v.매출?.rows?.length)
+    .sort((a, b) => (이름[a[0]] ?? "").localeCompare(이름[b[0]] ?? "", "ko"));
+  for (const [code, v] of 정렬) {
+    const m = v.매출;
+    const 구분 = m.제목 ?? (m.검증 ? "매출 구성" : "사업 구성");
+    const 날 = m.asOf ? `${m.asOf.slice(0, 4)}-${m.asOf.slice(4, 6)}-${m.asOf.slice(6, 8)}` : "";
+    for (const r of m.rows) {
+      줄.push([code, 이름[code] ?? "", 구분, r.name, r.pct, m.report ?? "", 날].map(칸).join(","));
+    }
+  }
+  fs.writeFileSync(CSV, 줄.join("\n") + "\n", "utf8");
+  console.log(`→ ${CSV}  ${정렬.length}종목 ${줄.length - 1}줄  ${(fs.statSync(CSV).size / 1024).toFixed(0)}KB`);
+  process.exit(0);
 }
 
 fs.writeFileSync(OUT, JSON.stringify(out));
