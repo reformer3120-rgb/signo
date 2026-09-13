@@ -103,7 +103,9 @@ function 매출(code) {
   const v = segments[code];
   if (!v?.rows?.length) return null;
 
-  if (매출표아님(v.rows.map((r) => r.label), v.rows.length)) return null;
+  // 손보기로 「허용」 을 준 종목은 이 검사를 건너뛴다 — 부문이 정말 자회사
+  // 이름인 회사가 있다(두산에너빌리티).
+  if (!v.허용 && 매출표아님(v.rows.map((r) => r.label), v.rows.length)) return null;
 
   // 합계 행은 조각에서 뺀다
   const 알짜 = v.rows.filter((r) => {

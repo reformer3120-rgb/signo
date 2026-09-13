@@ -42,7 +42,7 @@ const LIMIT = 인자("--limit", Infinity);
 // 어느 잣대로 받은 것인지 남겨 둔다. 잣대를 고치면 이 수를 올리고
 // --묵은것 으로 돌리면 옛 잣대로 받은 것만 다시 받는다. 호출 한도가 빠듯해
 // 한 번에 다 못 돌릴 때 쓸모가 있다.
-const 판 = 27;
+const 판 = 33;
 const 약한것만 = process.argv.includes("--약한것");
 const 묵은것만 = process.argv.includes("--묵은것");
 const 왜 = process.argv.includes("--왜");
@@ -262,18 +262,29 @@ function 부문주석(구역, 원, 배수, 손봄 = {}) {
     const 표 = 구역.slice(열림, 닫힘);
     // 손보기로 표에 들어야 할 말을 준 종목은 그 표만 본다. 같은 낱말이 든
     // 표가 여럿일 때 쓴다 — 미래에셋증권은 「영업수익」 이 여러 표에 나온다.
-    if (손봄.주석표 && !new RegExp(손봄.주석표).test(표)) continue;
+    // 태그를 걷어 낸 글로 견준다. 원문은 낱말 사이에 태그가 끼어 있다.
+    if (손봄.주석표 && !new RegExp(손봄.주석표).test(글(표))) continue;
     const 찾을말 = 손봄.주석줄 ? new RegExp(손봄.주석줄.replace(/[\^$]/g, "")) : /외부고객|총부문수익|부문수익/;
     if (!찾을말.test(표.replace(/\s+/g, ""))) continue;
     let rows;
-    try { rows = 표풀기(표).filter((r) => r.length >= 3); } catch { continue; }
+    try { rows = 표풀기(표).filter((r) => r.length >= 3); } catch { 버림("주석 · 표풀기 실패"); continue; }
+    if (왜 && 손봄.주석표) console.log("     [주석표 통과] 줄", rows.length, JSON.stringify(rows.slice(0, 3).map((r) => r.slice(0, 6))).slice(0, 220));
     if (rows.length < 2) continue;
-    const 머리 = rows[0];
+    // 머리줄이 늘 첫 줄은 아니다. 「(단위: 백만원)」 한 칸짜리가 먼저 오는
+    // 데가 많아, 그것을 부문 이름으로 읽고 있었다(미래에셋증권).
+    const 숫자칸 = (x) => /^\(?-?[\d,]+\)?$/.test((x ?? "").trim()) && /\d/.test(x ?? "");
+    // 단위 쪽지가 가로로 병합돼 한 줄을 채우기도 한다. 서로 다른 이름이 둘
+    // 이상인 줄이라야 머리줄이다.
+    const 머리자리 = rows.findIndex((r) =>
+      new Set(r.slice(1).filter((x) => x && !숫자칸(x) && x.length <= 24 && !/단위/.test(x))).size >= 2);
+    if (머리자리 < 0) continue;
+    const 머리 = rows[머리자리];
     const 첫칸 = (r) => (r[0] ?? "").replace(/\s+/g, "");
+    const 아래 = rows.slice(머리자리 + 1);
     const 줄 =
-      (손봄.주석줄 ? rows.find((r) => new RegExp(손봄.주석줄).test(첫칸(r))) : null)
-      ?? rows.find((r) => /^외부고객/.test(첫칸(r)))
-      ?? rows.find((r) => /^(총부문수익|부문수익|매출액|수익)$/.test(첫칸(r)));
+      (손봄.주석줄 ? 아래.find((r) => new RegExp(손봄.주석줄).test(첫칸(r))) : null)
+      ?? 아래.find((r) => /^외부고객/.test(첫칸(r)))
+      ?? 아래.find((r) => /^(총부문수익|부문수익|매출액|수익)$/.test(첫칸(r)));
     if (!줄) { 버림("주석 · 수익 줄을 못 찾음", rows.map((r) => 첫칸(r))); continue; }
     const 조각 = [];
     for (let c = 1; c < Math.min(머리.length, 줄.length); c++) {
@@ -288,8 +299,10 @@ function 부문주석(구역, 원, 배수, 손봄 = {}) {
       조각.push({ label: 이름, v });
     }
     if (조각.length < 2) { 버림("주석 · 조각이 모자람", 조각.map((x) => x.label)); continue; }
-    const 왜못 = 매출표아님(조각.map((x) => x.label));
-    if (왜못) { 버림(`주석 · ${왜못}`, 조각.map((x) => x.label)); continue; }
+    if (!손봄.허용) {
+      const 왜못 = 매출표아님(조각.map((x) => x.label));
+      if (왜못) { 버림(`주석 · ${왜못}`, 조각.map((x) => x.label)); continue; }
+    }
     const 앞 = 구역.slice(Math.max(0, 열림 - 700), 열림);
     const u = 글(앞).match(/단위\s*[:：]\s*(백만원|천원|억원|원)/);
     const 후보 = { 단위: { 원: 1, 천원: 1e3, 백만원: 1e6, 억원: 1e8 }[u?.[1] ?? "원"], rows: 조각.sort((a, b) => b.v - a.v) };
@@ -366,9 +379,13 @@ function 구역에서(구역, 원, 배수, 손봄 = {}) {
     // 거래처별·지역별·종속회사별 매출 표는 합이 매출액과 맞아서 「합을 견주는」
     // 잣대로는 못 거른다. 그래서 집고 거기서 멈췄고, 반기보고서에서 그러면
     // 사업보고서로 되돌아가 제대로 된 표를 찾을 기회까지 잃었다(204종목).
-    { const 왜못 = 매출표아님(이름들); if (왜못) { 버림(왜못, 이름들); continue; } }
+    // 손보기로 「허용」 을 준 종목은 이 검사를 건너뛴다. 부문이 정말 자회사
+    // 이름인 회사가 있다 — 두산에너빌리티가 그렇다.
+    if (!손봄.허용) { const 왜못 = 매출표아님(이름들); if (왜못) { 버림(왜못, 이름들); continue; } }
     // 이름이 죄다 한두 글자 로마자면 사업부문이 아니라 등급표다 (D · C · CC · CCC)
-    if (이름들.every((n) => /^[A-Za-z+-]{1,4}$/.test(n))) { 버림("등급표", 이름들); continue; }
+    // 신용등급은 세 글자까지다(AAA·BB+·C). 넉 자까지 등급으로 보면
+    // 삼성바이오로직스의 「CDMO」 가 등급표로 몰린다.
+    if (이름들.length >= 2 && 이름들.every((n) => /^[A-Za-z]{1,3}[+-]?$/.test(n))) { 버림("등급표", 이름들); continue; }
     // 환율 표 — 통화 코드가 절반을 넘으면 매출이 아니다 (USD · EUR · JPY · VND)
     const 통화 = /^(USD|EUR|JPY|CNY|CNH|VND|PHP|MXN|SGD|TWD|HKD|GBP|AUD|CAD|CHF|IDR|THB|INR|BRL|RUB|TRY|PLN|MYR|KRW|AED|SAR)$/i;
     if (이름들.filter((n) => 통화.test(n)).length / 이름들.length >= 0.4) { 버림("통화 코드", 이름들); continue; }
@@ -525,8 +542,11 @@ async function 최근보고서(corpCode) {
   // 최신을 먼저 보되, 거기서 표를 못 찾으면 사업보고서로 되돌아간다.
   // 반기보고서는 표가 성겨 아예 없는 회사가 있다 — 삼성전자가 그랬다.
   const 최근 = [...목록].sort((a, b) => b.rcept_dt.localeCompare(a.rcept_dt));
-  const 사업 = 최근.find((r) => /사업보고서/.test(r.report_nm));
-  const 후보 = [최근[0], 사업].filter((r, i, a) => r && a.findIndex((x) => x?.rcept_no === r.rcept_no) === i);
+  // 사업보고서를 셋까지 쥔다. 정정 공시에는 고친 쪽만 담겨 본문이 아예 없는
+  // 것이 있다 — 삼성화재의 [첨부정정]사업보고서가 그랬고, 그것만 보고
+  // 포기하고 있었다.
+  const 사업 = 최근.filter((r) => /사업보고서/.test(r.report_nm)).slice(0, 3);
+  const 후보 = [최근[0], ...사업].filter((r, i, a) => r && a.findIndex((x) => x?.rcept_no === r.rcept_no) === i);
   return 후보.length ? 후보 : null;
 }
 
@@ -596,7 +616,7 @@ for (const s of 종목) {
       if (!seg) { if (ONLY) console.log("  이 보고서에서는 표를 못 찾음"); continue; }
       const 알짜 = 알짜조각(seg.rows.map((r) => r.label));
       if (ONLY) console.log(`  ${r0.report_nm} — 조각 ${seg.rows.length} · 알맹이 ${알짜}`);
-      if (알짜 > 최고) { 최고 = 알짜; 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판, ...(손봄.제목 ? { 제목: 손봄.제목 } : {}) }; }
+      if (알짜 > 최고) { 최고 = 알짜; 얻은것 = { ...seg, report: r0.report_nm, asOf: r0.rcept_dt, 판: 판, ...(손봄.제목 ? { 제목: 손봄.제목 } : {}), ...(손봄.허용 ? { 허용: true } : {}) }; }
       if (최고 >= 2) break;
     }
     if (멈출때()) break;
