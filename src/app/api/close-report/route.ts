@@ -15,7 +15,7 @@ import { marketIndicators } from "@/lib/marketIndex";
 import { usMarketIndicators, type UsIndicator } from "@/lib/us";
 import { indexChart } from "@/lib/yahoo";
 import { minute } from "@/lib/naver";
-import { hasKIS, foreignInstitution, programTrade } from "@/lib/kis";
+import { hasKIS, programTrade } from "@/lib/kis";
 import { marketDeposit } from "@/lib/deposit";
 import { futuresInvestorFlow } from "@/lib/flow";
 import { dailySignals } from "@/lib/ownTheme";
@@ -60,12 +60,11 @@ function seoulParts() {
 async function build() {
   const t = seoulParts();
   const kis = hasKIS();
-  const [idx, sec, bond, mi, fi, prgKospi, prgKosdaq, ...rest] = await Promise.all([
+  const [idx, sec, bond, mi, prgKospi, prgKosdaq, ...rest] = await Promise.all([
     indices().catch(() => []),
     sectors().catch(() => []),
     bonds().catch(() => []),
     marketIndicators().catch(() => null),
-    kis ? foreignInstitution("ALL", 0).catch(() => []) : Promise.resolve([]),
     kis ? programTrade("KOSPI").catch(() => []) : Promise.resolve([]),
     kis ? programTrade("KOSDAQ").catch(() => []) : Promise.resolve([]),
     ...(["KOSPI", "KOSDAQ"] as Market[]).flatMap((m) => [
@@ -251,17 +250,15 @@ async function build() {
     L.push("");
   }
 
-  if (fi.length) {
-    L.push("[ 시장 수급 · 외국인·기관 순매수 상위 ]");
-    L.push("  (순매수 대금 기준, 억원 · KRX+NXT 합산)");
-    const eokFromMillion = (v: number) => `${v > 0 ? "+" : ""}${f(Math.round(v / 100))}`;
-    fi.slice(0, 10).forEach((r, i) =>
-      L.push(
-        `    ${String(i + 1).padStart(2)}. ${r.name.padEnd(12)} ${f(r.price).padStart(9)} ${sign(r.changePct).padStart(7)}%  외인 ${eokFromMillion(r.foreignValue).padStart(9)}  기관 ${eokFromMillion(r.instValue).padStart(9)}`,
-      ),
-    );
-    L.push("");
-  }
+  // 외국인·기관 순매수 상위는 뺐다.
+  //
+  // 「KRX+NXT 합산」 이라고 적어 두었는데 사실이 아니었다. KIS 의 투자자 수급은
+  // 거래소 구분이 없는 단일 데이터셋이다 — 실전 서버로 확인했다.
+  //   foreign-institution-total  MRKT_DIV 를 NX·UN·J 로 주면 rt_cd=0 인 채 0행
+  //   inquire-investor           J·NX·UN 이 모두 같은 값
+  // 거래소 파라미터를 조용히 무시한다. NXT 체결분이 통째로 빠진 값을 합산이라
+  // 적어 내보낼 수는 없어, 바로잡을 길이 생길 때까지 싣지 않는다.
+  // 화면(시장 수급 카드)은 기준을 밝혀 두고 그대로 둔다.
 
   if (sec.length) {
     // 화면(섹터 강약 카드)과 같은 8개씩
