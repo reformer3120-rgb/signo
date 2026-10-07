@@ -240,7 +240,14 @@ export function MarketFlowSection() {
                   {!byValue && (
                     <td className="text-right tnum px-2">
                       {r.nxtShare >= 0 ? (
-                        <span className={r.nxtShare >= 40 ? "text-signal font-semibold" : "text-muted"}>
+                        <span
+                          className={r.nxtShare >= 40 ? "text-signal font-semibold" : "text-muted"}
+                          title={
+                            r.nxtShare >= 40
+                              ? `거래의 ${r.nxtShare}% 가 NXT 에서 이뤄졌습니다. 순매수는 KRX 체결분만 집계되므로 실제보다 작게 보입니다.`
+                              : "NXT 체결 비중"
+                          }
+                        >
                           {r.nxtShare}%
                         </span>
                       ) : (
@@ -257,7 +264,7 @@ export function MarketFlowSection() {
               ? "NXT만 거래되는 시간대 — NXT 체결 기준 거래대금 상위 · KIS"
               : byValue
                 ? "외국인·기관 순매수는 장 마감 후 가집계로 제공됩니다. 그전까지는 KRX+NXT 통합 거래대금 상위를 표시하며, 집계가 들어오면 자동으로 순매수 순위로 전환됩니다 · KIS"
-                : `${BY_LABEL[by]} ${dir === "sell" ? "순매도" : "순매수"} 대금 순 · KRX 가집계 · 거래량은 KRX+NXT 통합 기준 · KIS`}
+                : `${BY_LABEL[by]} ${dir === "sell" ? "순매도" : "순매수"} 대금 순 · 순매수는 KRX 가집계(NXT 체결분 제외) · 거래량은 KRX+NXT 통합 · KIS`}
           </div>
         </div>
       )}

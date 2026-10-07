@@ -9,7 +9,11 @@ export function hasKIS(): boolean {
   return !!(process.env.KIS_APP_KEY?.trim() && process.env.KIS_APP_SECRET?.trim());
 }
 
-const IS_PROD = (process.env.KIS_ENV ?? "vts").toLowerCase() === "prod";
+// 값 뒤에 주석이 붙어 있어도 실전으로 읽히게 한다.
+//   KIS_ENV=prod            # vts=모의투자, prod=실전
+// dotenv 가 주석을 떼어 주지만, 떼지 않는 파서로 읽으면 "prod            #…" 이
+// 되어 조용히 모의투자로 떨어진다. 모의투자는 시세·수급이 실전과 다르다.
+const IS_PROD = /^prod/.test((process.env.KIS_ENV ?? "vts").trim().toLowerCase());
 const DOMAIN = IS_PROD
   ? "https://openapi.koreainvestment.com:9443"
   : "https://openapivts.koreainvestment.com:29443";
